@@ -14,14 +14,21 @@ Nueva base multi-tenant para LUNEK. El ecommerce original se conserva sin cambio
 ## Requisitos
 
 - Node.js 20.19 o superior.
-- PostgreSQL.
+- PostgreSQL (el entorno Docker local usa el puerto `5433` para no interferir con instalaciones existentes).
 
 ## Inicio local
 
 1. Ejecutar `npm install` en la raíz.
 2. Copiar `.env.example` como `.env` y configurar `DATABASE_URL`.
-3. Ejecutar `npm run db:generate`.
-4. Ejecutar `npm run db:migrate -- --name init` cuando PostgreSQL esté disponible.
-5. En terminales separadas, ejecutar `npm run dev:web` y `npm run dev:api`.
+3. Ejecutar `npm run db:up` para iniciar PostgreSQL con Docker.
+4. Ejecutar `npm run db:generate`.
+5. Ejecutar `npm run db:migrate -- --name nombre_de_la_migracion`.
+6. Ejecutar `npm run db:seed` para cargar las tiendas de demostración.
+7. Ejecutar `npm run db:test:isolation` para verificar el aislamiento multi-tenant.
+8. En terminales separadas, ejecutar `npm run dev:web` y `npm run dev:api`.
 
 Web: `http://localhost:3000`. API: `http://localhost:4000/api/health`.
+
+## Aislamiento multi-tenant
+
+Las entidades comerciales incluyen `tenantId`, las restricciones únicas se componen con ese identificador y las relaciones entre productos, clientes, carritos y pedidos usan claves foráneas compuestas. La aplicación accede a los datos mediante repositorios ligados a un tenant. Las pruebas comprueban tanto el filtrado de consultas como el rechazo de relaciones cruzadas en PostgreSQL.

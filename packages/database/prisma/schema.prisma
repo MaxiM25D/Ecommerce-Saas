@@ -18,6 +18,28 @@ enum MembershipRole {
   STAFF
 }
 
+enum CartStatus {
+  ACTIVE
+  CONVERTED
+  ABANDONED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUNDED
+}
+
 model Tenant {
   id          String       @id @default(cuid())
   slug        String       @unique
@@ -26,26 +48,31 @@ model Tenant {
   memberships Membership[]
   categories  Category[]
   products    Product[]
+  customers   Customer[]
+  carts       Cart[]
+  orders      Order[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
 
 model User {
-  id          String       @id @default(cuid())
-  email       String       @unique
+  id           String       @id @default(cuid())
+  email        String       @unique
   passwordHash String
-  memberships Membership[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  firstName    String
+  lastName     String
+  memberships  Membership[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
 
 model Membership {
-  tenantId String
-  userId   String
-  role     MembershipRole @default(STAFF)
-  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime      @default(now())
+  tenantId  String
+  userId    String
+  role      MembershipRole @default(STAFF)
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
 
   @@id([tenantId, userId])
   @@index([userId])
@@ -67,23 +94,117 @@ model Category {
 }
 
 model Product {
-  id          String    @id @default(cuid())
-  tenantId    String
-  categoryId  String?
-  sku         String
-  slug        String
-  name        String
-  description String?
+  id           String      @id @default(cuid())
+  tenantId     String
+  categoryId   String?
+  sku          String
+  slug         String
+  name         String
+  description  String?
   priceInCents Int
-  stock       Int       @default(0)
-  active      Boolean   @default(true)
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category    Category? @relation(fields: [tenantId, categoryId], references: [tenantId, id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  stock        Int         @default(0)
+  active       Boolean     @default(true)
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category     Category?   @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@unique([tenantId, sku])
   @@unique([tenantId, slug])
+  @@unique([tenantId, id])
   @@index([tenantId, active])
   @@index([tenantId, categoryId])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String
+  firstName String
+  lastName  String
+  phone     String?
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  carts     Cart[]
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, email])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+
+model Cart {
+  id         String     @id @default(cuid())
+  tenantId   String
+  customerId String?
+  status     CartStatus @default(ACTIVE)
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer?  @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
+  items      CartItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+  @@index([tenantId, customerId])
+}
+
+model CartItem {
+  tenantId         String
+  cartId           String
+  productId        String
+  quantity         Int
+  unitPriceInCents Int
+  cart             Cart     @relation(fields: [tenantId, cartId], references: [tenantId, id], onDelete: Cascade)
+  product          Product  @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@id([tenantId, cartId, productId])
+  @@index([tenantId, productId])
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  tenantId        String
+  customerId      String?
+  number          Int
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  customerEmail   String
+  customerName    String
+  currency        String        @default("ARS")
+  subtotalInCents Int
+  totalInCents    Int
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer        Customer?     @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
+  items           OrderItem[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([tenantId, number])
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+  @@index([tenantId, customerId])
+}
+
+model OrderItem {
+  id               String   @id @default(cuid())
+  tenantId         String
+  orderId          String
+  productId        String?
+  sku              String
+  productName      String
+  quantity         Int
+  unitPriceInCents Int
+  subtotalInCents  Int
+  order            Order    @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  product          Product? @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId, orderId])
+  @@index([tenantId, productId])
 }

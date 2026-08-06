@@ -16,3 +16,5 @@ packages/database/src/generated/
 
 # Copia local del ecommerce original usada como referencia.
 /legacy/
+
+notas.txt

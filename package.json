@@ -12,9 +12,14 @@
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "db:generate": "npm run db:generate --workspace @lunek/database",
-    "db:migrate": "npm run db:migrate --workspace @lunek/database",
-    "db:studio": "npm run db:studio --workspace @lunek/database"
+    "db:generate": "prisma generate --config packages/database/prisma.config.ts",
+    "db:migrate": "prisma migrate dev --config packages/database/prisma.config.ts",
+    "db:seed": "prisma db seed --config packages/database/prisma.config.ts",
+    "db:studio": "prisma studio --config packages/database/prisma.config.ts",
+    "db:test:isolation": "npm run test:isolation --workspace @lunek/database",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres"
   },
   "engines": {
     "node": ">=20.19.0"
