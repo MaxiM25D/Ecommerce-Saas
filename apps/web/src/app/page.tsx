@@ -1,69 +1,28 @@
-import Image from "next/image";
+import Link from "next/link";
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen overflow-hidden bg-[#f5f1eb] text-stone-950">
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-10">
+        <div className="flex items-center gap-3 font-semibold"><span className="grid h-10 w-10 place-items-center rounded-xl bg-stone-950 font-serif text-white">L</span>LUNEK Commerce</div>
+        <Link className="rounded-full border border-stone-300 px-5 py-2.5 text-sm font-semibold hover:bg-white" href="/login">Ingresar</Link>
+      </nav>
+      <section className="mx-auto grid max-w-7xl items-center gap-12 px-6 pb-24 pt-16 lg:grid-cols-[1.1fr_0.9fr] lg:px-10 lg:pt-24">
+        <div>
+          <p className="mb-5 text-xs font-bold uppercase tracking-[0.22em] text-amber-700">Ecommerce multi-tenant</p>
+          <h1 className="max-w-3xl text-5xl font-semibold leading-[1.05] tracking-[-0.045em] sm:text-6xl lg:text-7xl">La operación de tu tienda, sin ruido.</h1>
+          <p className="mt-7 max-w-xl text-lg leading-8 text-stone-600">Administrá catálogo, inventario, clientes y pedidos desde una plataforma diseñada para crecer con tu negocio.</p>
+          <div className="mt-9 flex flex-wrap gap-3"><Link className="rounded-xl bg-stone-950 px-6 py-3.5 text-sm font-bold text-white hover:bg-amber-700" href="/login">Crear mi tienda</Link><Link className="rounded-xl border border-stone-300 bg-white/50 px-6 py-3.5 text-sm font-bold" href="/admin">Ver panel</Link></div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="relative min-h-[25rem]">
+          <div className="absolute inset-6 rotate-3 rounded-[2.5rem] bg-[#b89b72]" />
+          <div className="absolute inset-0 -rotate-2 rounded-[2.5rem] border border-stone-200 bg-white p-7 shadow-2xl">
+            <div className="flex items-center justify-between"><div><p className="text-xs text-stone-400">Resumen de hoy</p><p className="mt-1 text-xl font-semibold">Hola, LUNEK</p></div><span className="h-10 w-10 rounded-full bg-stone-950" /></div>
+            <div className="mt-8 grid grid-cols-2 gap-4"><div className="rounded-2xl bg-stone-950 p-5 text-white"><p className="text-xs text-stone-400">Ventas</p><p className="mt-4 text-2xl font-semibold">$ 248.000</p></div><div className="rounded-2xl bg-amber-50 p-5"><p className="text-xs text-amber-700">Pedidos</p><p className="mt-4 text-2xl font-semibold">18</p></div></div>
+            <div className="mt-5 space-y-3">{["Cinturón Toro", "Bolso Norte", "Billetera Cuero"].map((name, index) => <div className="flex items-center gap-3 rounded-xl border border-stone-100 p-3" key={name}><span className="grid h-10 w-10 place-items-center rounded-lg bg-stone-100 text-xs">0{index + 1}</span><span className="text-sm font-medium">{name}</span><span className="ml-auto text-xs text-emerald-600">Activo</span></div>)}</div>
+          </div>
         </div>
-      </main>
-    </div>
+      </section>
+    </main>
   );
 }

@@ -44,3 +44,14 @@ Las entidades comerciales incluyen `tenantId`, las restricciones únicas se comp
 - `GET /api/tenants/context`: devuelve el tenant guardado en la sesión.
 
 La cookie de sesión es `httpOnly`, el token se almacena hasheado en PostgreSQL y el `tenantId` activo nunca se toma del body, query string o parámetros enviados por el frontend.
+
+## Panel administrativo
+
+El panel web está disponible en `http://localhost:3000/admin` y consume rutas protegidas bajo `/api/admin`:
+
+- `GET /dashboard`: métricas y pedidos recientes.
+- `GET|POST /categories` y `PATCH|DELETE /categories/:id`: CRUD de categorías.
+- `GET|POST /products` y `PATCH|DELETE /products/:id`: CRUD de productos, precio, stock, imágenes y estado.
+- `GET|PATCH /store`: identidad, contacto, moneda y configuración visual de la tienda.
+
+Los roles `OWNER` y `ADMIN` pueden modificar datos. `STAFF` tiene acceso de solo lectura. Todas las consultas y mutaciones toman el tenant desde la sesión del servidor.

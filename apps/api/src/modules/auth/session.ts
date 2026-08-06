@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import type { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { environment } from "../../config.js";
 import { database } from "../../database.js";
@@ -110,4 +110,20 @@ export async function requireSession(
 export function getAuthContext(request: Request): NonNullable<Request["auth"]> {
   if (!request.auth) throw new HttpError(401, "Iniciá sesión para continuar");
   return request.auth;
+}
+
+export function requireRoles(
+  ...allowedRoles: Array<NonNullable<Request["auth"]>["role"]>
+): RequestHandler {
+  return (request, _response, next) => {
+    try {
+      const auth = getAuthContext(request);
+      if (!allowedRoles.includes(auth.role)) {
+        throw new HttpError(403, "No tenés permisos para realizar esta acción");
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 }

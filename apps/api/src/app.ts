@@ -5,6 +5,7 @@ import helmet from "helmet";
 
 import { environment } from "./config.js";
 import { errorHandler } from "./errors.js";
+import { adminRouter } from "./modules/admin/routes.js";
 import { authRouter } from "./modules/auth/routes.js";
 import { tenantRouter } from "./modules/tenants/routes.js";
 
@@ -22,6 +23,7 @@ app.get("/api/health", (_request, response) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/tenants", tenantRouter);
+app.use("/api/admin", adminRouter);
 
 app.use((_request, response) => {
   response.status(404).json({ error: "NOT_FOUND", message: "Ruta no encontrada" });
