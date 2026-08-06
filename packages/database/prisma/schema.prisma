@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+model Tenant {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  name        String
+  status      TenantStatus @default(ACTIVE)
+  memberships Membership[]
+  categories  Category[]
+  products    Product[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  passwordHash String
+  memberships Membership[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Membership {
+  tenantId String
+  userId   String
+  role     MembershipRole @default(STAFF)
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@id([tenantId, userId])
+  @@index([userId])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  slug      String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([tenantId, slug])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  tenantId    String
+  categoryId  String?
+  sku         String
+  slug        String
+  name        String
+  description String?
+  priceInCents Int
+  stock       Int       @default(0)
+  active      Boolean   @default(true)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category    Category? @relation(fields: [tenantId, categoryId], references: [tenantId, id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([tenantId, sku])
+  @@unique([tenantId, slug])
+  @@index([tenantId, active])
+  @@index([tenantId, categoryId])
+}

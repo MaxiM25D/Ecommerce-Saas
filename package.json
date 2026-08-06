@@ -1,0 +1,23 @@
+{
+  "name": "lunek-saas",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @lunek/web",
+    "dev:api": "npm run dev --workspace @lunek/api",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace @lunek/database",
+    "db:migrate": "npm run db:migrate --workspace @lunek/database",
+    "db:studio": "npm run db:studio --workspace @lunek/database"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "packageManager": "npm@10.8.2"
+}

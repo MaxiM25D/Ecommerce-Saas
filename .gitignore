@@ -1,0 +1,18 @@
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
+*.log
+
+packages/database/src/generated/
+
+# Copia local del ecommerce original usada como referencia.
+/legacy/
