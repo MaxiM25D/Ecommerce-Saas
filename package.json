@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace @lunek/web",
-    "dev:api": "npm run dev --workspace @lunek/api",
+    "dev:api": "npm run build --workspace @lunek/database && npm run dev --workspace @lunek/api",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -17,6 +17,7 @@
     "db:seed": "prisma db seed --config packages/database/prisma.config.ts",
     "db:studio": "prisma studio --config packages/database/prisma.config.ts",
     "db:test:isolation": "npm run test:isolation --workspace @lunek/database",
+    "test:api": "npm run build --workspace @lunek/database && npm run test --workspace @lunek/api",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"

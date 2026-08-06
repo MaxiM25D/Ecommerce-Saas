@@ -32,3 +32,15 @@ Web: `http://localhost:3000`. API: `http://localhost:4000/api/health`.
 ## Aislamiento multi-tenant
 
 Las entidades comerciales incluyen `tenantId`, las restricciones únicas se componen con ese identificador y las relaciones entre productos, clientes, carritos y pedidos usan claves foráneas compuestas. La aplicación accede a los datos mediante repositorios ligados a un tenant. Las pruebas comprueban tanto el filtrado de consultas como el rechazo de relaciones cruzadas en PostgreSQL.
+
+## Autenticación y onboarding
+
+- `POST /api/auth/register`: crea usuario, tienda, membresía `OWNER` y sesión.
+- `POST /api/auth/login`: inicia sesión y permite seleccionar una membresía mediante `tenantSlug`.
+- `POST /api/auth/logout`: invalida la sesión actual.
+- `GET /api/auth/me`: devuelve el usuario y la tienda activos.
+- `POST /api/auth/select-tenant`: cambia de tienda usando un slug y verificando la membresía.
+- `GET /api/tenants/resolve/:slug`: resuelve públicamente una tienda activa.
+- `GET /api/tenants/context`: devuelve el tenant guardado en la sesión.
+
+La cookie de sesión es `httpOnly`, el token se almacena hasheado en PostgreSQL y el `tenantId` activo nunca se toma del body, query string o parámetros enviados por el frontend.
