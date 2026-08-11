@@ -59,3 +59,7 @@ El panel web está disponible en `http://localhost:3000/admin` y consume rutas p
 - `GET|PATCH /store`: identidad, contacto, moneda y configuración visual de la tienda.
 
 Los roles `OWNER` y `ADMIN` pueden modificar datos. `STAFF` tiene acceso de solo lectura. Todas las consultas y mutaciones toman el tenant desde la sesión del servidor.
+
+## Tienda pública
+
+Cada comercio activo tiene un storefront responsive en `/tienda/:slug`, con categorías, buscador, catálogo, detalle en `/tienda/:slug/producto/:productSlug` y carrito persistente por tienda. La API pública bajo `/api/storefront/:slug` expone únicamente productos activos y resuelve internamente el tenant mediante el slug.

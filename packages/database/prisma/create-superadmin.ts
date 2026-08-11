@@ -39,8 +39,34 @@ async function createSuperAdmin(): Promise<void> {
     await transaction.storeSettings.upsert({
       where: { tenantId: tenant.id },
       update: { primaryColor: "#B89B72", currency: "ARS" },
-      create: { tenantId: tenant.id, primaryColor: "#B89B72", currency: "ARS" },
+      create: {
+        tenantId: tenant.id,
+        description: "Productos seleccionados para acompañarte todos los días.",
+        primaryColor: "#B89B72",
+        currency: "ARS",
+      },
     });
+
+    if ((await transaction.product.count({ where: { tenantId: tenant.id } })) === 0) {
+      const category = await transaction.category.upsert({
+        where: { tenantId_slug: { tenantId: tenant.id, slug: "destacados" } },
+        update: { name: "Destacados" },
+        create: { tenantId: tenant.id, name: "Destacados", slug: "destacados" },
+      });
+      await transaction.product.create({
+        data: {
+          tenantId: tenant.id,
+          categoryId: category.id,
+          sku: "INF-DEMO-001",
+          slug: "producto-infinity",
+          name: "Producto Infinity",
+          description: "Producto de demostración para probar el catálogo, el detalle y el carrito.",
+          priceInCents: 4990000,
+          stock: 10,
+          active: true,
+        },
+      });
+    }
     await transaction.authSession.deleteMany({ where: { userId: user.id } });
 
     return { email: user.email, storeSlug: tenant.slug };

@@ -7,6 +7,7 @@ import { environment } from "./config.js";
 import { errorHandler } from "./errors.js";
 import { adminRouter } from "./modules/admin/routes.js";
 import { authRouter } from "./modules/auth/routes.js";
+import { storefrontRouter } from "./modules/storefront/routes.js";
 import { tenantRouter } from "./modules/tenants/routes.js";
 
 export const app = express();
@@ -23,6 +24,7 @@ app.get("/api/health", (_request, response) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/tenants", tenantRouter);
+app.use("/api/storefront", storefrontRouter);
 app.use("/api/admin", adminRouter);
 
 app.use((_request, response) => {

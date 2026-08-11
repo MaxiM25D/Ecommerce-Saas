@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { ApiError, apiRequest } from "@/lib/api";
 import { CategoriesView } from "./categories-view";
@@ -131,7 +132,7 @@ export function AdminPanel() {
               <h1 className="text-lg font-semibold">{navigation.find(({ id }) => id === tab)?.label}</h1>
             </div>
           </div>
-          <span className="hidden rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 sm:block">Tienda activa</span>
+          <Link className="rounded-full bg-stone-950 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-amber-700" href={`/tienda/${session.tenant.slug}`} target="_blank">Ver tienda ↗</Link>
         </header>
         <div className="p-5 sm:p-8 lg:p-10">{content}</div>
       </main>
