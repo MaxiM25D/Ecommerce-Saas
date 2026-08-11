@@ -3,6 +3,7 @@ import { Router } from "express";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { tenantSlug } from "../auth/schemas.js";
+import { assertSubscriptionWritable, monthStart } from "../saas/limits.js";
 import { checkoutSchema } from "./schemas.js";
 
 export const storefrontRouter = Router();
@@ -89,6 +90,19 @@ storefrontRouter.post("/:slug/orders", async (request, response) => {
     if (!tenant) throw new HttpError(404, "Tienda no encontrada");
 
     await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenant.id} FOR UPDATE`;
+
+    const subscription = await transaction.subscription.findUnique({
+      where: { tenantId: tenant.id },
+      include: { plan: true },
+    });
+    if (!subscription) throw new HttpError(409, "La tienda no tiene un plan asignado");
+    assertSubscriptionWritable(subscription.status);
+    const monthlyOrders = await transaction.order.count({
+      where: { tenantId: tenant.id, createdAt: { gte: monthStart() } },
+    });
+    if (monthlyOrders >= subscription.plan.maxOrdersPerMonth) {
+      throw new HttpError(409, `La tienda alcanzó el límite mensual de ${subscription.plan.maxOrdersPerMonth} pedidos`);
+    }
 
     const productIds = input.items.map(({ productId }) => productId);
     const products = await transaction.product.findMany({

@@ -58,6 +58,7 @@ async function seed(): Promise<void> {
       name: "InfinityShop",
       slug: "infinityshop-seed",
       memberships: { create: { userId: infinityShopOwner.id, role: "OWNER" } },
+      subscription: { create: { planId: "plan_free", status: "ACTIVE" } },
     },
   });
   const infinityShopCategory = await database.category.create({
@@ -123,6 +124,7 @@ async function seed(): Promise<void> {
       name: "Tienda Norte",
       slug: "norte-demo",
       memberships: { create: { userId: norteOwner.id, role: "OWNER" } },
+      subscription: { create: { planId: "plan_free", status: "ACTIVE" } },
     },
   });
   const norteCategory = await database.category.create({

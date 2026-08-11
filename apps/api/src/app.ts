@@ -8,6 +8,7 @@ import { errorHandler } from "./errors.js";
 import { adminRouter } from "./modules/admin/routes.js";
 import { authRouter } from "./modules/auth/routes.js";
 import { storefrontRouter } from "./modules/storefront/routes.js";
+import { platformRouter } from "./modules/platform/routes.js";
 import { tenantRouter } from "./modules/tenants/routes.js";
 
 export const app = express();
@@ -26,6 +27,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/tenants", tenantRouter);
 app.use("/api/storefront", storefrontRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/platform", platformRouter);
 
 app.use((_request, response) => {
   response.status(404).json({ error: "NOT_FOUND", message: "Ruta no encontrada" });

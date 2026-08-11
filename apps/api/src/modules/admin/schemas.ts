@@ -69,3 +69,12 @@ export const updateOrderSchema = z
   })
   .strict()
   .refine((input) => Object.keys(input).length > 0, "Enviá al menos un estado");
+
+export const addMemberSchema = z.object({
+  email: z.email().trim().toLowerCase().max(254),
+  role: z.enum(["ADMIN", "STAFF"]),
+}).strict();
+
+export const updateMemberSchema = z.object({
+  role: z.enum(["ADMIN", "STAFF"]),
+}).strict();

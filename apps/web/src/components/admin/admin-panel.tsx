@@ -9,12 +9,14 @@ import { CategoriesView } from "./categories-view";
 import { DashboardView } from "./dashboard-view";
 import { ProductsView } from "./products-view";
 import { OrdersView } from "./orders-view";
+import { PlanView } from "./plan-view";
 import { StoreView } from "./store-view";
+import { TeamView } from "./team-view";
 import type { Role } from "./types";
 
-type Tab = "dashboard" | "categories" | "products" | "orders" | "store";
+type Tab = "dashboard" | "categories" | "products" | "orders" | "team" | "plan" | "store";
 type Session = {
-  user: { firstName: string; lastName: string; email: string };
+  user: { firstName: string; lastName: string; email: string; platformRole: "USER" | "SUPERADMIN" };
   tenant: { name: string; slug: string };
   role: Role;
 };
@@ -24,6 +26,8 @@ const navigation: Array<{ id: Tab; label: string; symbol: string }> = [
   { id: "categories", label: "Categorías", symbol: "◇" },
   { id: "products", label: "Productos", symbol: "▦" },
   { id: "orders", label: "Pedidos", symbol: "◎" },
+  { id: "team", label: "Equipo", symbol: "♙" },
+  { id: "plan", label: "Plan y uso", symbol: "◫" },
   { id: "store", label: "Mi tienda", symbol: "◉" },
 ];
 
@@ -65,6 +69,8 @@ export function AdminPanel() {
     categories: <CategoriesView role={session.role} />,
     products: <ProductsView role={session.role} />,
     orders: <OrdersView role={session.role} />,
+    team: <TeamView role={session.role} />,
+    plan: <PlanView />,
     store: <StoreView role={session.role} onStoreUpdated={(name) => setSession({ ...session, tenant: { ...session.tenant, name } })} />,
   }[tab];
 
@@ -109,6 +115,7 @@ export function AdminPanel() {
         </nav>
 
         <div className="mt-auto border-t border-white/10 pt-5">
+          {session.user.platformRole === "SUPERADMIN" && <Link className="mb-4 block w-full rounded-xl bg-[#b89b72] px-4 py-2.5 text-center text-sm font-semibold text-white" href="/platform">Panel SaaS</Link>}
           <div className="mb-4 flex items-center gap-3 px-2">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-stone-700 text-xs font-bold">
               {session.user.firstName[0]}{session.user.lastName[0]}

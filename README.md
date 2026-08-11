@@ -31,7 +31,7 @@ Web: `http://localhost:3000`. API: `http://localhost:4000/api/health`.
 
 ## Usuario administrador local
 
-Configurá `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD` y `SUPERADMIN_STORE_SLUG` en `.env` y ejecutá `npm run db:superadmin`. El comando crea o actualiza una cuenta `OWNER`, el rol con permisos máximos disponible actualmente en el panel, y su tienda de prueba. La contraseña local nunca debe subirse a Git.
+Configurá `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD` y `SUPERADMIN_STORE_SLUG` en `.env` y ejecutá `npm run db:superadmin`. El comando crea o actualiza una cuenta `SUPERADMIN` de plataforma, le asigna una tienda de prueba como `OWNER` y activa el plan Pro. La contraseña local nunca debe subirse a Git.
 
 ## Aislamiento multi-tenant
 
@@ -67,3 +67,7 @@ Cada comercio activo tiene un storefront responsive en `/tienda/:slug`, con cate
 ## Pedidos y checkout
 
 El checkout público está disponible en `/tienda/:slug/checkout` y crea pedidos con transferencia bancaria. El servidor vuelve a consultar precios y stock, bloquea la tienda durante la operación, descuenta existencias de forma atómica y guarda una copia del nombre, SKU y precio de cada producto. El panel permite aprobar o rechazar pagos, avanzar el pedido por sus estados y cancelar reponiendo el stock una sola vez. El modelo incluye `MERCADO_PAGO` como método futuro, pero todavía no realiza cobros mediante esa plataforma.
+
+## Funciones SaaS
+
+Cada tenant tiene una suscripción y uno de los planes `FREE`, `STARTER` o `PRO`. Los límites de productos, miembros y pedidos mensuales se verifican dentro de transacciones del servidor. Los estados `TRIALING` y `ACTIVE` permiten operar; `PAST_DUE` y `CANCELED` bloquean mutaciones. El propietario administra su equipo con roles `OWNER`, `ADMIN` y `STAFF`, mientras que un `SUPERADMIN` global puede acceder a `/platform` para cambiar planes, estados de suscripción y activar o suspender tenants.

@@ -43,6 +43,7 @@ authRouter.post("/register", authLimiter, async (request, response) => {
           name: input.storeName,
           slug: input.storeSlug,
           memberships: { create: { userId: user.id, role: "OWNER" } },
+          subscription: { create: { planId: "plan_free", status: "ACTIVE" } },
         },
       });
 
@@ -56,6 +57,7 @@ authRouter.post("/register", authLimiter, async (request, response) => {
         email: result.user.email,
         firstName: result.user.firstName,
         lastName: result.user.lastName,
+        platformRole: result.user.platformRole,
       },
       tenant: { slug: result.tenant.slug, name: result.tenant.name },
       role: "OWNER",
@@ -90,7 +92,7 @@ authRouter.post("/login", authLimiter, async (request, response) => {
 
   await createSession(response, user.id, membership.tenantId);
   response.json({
-    user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
+    user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, platformRole: user.platformRole },
     tenant: { slug: membership.tenant.slug, name: membership.tenant.name },
     role: membership.role,
   });

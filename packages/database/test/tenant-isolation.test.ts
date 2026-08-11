@@ -68,8 +68,12 @@ test("PostgreSQL rechaza relaciones que mezclan tenants", async () => {
 
 test("email de cliente y número de pedido pueden repetirse en tiendas distintas", async () => {
   const [customers, orders] = await Promise.all([
-    database.customer.findMany({ where: { email: "cliente@example.com" } }),
-    database.order.findMany({ where: { number: 1 } }),
+    database.customer.findMany({
+      where: { email: "cliente@example.com", tenant: { slug: { in: ["infinityshop-seed", "norte-demo"] } } },
+    }),
+    database.order.findMany({
+      where: { number: 1, tenant: { slug: { in: ["infinityshop-seed", "norte-demo"] } } },
+    }),
   ]);
 
   assert.equal(customers.length, 2);

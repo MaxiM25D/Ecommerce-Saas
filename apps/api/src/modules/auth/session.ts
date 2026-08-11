@@ -92,6 +92,7 @@ export async function requireSession(
         email: session.user.email,
         firstName: session.user.firstName,
         lastName: session.user.lastName,
+        platformRole: session.user.platformRole,
       },
       tenant: {
         id: session.activeTenant.id,

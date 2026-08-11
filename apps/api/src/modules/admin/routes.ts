@@ -3,20 +3,31 @@ import { Router } from "express";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { getAuthContext, requireRoles, requireSession } from "../auth/session.js";
+import { assertSubscriptionWritable, getSubscriptionContext, monthStart, requireWritableSubscription } from "../saas/limits.js";
 import {
+  addMemberSchema,
   createCategorySchema,
   createProductSchema,
   resourceIdSchema,
   updateCategorySchema,
   updateProductSchema,
   updateOrderSchema,
+  updateMemberSchema,
   updateStoreSchema,
 } from "./schemas.js";
 
 export const adminRouter = Router();
 const canManage = requireRoles("OWNER", "ADMIN");
+const canManageTeam = requireRoles("OWNER");
 
 adminRouter.use(requireSession);
+adminRouter.use((request, response, next) => {
+  if (["POST", "PATCH", "DELETE"].includes(request.method)) {
+    void requireWritableSubscription(request, response, next);
+    return;
+  }
+  next();
+});
 
 adminRouter.get("/dashboard", async (request, response) => {
   const { tenant } = getAuthContext(request);
@@ -145,9 +156,22 @@ adminRouter.post("/products", canManage, async (request, response) => {
   await ensureCategoryBelongsToTenant(tenant.id, input.categoryId);
 
   try {
-    const product = await database.product.create({
-      data: { ...input, categoryId: input.categoryId ?? null, tenantId: tenant.id },
-      include: { category: { select: { id: true, name: true, slug: true } } },
+    const product = await database.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenant.id} FOR UPDATE`;
+      const subscription = await transaction.subscription.findUnique({
+        where: { tenantId: tenant.id },
+        include: { plan: true },
+      });
+      if (!subscription) throw new HttpError(409, "La tienda no tiene un plan asignado");
+      assertSubscriptionWritable(subscription.status);
+      const productCount = await transaction.product.count({ where: { tenantId: tenant.id } });
+      if (productCount >= subscription.plan.maxProducts) {
+        throw new HttpError(409, `Alcanzaste el límite de ${subscription.plan.maxProducts} productos del plan ${subscription.plan.name}`);
+      }
+      return transaction.product.create({
+        data: { ...input, categoryId: input.categoryId ?? null, tenantId: tenant.id },
+        include: { category: { select: { id: true, name: true, slug: true } } },
+      });
     });
     response.status(201).json({ product });
   } catch (error) {
@@ -285,6 +309,83 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
   });
 
   response.json({ order });
+});
+
+adminRouter.get("/subscription", async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const [subscription, products, members, monthlyOrders, plans] = await Promise.all([
+    getSubscriptionContext(tenant.id),
+    database.product.count({ where: { tenantId: tenant.id } }),
+    database.membership.count({ where: { tenantId: tenant.id } }),
+    database.order.count({ where: { tenantId: tenant.id, createdAt: { gte: monthStart() } } }),
+    database.plan.findMany({ where: { active: true }, orderBy: { priceInCents: "asc" } }),
+  ]);
+  response.json({
+    subscription,
+    usage: { products, members, monthlyOrders },
+    plans,
+  });
+});
+
+adminRouter.get("/team", async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const members = await database.membership.findMany({
+    where: { tenantId: tenant.id },
+    orderBy: { createdAt: "asc" },
+    include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+  });
+  response.json({ members });
+});
+
+adminRouter.post("/team", canManageTeam, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const input = addMemberSchema.parse(request.body);
+  const member = await database.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenant.id} FOR UPDATE`;
+    const subscription = await transaction.subscription.findUnique({ where: { tenantId: tenant.id }, include: { plan: true } });
+    if (!subscription) throw new HttpError(409, "La tienda no tiene un plan asignado");
+    const memberCount = await transaction.membership.count({ where: { tenantId: tenant.id } });
+    if (memberCount >= subscription.plan.maxMembers) {
+      throw new HttpError(409, `Alcanzaste el límite de ${subscription.plan.maxMembers} miembros del plan ${subscription.plan.name}`);
+    }
+    const user = await transaction.user.findUnique({ where: { email: input.email } });
+    if (!user) throw new HttpError(404, "No existe un usuario registrado con ese email");
+    const existing = await transaction.membership.findUnique({
+      where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
+    });
+    if (existing) throw new HttpError(409, "El usuario ya pertenece a esta tienda");
+    return transaction.membership.create({
+      data: { tenantId: tenant.id, userId: user.id, role: input.role },
+      include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+    });
+  });
+  response.status(201).json({ member });
+});
+
+adminRouter.patch("/team/:userId", canManageTeam, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const userId = resourceIdSchema.parse(request.params.userId);
+  const input = updateMemberSchema.parse(request.body);
+  const existing = await database.membership.findUnique({ where: { tenantId_userId: { tenantId: tenant.id, userId } } });
+  if (!existing) throw new HttpError(404, "Miembro no encontrado");
+  if (existing.role === "OWNER") throw new HttpError(409, "No se puede modificar el rol del propietario");
+  const member = await database.membership.update({
+    where: { tenantId_userId: { tenantId: tenant.id, userId } },
+    data: { role: input.role },
+    include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+  });
+  response.json({ member });
+});
+
+adminRouter.delete("/team/:userId", canManageTeam, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const userId = resourceIdSchema.parse(request.params.userId);
+  const existing = await database.membership.findUnique({ where: { tenantId_userId: { tenantId: tenant.id, userId } } });
+  if (!existing) throw new HttpError(404, "Miembro no encontrado");
+  if (existing.role === "OWNER") throw new HttpError(409, "No se puede eliminar al propietario");
+  await database.membership.delete({ where: { tenantId_userId: { tenantId: tenant.id, userId } } });
+  await database.authSession.deleteMany({ where: { userId, activeTenantId: tenant.id } });
+  response.status(204).send();
 });
 
 adminRouter.get("/store", async (request, response) => {

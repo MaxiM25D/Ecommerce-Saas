@@ -22,8 +22,8 @@ async function createSuperAdmin(): Promise<void> {
   const result = await database.$transaction(async (transaction) => {
     const user = await transaction.user.upsert({
       where: { email },
-      update: { passwordHash, firstName: "Super", lastName: "Admin" },
-      create: { email, passwordHash, firstName: "Super", lastName: "Admin" },
+      update: { passwordHash, firstName: "Super", lastName: "Admin", platformRole: "SUPERADMIN" },
+      create: { email, passwordHash, firstName: "Super", lastName: "Admin", platformRole: "SUPERADMIN" },
     });
     const tenant = await transaction.tenant.upsert({
       where: { slug: storeSlug },
@@ -35,6 +35,11 @@ async function createSuperAdmin(): Promise<void> {
       where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
       update: { role: "OWNER" },
       create: { tenantId: tenant.id, userId: user.id, role: "OWNER" },
+    });
+    await transaction.subscription.upsert({
+      where: { tenantId: tenant.id },
+      update: { planId: "plan_pro", status: "ACTIVE" },
+      create: { tenantId: tenant.id, planId: "plan_pro", status: "ACTIVE", currentPeriodFrom: new Date() },
     });
     const settings = await transaction.storeSettings.upsert({
       where: { tenantId: tenant.id },
@@ -82,7 +87,7 @@ async function createSuperAdmin(): Promise<void> {
     return { email: user.email, storeSlug: tenant.slug };
   });
 
-  console.log(`Superadmin local creado: ${result.email} / tienda: ${result.storeSlug} / rol: OWNER`);
+  console.log(`Superadmin local creado: ${result.email} / tienda: ${result.storeSlug} / plataforma: SUPERADMIN / tienda: OWNER`);
 }
 
 try {
