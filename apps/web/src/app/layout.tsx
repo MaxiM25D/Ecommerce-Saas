@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LUNEK Commerce",
+  title: "InfinityShop",
   description: "Plataforma ecommerce multi-tenant para gestionar y hacer crecer tu tienda.",
 };
 

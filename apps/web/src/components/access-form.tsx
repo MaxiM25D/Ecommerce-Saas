@@ -70,7 +70,7 @@ export function AccessForm() {
       </div>
 
       <div className="mb-7">
-        <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">LUNEK Commerce</p>
+        <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">InfinityShop</p>
         <h1 className="text-3xl font-semibold tracking-tight text-stone-950">
           {mode === "login" ? "Volvé a tu negocio" : "Abrí tu tienda digital"}
         </h1>
@@ -92,11 +92,11 @@ export function AccessForm() {
         <Field label="Contraseña" name="password" placeholder="Mínimo 10 caracteres" required type="password" />
         {mode === "register" ? (
           <>
-            <Field label="Nombre de la tienda" name="storeName" placeholder="LUNEK" required />
-            <Field label="Slug de la tienda" name="storeSlug" placeholder="lunek" required />
+            <Field label="Nombre de la tienda" name="storeName" placeholder="Mi tienda" required />
+            <Field label="Slug de la tienda" name="storeSlug" placeholder="mi-tienda" required />
           </>
         ) : (
-          <Field label="Slug de tienda (opcional)" name="tenantSlug" placeholder="lunek" />
+          <Field label="Slug de tienda (opcional)" name="tenantSlug" placeholder="mi-tienda" />
         )}
 
         {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}

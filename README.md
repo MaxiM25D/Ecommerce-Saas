@@ -1,6 +1,6 @@
-# LUNEK SaaS
+# InfinityShop
 
-Nueva base multi-tenant para LUNEK. El ecommerce original se conserva sin cambios en `legacy/lunek-app` y se usa solamente como referencia durante la migración.
+Plataforma ecommerce multi-tenant. El ecommerce original de LUNEK se conserva sin cambios en `legacy/lunek-app` y se usa solamente como referencia durante la migración.
 
 ## Estructura
 
@@ -28,6 +28,10 @@ Nueva base multi-tenant para LUNEK. El ecommerce original se conserva sin cambio
 8. En terminales separadas, ejecutar `npm run dev:web` y `npm run dev:api`.
 
 Web: `http://localhost:3000`. API: `http://localhost:4000/api/health`.
+
+## Usuario administrador local
+
+Configurá `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD` y `SUPERADMIN_STORE_SLUG` en `.env` y ejecutá `npm run db:superadmin`. El comando crea o actualiza una cuenta `OWNER`, el rol con permisos máximos disponible actualmente en el panel, y su tienda de prueba. La contraseña local nunca debe subirse a Git.
 
 ## Aislamiento multi-tenant
 

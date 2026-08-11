@@ -18,7 +18,7 @@ app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 
 app.get("/api/health", (_request, response) => {
-  response.json({ status: "ok", service: "lunek-api" });
+  response.json({ status: "ok", service: "infinityshop-api" });
 });
 
 app.use("/api/auth", authRouter);

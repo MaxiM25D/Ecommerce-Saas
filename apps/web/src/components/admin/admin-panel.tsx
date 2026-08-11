@@ -71,9 +71,9 @@ export function AdminPanel() {
       >
         <div className="flex items-center justify-between px-2 py-3">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#b89b72] font-serif text-xl">L</span>
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#b89b72] font-serif text-xl">∞</span>
             <div>
-              <p className="font-semibold tracking-tight">LUNEK</p>
+              <p className="font-semibold tracking-tight">InfinityShop</p>
               <p className="text-[10px] uppercase tracking-[0.18em] text-stone-400">Commerce OS</p>
             </div>
           </div>

@@ -54,7 +54,7 @@ test("el registro crea usuario, tienda, membresía OWNER y sesión", async () =>
   assert.equal(response.status, 201);
   assert.equal(response.body.tenant.slug, alphaSlug);
   assert.equal(response.body.role, "OWNER");
-  assert.match(response.headers["set-cookie"]?.[0] ?? "", /lunek_session=.*HttpOnly/);
+  assert.match(response.headers["set-cookie"]?.[0] ?? "", /infinityshop_session=.*HttpOnly/);
 
   const membership = await database.membership.findFirstOrThrow({
     where: { user: { email: alphaEmail }, tenant: { slug: alphaSlug } },

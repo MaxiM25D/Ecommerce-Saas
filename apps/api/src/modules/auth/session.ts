@@ -6,7 +6,7 @@ import { environment } from "../../config.js";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 
-export const sessionCookieName = "lunek_session";
+export const sessionCookieName = "infinityshop_session";
 
 function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");

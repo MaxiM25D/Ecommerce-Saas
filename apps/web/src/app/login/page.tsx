@@ -10,8 +10,8 @@ export default function LoginPage() {
       <div className="relative z-10 grid w-full max-w-5xl items-center gap-12 lg:grid-cols-[1fr_28rem]">
         <section className="hidden lg:block">
           <Link className="mb-16 inline-flex items-center gap-3 text-sm font-bold text-stone-800" href="/">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-stone-950 text-white">L</span>
-            LUNEK Commerce
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-stone-950 text-white">∞</span>
+            InfinityShop
           </Link>
           <p className="max-w-lg text-5xl font-semibold leading-[1.08] tracking-tight text-stone-950">
             Tu operación clara. Tu tienda lista para crecer.

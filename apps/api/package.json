@@ -1,5 +1,5 @@
 {
-  "name": "@lunek/api",
+  "name": "@infinityshop/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "tsx --test test/auth-tenants.test.ts test/admin-panel.test.ts"
   },
   "dependencies": {
-    "@lunek/database": "*",
+    "@infinityshop/database": "*",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

@@ -1,7 +1,7 @@
 import { createDatabaseClient } from "../src/client.js";
 
 const database = createDatabaseClient();
-const seedSlugs = ["lunek", "norte-demo"];
+const seedSlugs = ["lunek", "infinityshop-seed", "norte-demo"];
 
 async function clearPreviousSeed(): Promise<void> {
   const tenants = await database.tenant.findMany({
@@ -30,15 +30,15 @@ async function clearPreviousSeed(): Promise<void> {
 async function seed(): Promise<void> {
   await clearPreviousSeed();
 
-  const [lunekOwner, norteOwner] = await Promise.all([
+  const [infinityShopOwner, norteOwner] = await Promise.all([
     database.user.upsert({
-      where: { email: "owner@lunek.test" },
-      update: { firstName: "Maxi", lastName: "LUNEK" },
+      where: { email: "owner@infinityshop.test" },
+      update: { firstName: "Maxi", lastName: "InfinityShop" },
       create: {
-        email: "owner@lunek.test",
+        email: "owner@infinityshop.test",
         passwordHash: "seed-only-not-a-real-password-hash",
         firstName: "Maxi",
-        lastName: "LUNEK",
+        lastName: "InfinityShop",
       },
     }),
     database.user.upsert({
@@ -53,68 +53,68 @@ async function seed(): Promise<void> {
     }),
   ]);
 
-  const lunek = await database.tenant.create({
+  const infinityShop = await database.tenant.create({
     data: {
-      name: "LUNEK",
-      slug: "lunek",
-      memberships: { create: { userId: lunekOwner.id, role: "OWNER" } },
+      name: "InfinityShop",
+      slug: "infinityshop-seed",
+      memberships: { create: { userId: infinityShopOwner.id, role: "OWNER" } },
     },
   });
-  const lunekCategory = await database.category.create({
-    data: { tenantId: lunek.id, name: "Cinturones", slug: "cinturones" },
+  const infinityShopCategory = await database.category.create({
+    data: { tenantId: infinityShop.id, name: "Cinturones", slug: "cinturones" },
   });
-  const lunekProduct = await database.product.create({
+  const infinityShopProduct = await database.product.create({
     data: {
-      tenantId: lunek.id,
-      categoryId: lunekCategory.id,
-      sku: "LUN-CIN-001",
+      tenantId: infinityShop.id,
+      categoryId: infinityShopCategory.id,
+      sku: "INF-CIN-001",
       slug: "cinturon-toro",
       name: "Cinturón Toro",
       priceInCents: 4500000,
       stock: 12,
     },
   });
-  const lunekCustomer = await database.customer.create({
+  const infinityShopCustomer = await database.customer.create({
     data: {
-      tenantId: lunek.id,
+      tenantId: infinityShop.id,
       email: "cliente@example.com",
       firstName: "Cliente",
-      lastName: "LUNEK",
+      lastName: "InfinityShop",
     },
   });
-  const lunekCart = await database.cart.create({
-    data: { tenantId: lunek.id, customerId: lunekCustomer.id },
+  const infinityShopCart = await database.cart.create({
+    data: { tenantId: infinityShop.id, customerId: infinityShopCustomer.id },
   });
   await database.cartItem.create({
     data: {
-      tenantId: lunek.id,
-      cartId: lunekCart.id,
-      productId: lunekProduct.id,
+      tenantId: infinityShop.id,
+      cartId: infinityShopCart.id,
+      productId: infinityShopProduct.id,
       quantity: 1,
-      unitPriceInCents: lunekProduct.priceInCents,
+      unitPriceInCents: infinityShopProduct.priceInCents,
     },
   });
-  const lunekOrder = await database.order.create({
+  const infinityShopOrder = await database.order.create({
     data: {
-      tenantId: lunek.id,
-      customerId: lunekCustomer.id,
+      tenantId: infinityShop.id,
+      customerId: infinityShopCustomer.id,
       number: 1,
-      customerEmail: lunekCustomer.email,
-      customerName: `${lunekCustomer.firstName} ${lunekCustomer.lastName}`,
-      subtotalInCents: lunekProduct.priceInCents,
-      totalInCents: lunekProduct.priceInCents,
+      customerEmail: infinityShopCustomer.email,
+      customerName: `${infinityShopCustomer.firstName} ${infinityShopCustomer.lastName}`,
+      subtotalInCents: infinityShopProduct.priceInCents,
+      totalInCents: infinityShopProduct.priceInCents,
     },
   });
   await database.orderItem.create({
     data: {
-      tenantId: lunek.id,
-      orderId: lunekOrder.id,
-      productId: lunekProduct.id,
-      sku: lunekProduct.sku,
-      productName: lunekProduct.name,
+      tenantId: infinityShop.id,
+      orderId: infinityShopOrder.id,
+      productId: infinityShopProduct.id,
+      sku: infinityShopProduct.sku,
+      productName: infinityShopProduct.name,
       quantity: 1,
-      unitPriceInCents: lunekProduct.priceInCents,
-      subtotalInCents: lunekProduct.priceInCents,
+      unitPriceInCents: infinityShopProduct.priceInCents,
+      subtotalInCents: infinityShopProduct.priceInCents,
     },
   });
 
@@ -183,7 +183,7 @@ async function seed(): Promise<void> {
     },
   });
 
-  console.log("Seed creado: LUNEK y Tienda Norte, con datos aislados por tenant.");
+  console.log("Seed creado: InfinityShop y Tienda Norte, con datos aislados por tenant.");
 }
 
 try {

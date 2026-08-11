@@ -1,5 +1,5 @@
 {
-  "name": "lunek-saas",
+  "name": "infinityshop",
   "version": "0.1.0",
   "private": true,
   "workspaces": [
@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:web": "npm run dev --workspace @lunek/web",
-    "dev:api": "npm run build --workspace @lunek/database && npm run dev --workspace @lunek/api",
+    "dev:web": "npm run dev --workspace @infinityshop/web",
+    "dev:api": "npm run build --workspace @infinityshop/database && npm run dev --workspace @infinityshop/api",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -16,8 +16,9 @@
     "db:migrate": "prisma migrate dev --config packages/database/prisma.config.ts",
     "db:seed": "prisma db seed --config packages/database/prisma.config.ts",
     "db:studio": "prisma studio --config packages/database/prisma.config.ts",
-    "db:test:isolation": "npm run test:isolation --workspace @lunek/database",
-    "test:api": "npm run build --workspace @lunek/database && npm run test --workspace @lunek/api",
+    "db:test:isolation": "npm run test:isolation --workspace @infinityshop/database",
+    "db:superadmin": "npm run db:superadmin --workspace @infinityshop/database",
+    "test:api": "npm run build --workspace @infinityshop/database && npm run test --workspace @infinityshop/api",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"
