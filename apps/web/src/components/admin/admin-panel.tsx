@@ -8,10 +8,11 @@ import { ApiError, apiRequest } from "@/lib/api";
 import { CategoriesView } from "./categories-view";
 import { DashboardView } from "./dashboard-view";
 import { ProductsView } from "./products-view";
+import { OrdersView } from "./orders-view";
 import { StoreView } from "./store-view";
 import type { Role } from "./types";
 
-type Tab = "dashboard" | "categories" | "products" | "store";
+type Tab = "dashboard" | "categories" | "products" | "orders" | "store";
 type Session = {
   user: { firstName: string; lastName: string; email: string };
   tenant: { name: string; slug: string };
@@ -22,6 +23,7 @@ const navigation: Array<{ id: Tab; label: string; symbol: string }> = [
   { id: "dashboard", label: "Resumen", symbol: "⌁" },
   { id: "categories", label: "Categorías", symbol: "◇" },
   { id: "products", label: "Productos", symbol: "▦" },
+  { id: "orders", label: "Pedidos", symbol: "◎" },
   { id: "store", label: "Mi tienda", symbol: "◉" },
 ];
 
@@ -62,6 +64,7 @@ export function AdminPanel() {
     dashboard: <DashboardView />,
     categories: <CategoriesView role={session.role} />,
     products: <ProductsView role={session.role} />,
+    orders: <OrdersView role={session.role} />,
     store: <StoreView role={session.role} onStoreUpdated={(name) => setSession({ ...session, tenant: { ...session.tenant, name } })} />,
   }[tab];
 

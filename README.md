@@ -63,3 +63,7 @@ Los roles `OWNER` y `ADMIN` pueden modificar datos. `STAFF` tiene acceso de solo
 ## Tienda pública
 
 Cada comercio activo tiene un storefront responsive en `/tienda/:slug`, con categorías, buscador, catálogo, detalle en `/tienda/:slug/producto/:productSlug` y carrito persistente por tienda. La API pública bajo `/api/storefront/:slug` expone únicamente productos activos y resuelve internamente el tenant mediante el slug.
+
+## Pedidos y checkout
+
+El checkout público está disponible en `/tienda/:slug/checkout` y crea pedidos con transferencia bancaria. El servidor vuelve a consultar precios y stock, bloquea la tienda durante la operación, descuenta existencias de forma atómica y guarda una copia del nombre, SKU y precio de cada producto. El panel permite aprobar o rechazar pagos, avanzar el pedido por sus estados y cancelar reponiendo el stock una sola vez. El modelo incluye `MERCADO_PAGO` como método futuro, pero todavía no realiza cobros mediante esa plataforma.

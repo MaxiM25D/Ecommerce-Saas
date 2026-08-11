@@ -9,6 +9,7 @@ import {
   resourceIdSchema,
   updateCategorySchema,
   updateProductSchema,
+  updateOrderSchema,
   updateStoreSchema,
 } from "./schemas.js";
 
@@ -195,6 +196,95 @@ adminRouter.delete("/products/:id", canManage, async (request, response) => {
     }
     throw error;
   }
+});
+
+adminRouter.get("/orders", async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const orders = await database.order.findMany({
+    where: { tenantId: tenant.id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      paymentStatus: true,
+      paymentMethod: true,
+      customerName: true,
+      customerEmail: true,
+      totalInCents: true,
+      currency: true,
+      createdAt: true,
+      _count: { select: { items: true } },
+    },
+  });
+  response.json({ orders });
+});
+
+adminRouter.get("/orders/:id", async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const id = resourceIdSchema.parse(request.params.id);
+  const order = await database.order.findFirst({
+    where: { id, tenantId: tenant.id },
+    include: { items: { orderBy: { createdAt: "asc" } } },
+  });
+  if (!order) throw new HttpError(404, "Pedido no encontrado");
+  response.json({ order });
+});
+
+const orderTransitions: Record<string, string[]> = {
+  PENDING: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["PREPARING", "CANCELLED"],
+  PREPARING: ["SHIPPED", "CANCELLED"],
+  SHIPPED: ["DELIVERED"],
+  DELIVERED: [],
+  CANCELLED: [],
+};
+const paymentTransitions: Record<string, string[]> = {
+  PENDING: ["APPROVED", "REJECTED"],
+  APPROVED: ["REFUNDED"],
+  REJECTED: ["PENDING"],
+  REFUNDED: [],
+};
+
+adminRouter.patch("/orders/:id", canManage, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const id = resourceIdSchema.parse(request.params.id);
+  const input = updateOrderSchema.parse(request.body);
+
+  const order = await database.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} AND "tenantId" = ${tenant.id} FOR UPDATE`;
+    const current = await transaction.order.findFirst({
+      where: { id, tenantId: tenant.id },
+      include: { items: { select: { productId: true, quantity: true } } },
+    });
+    if (!current) throw new HttpError(404, "Pedido no encontrado");
+
+    if (input.status && input.status !== current.status && !orderTransitions[current.status]!.includes(input.status)) {
+      throw new HttpError(409, `No se puede cambiar un pedido de ${current.status} a ${input.status}`);
+    }
+    if (input.paymentStatus && input.paymentStatus !== current.paymentStatus && !paymentTransitions[current.paymentStatus]!.includes(input.paymentStatus)) {
+      throw new HttpError(409, `No se puede cambiar el pago de ${current.paymentStatus} a ${input.paymentStatus}`);
+    }
+
+    if (input.status === "CANCELLED" && current.status !== "CANCELLED") {
+      for (const item of current.items) {
+        if (item.productId) {
+          await transaction.product.updateMany({
+            where: { id: item.productId, tenantId: tenant.id },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+      }
+    }
+
+    return transaction.order.update({
+      where: { id },
+      data: input,
+      include: { items: { orderBy: { createdAt: "asc" } } },
+    });
+  });
+
+  response.json({ order });
 });
 
 adminRouter.get("/store", async (request, response) => {

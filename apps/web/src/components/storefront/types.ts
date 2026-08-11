@@ -34,3 +34,20 @@ export type PublicStore = {
 };
 
 export type CartItem = StorefrontProduct & { quantity: number };
+
+export type CheckoutResult = {
+  order: {
+    id: string;
+    number: number;
+    status: string;
+    paymentStatus: string;
+    totalInCents: number;
+    currency: string;
+  };
+  payment: {
+    method: "BANK_TRANSFER";
+    bankName: string | null;
+    alias: string | null;
+    holder: string | null;
+  };
+};

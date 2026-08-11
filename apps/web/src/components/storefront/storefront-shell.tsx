@@ -66,12 +66,12 @@ function StorefrontChrome({ store, children }: { store: PublicStore; children: R
         </div>
       </footer>
 
-      <CartDrawer currency={store.settings?.currency ?? "ARS"} onClose={() => setCartOpen(false)} open={cartOpen} primaryColor={primaryColor} />
+      <CartDrawer currency={store.settings?.currency ?? "ARS"} onClose={() => setCartOpen(false)} open={cartOpen} primaryColor={primaryColor} storeSlug={store.slug} />
     </div>
   );
 }
 
-function CartDrawer({ currency, onClose, open, primaryColor }: { currency: string; onClose: () => void; open: boolean; primaryColor: string }) {
+function CartDrawer({ currency, onClose, open, primaryColor, storeSlug }: { currency: string; onClose: () => void; open: boolean; primaryColor: string; storeSlug: string }) {
   const { items, subtotalInCents, removeItem, setQuantity, clear } = useCart();
 
   return (
@@ -110,7 +110,7 @@ function CartDrawer({ currency, onClose, open, primaryColor }: { currency: strin
             </div>
             <div className="border-t border-stone-100 px-5 py-5 sm:px-7">
               <div className="mb-5 flex items-center justify-between"><span className="text-sm text-stone-500">Subtotal</span><strong className="text-xl">{formatMoney(subtotalInCents, currency)}</strong></div>
-              <button className="w-full rounded-full px-5 py-3.5 text-sm font-bold text-white" style={{ backgroundColor: primaryColor }} type="button">Finalizar compra — próximamente</button>
+              <Link className="block w-full rounded-full px-5 py-3.5 text-center text-sm font-bold text-white" href={`/tienda/${storeSlug}/checkout`} onClick={onClose} style={{ backgroundColor: primaryColor }}>Finalizar compra</Link>
               <button className="mt-3 w-full py-2 text-xs font-semibold text-stone-400" onClick={clear} type="button">Vaciar carrito</button>
             </div>
           </>

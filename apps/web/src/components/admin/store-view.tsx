@@ -35,6 +35,9 @@ export function StoreView({ role, onStoreUpdated }: { role: Role; onStoreUpdated
           contactEmail: form.get("contactEmail") || null,
           whatsapp: form.get("whatsapp") || null,
           currency: form.get("currency"),
+          bankName: form.get("bankName") || null,
+          bankAlias: form.get("bankAlias") || null,
+          bankHolder: form.get("bankHolder") || null,
         }),
       });
       setStore(response.store);
@@ -61,6 +64,15 @@ export function StoreView({ role, onStoreUpdated }: { role: Role; onStoreUpdated
           <div className="grid gap-4 sm:grid-cols-2">
             <Field defaultValue={store.name} label="Nombre de la tienda" name="name" required />
             <Field defaultValue={store.slug} disabled label="Slug permanente" name="slug" />
+          </div>
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
+            <h3 className="font-semibold">Transferencia bancaria</h3>
+            <p className="mt-1 text-xs leading-5 text-stone-400">Estos datos aparecerán después de que el cliente confirme su pedido.</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field defaultValue={settings?.bankName ?? ""} disabled={!canManage} label="Banco" name="bankName" placeholder="Banco Nación" />
+              <Field defaultValue={settings?.bankAlias ?? ""} disabled={!canManage} label="Alias" name="bankAlias" placeholder="MITIENDA.PAGOS" />
+              <div className="sm:col-span-2"><Field defaultValue={settings?.bankHolder ?? ""} disabled={!canManage} label="Titular de la cuenta" name="bankHolder" placeholder="Nombre o razón social" /></div>
+            </div>
           </div>
           <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Descripción</span><textarea className="control min-h-28 resize-y" defaultValue={settings?.description ?? ""} disabled={!canManage} name="description" placeholder="Contá brevemente qué hace especial a tu tienda" /></label>
           <div className="grid gap-4 sm:grid-cols-2">

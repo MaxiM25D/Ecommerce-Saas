@@ -40,6 +40,11 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum PaymentMethod {
+  BANK_TRANSFER
+  MERCADO_PAGO
+}
+
 model Tenant {
   id           String         @id @default(cuid())
   slug         String         @unique
@@ -147,6 +152,9 @@ model StoreSettings {
   contactEmail String?
   whatsapp     String?
   currency     String   @default("ARS")
+  bankName     String?
+  bankAlias    String?
+  bankHolder   String?
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -208,8 +216,12 @@ model Order {
   number          Int
   status          OrderStatus   @default(PENDING)
   paymentStatus   PaymentStatus @default(PENDING)
+  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
   customerEmail   String
   customerName    String
+  customerPhone   String?
+  shippingAddress String?
+  notes           String?
   currency        String        @default("ARS")
   subtotalInCents Int
   totalInCents    Int

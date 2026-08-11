@@ -55,6 +55,17 @@ export const updateStoreSchema = z
     contactEmail: z.email().trim().toLowerCase().max(254).nullable().optional(),
     whatsapp: z.string().trim().max(30).nullable().optional(),
     currency: z.string().trim().toUpperCase().length(3).optional(),
+    bankName: z.string().trim().max(100).nullable().optional(),
+    bankAlias: z.string().trim().max(100).nullable().optional(),
+    bankHolder: z.string().trim().max(120).nullable().optional(),
   })
   .strict()
   .refine((input) => Object.keys(input).length > 0, "Enviá al menos un campo");
+
+export const updateOrderSchema = z
+  .object({
+    status: z.enum(["PENDING", "CONFIRMED", "PREPARING", "SHIPPED", "DELIVERED", "CANCELLED"]).optional(),
+    paymentStatus: z.enum(["PENDING", "APPROVED", "REJECTED", "REFUNDED"]).optional(),
+  })
+  .strict()
+  .refine((input) => Object.keys(input).length > 0, "Enviá al menos un estado");

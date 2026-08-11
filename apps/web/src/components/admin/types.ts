@@ -33,7 +33,38 @@ export type Store = {
     contactEmail: string | null;
     whatsapp: string | null;
     currency: string;
+    bankName: string | null;
+    bankAlias: string | null;
+    bankHolder: string | null;
   } | null;
+};
+
+export type OrderSummary = {
+  id: string;
+  number: number;
+  status: string;
+  paymentStatus: string;
+  paymentMethod: string;
+  customerName: string;
+  customerEmail: string;
+  totalInCents: number;
+  currency: string;
+  createdAt: string;
+  _count: { items: number };
+};
+
+export type OrderDetail = OrderSummary & {
+  customerPhone: string | null;
+  shippingAddress: string | null;
+  notes: string | null;
+  items: Array<{
+    id: string;
+    sku: string;
+    productName: string;
+    quantity: number;
+    unitPriceInCents: number;
+    subtotalInCents: number;
+  }>;
 };
 
 export type Dashboard = {

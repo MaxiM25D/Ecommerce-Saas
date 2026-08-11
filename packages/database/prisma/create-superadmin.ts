@@ -36,7 +36,7 @@ async function createSuperAdmin(): Promise<void> {
       update: { role: "OWNER" },
       create: { tenantId: tenant.id, userId: user.id, role: "OWNER" },
     });
-    await transaction.storeSettings.upsert({
+    const settings = await transaction.storeSettings.upsert({
       where: { tenantId: tenant.id },
       update: { primaryColor: "#B89B72", currency: "ARS" },
       create: {
@@ -46,6 +46,16 @@ async function createSuperAdmin(): Promise<void> {
         currency: "ARS",
       },
     });
+    if (!settings.bankAlias) {
+      await transaction.storeSettings.update({
+        where: { tenantId: tenant.id },
+        data: {
+          bankName: "Banco Demo",
+          bankAlias: "INFINITYSHOP.DEMO",
+          bankHolder: "InfinityShop Demo",
+        },
+      });
+    }
 
     if ((await transaction.product.count({ where: { tenantId: tenant.id } })) === 0) {
       const category = await transaction.category.upsert({
