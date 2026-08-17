@@ -14,7 +14,7 @@ export const checkoutSchema = z
       productId: z.string().trim().min(1).max(64),
       quantity: z.number().int().min(1).max(999),
     }).strict()).min(1).max(50),
-    paymentMethod: z.literal("BANK_TRANSFER").default("BANK_TRANSFER"),
+    paymentMethod: z.enum(["BANK_TRANSFER", "MERCADO_PAGO"]).default("BANK_TRANSFER"),
   })
   .strict()
   .refine(

@@ -1,112 +1,101 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
 import type { Role, Store } from "./types";
 
-export function StoreView({ role, onStoreUpdated }: { role: Role; onStoreUpdated: (name: string) => void }) {
+type MercadoPagoIntegration = {
+  configured: boolean;
+  connection: { mercadoPagoUserId: string; liveMode: boolean; connectedAt: string; updatedAt: string } | null;
+};
+
+export function StoreView({ role, onStoreUpdated, mercadoPagoResult, mercadoPagoMessage }: { role: Role; onStoreUpdated: (name: string) => void; mercadoPagoResult?: string; mercadoPagoMessage?: string }) {
   const canManage = role !== "STAFF";
   const [store, setStore] = useState<Store | null>(null);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [mercadoPago, setMercadoPago] = useState<MercadoPagoIntegration | null>(null);
+  const [error, setError] = useState(mercadoPagoResult === "error" ? mercadoPagoMessage ?? "No se pudo conectar Mercado Pago" : "");
+  const [success, setSuccess] = useState(mercadoPagoResult === "connected");
   const [busy, setBusy] = useState(false);
 
+  async function loadIntegrations() {
+    const response = await apiRequest<MercadoPagoIntegration>("/admin/integrations/mercadopago");
+    setMercadoPago(response);
+  }
+
   useEffect(() => {
-    apiRequest<{ store: Store }>("/admin/store").then(({ store }) => setStore(store));
+    void Promise.all([
+      apiRequest<{ store: Store }>("/admin/store"),
+      apiRequest<MercadoPagoIntegration>("/admin/integrations/mercadopago"),
+    ]).then(([storeResponse, integration]) => { setStore(storeResponse.store); setMercadoPago(integration); });
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    setSuccess(false);
+    event.preventDefault(); setBusy(true); setError(""); setSuccess(false);
     const form = new FormData(event.currentTarget);
-
     try {
       const response = await apiRequest<{ store: Store }>("/admin/store", {
         method: "PATCH",
         body: JSON.stringify({
-          name: form.get("name"),
-          description: form.get("description") || null,
-          logoUrl: form.get("logoUrl") || null,
-          bannerUrl: form.get("bannerUrl") || null,
-          primaryColor: form.get("primaryColor"),
-          contactEmail: form.get("contactEmail") || null,
-          whatsapp: form.get("whatsapp") || null,
-          currency: form.get("currency"),
-          bankName: form.get("bankName") || null,
-          bankAlias: form.get("bankAlias") || null,
-          bankHolder: form.get("bankHolder") || null,
+          name: form.get("name"), description: form.get("description") || null,
+          logoUrl: form.get("logoUrl") || null, bannerUrl: form.get("bannerUrl") || null,
+          primaryColor: form.get("primaryColor"), contactEmail: form.get("contactEmail") || null,
+          whatsapp: form.get("whatsapp") || null, currency: form.get("currency"),
+          bankName: form.get("bankName") || null, bankAlias: form.get("bankAlias") || null,
+          bankHolder: form.get("bankHolder") || null, bankCvu: form.get("bankCvu") || null,
+          bankCuit: form.get("bankCuit") || null, bankTransferEnabled: form.get("bankTransferEnabled") === "on",
+          bankReservationHours: Number(form.get("bankReservationHours")), emailFromName: form.get("emailFromName") || null,
         }),
       });
-      setStore(response.store);
-      onStoreUpdated(response.store.name);
-      setSuccess(true);
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "No se pudo guardar la configuración");
-    } finally {
-      setBusy(false);
-    }
+      setStore(response.store); onStoreUpdated(response.store.name); setSuccess(true);
+    } catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo guardar la configuración"); }
+    finally { setBusy(false); }
   }
 
-  if (!store) return <div className="h-96 animate-pulse rounded-2xl bg-stone-200" />;
+  async function connectMercadoPago() {
+    setBusy(true); setError("");
+    try {
+      const { authorizationUrl } = await apiRequest<{ authorizationUrl: string }>("/admin/integrations/mercadopago/authorize", { method: "POST" });
+      window.location.assign(authorizationUrl);
+    } catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo iniciar la conexión"); setBusy(false); }
+  }
+
+  async function disconnectMercadoPago() {
+    if (!confirm("¿Desconectar Mercado Pago de esta tienda?")) return;
+    setBusy(true); setError("");
+    try { await apiRequest("/admin/integrations/mercadopago", { method: "DELETE" }); await loadIntegrations(); }
+    catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo desconectar Mercado Pago"); }
+    finally { setBusy(false); }
+  }
+
+  if (!store || !mercadoPago) return <div className="h-96 animate-pulse rounded-2xl bg-stone-200" />;
   const settings = store.settings;
 
-  return (
-    <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1fr_22rem]">
-      <section className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-        <div className="mb-7">
-          <h2 className="text-xl font-semibold tracking-tight">Identidad y contacto</h2>
-          <p className="mt-1 text-sm text-stone-400">Información básica que verá tu cliente en la tienda.</p>
-        </div>
-        <form className="space-y-5" onSubmit={submit}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field defaultValue={store.name} label="Nombre de la tienda" name="name" required />
-            <Field defaultValue={store.slug} disabled label="Slug permanente" name="slug" />
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <h3 className="font-semibold">Transferencia bancaria</h3>
-            <p className="mt-1 text-xs leading-5 text-stone-400">Estos datos aparecerán después de que el cliente confirme su pedido.</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field defaultValue={settings?.bankName ?? ""} disabled={!canManage} label="Banco" name="bankName" placeholder="Banco Nación" />
-              <Field defaultValue={settings?.bankAlias ?? ""} disabled={!canManage} label="Alias" name="bankAlias" placeholder="MITIENDA.PAGOS" />
-              <div className="sm:col-span-2"><Field defaultValue={settings?.bankHolder ?? ""} disabled={!canManage} label="Titular de la cuenta" name="bankHolder" placeholder="Nombre o razón social" /></div>
-            </div>
-          </div>
-          <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Descripción</span><textarea className="control min-h-28 resize-y" defaultValue={settings?.description ?? ""} disabled={!canManage} name="description" placeholder="Contá brevemente qué hace especial a tu tienda" /></label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field defaultValue={settings?.logoUrl ?? ""} disabled={!canManage} label="URL del logo" name="logoUrl" type="url" />
-            <Field defaultValue={settings?.bannerUrl ?? ""} disabled={!canManage} label="URL del banner" name="bannerUrl" type="url" />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field defaultValue={settings?.contactEmail ?? ""} disabled={!canManage} label="Email de contacto" name="contactEmail" type="email" />
-            <Field defaultValue={settings?.whatsapp ?? ""} disabled={!canManage} label="WhatsApp" name="whatsapp" placeholder="+54 9 11..." />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Color principal</span><div className="flex gap-2"><input className="h-12 w-14 rounded-xl border border-stone-200 bg-white p-1" defaultValue={settings?.primaryColor ?? "#B89B72"} disabled={!canManage} name="primaryColor" type="color" /><input className="control" defaultValue={settings?.primaryColor ?? "#B89B72"} disabled tabIndex={-1} /></div></label>
-            <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Moneda</span><select className="control" defaultValue={settings?.currency ?? "ARS"} disabled={!canManage} name="currency"><option value="ARS">ARS — Peso argentino</option><option value="USD">USD — Dólar estadounidense</option></select></label>
-          </div>
-          {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-          {success && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Configuración guardada correctamente.</p>}
-          {canManage && <button className="rounded-xl bg-stone-950 px-6 py-3.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50" disabled={busy} type="submit">{busy ? "Guardando…" : "Guardar configuración"}</button>}
-        </form>
-      </section>
+  return <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1fr_22rem]">
+    <section className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+      <div className="mb-7"><h2 className="text-xl font-semibold tracking-tight">Identidad, pagos y contacto</h2><p className="mt-1 text-sm text-stone-400">Configuración propia de esta tienda.</p></div>
+      <form className="space-y-6" onSubmit={submit}>
+        <div className="grid gap-4 sm:grid-cols-2"><Field defaultValue={store.name} label="Nombre de la tienda" name="name" required /><Field defaultValue={store.slug} disabled label="Slug permanente" name="slug" /></div>
 
-      <aside className="h-fit overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
-        <div className="h-28 bg-stone-200 bg-cover bg-center" style={settings?.bannerUrl ? { backgroundImage: `url(${settings.bannerUrl})` } : { background: `linear-gradient(135deg, ${settings?.primaryColor ?? "#B89B72"}, #292524)` }} />
-        <div className="relative p-6 pt-10">
-          <div className="absolute -top-8 grid h-16 w-16 place-items-center rounded-2xl border-4 border-white bg-stone-950 bg-cover bg-center text-xl font-bold text-white" style={settings?.logoUrl ? { backgroundImage: `url(${settings.logoUrl})` } : undefined}>{!settings?.logoUrl && store.name[0]}</div>
-          <p className="font-semibold">{store.name}</p>
-          <p className="mt-1 text-xs text-stone-400">/{store.slug}</p>
-          <p className="mt-4 text-sm leading-6 text-stone-500">{settings?.description || "La descripción de tu tienda aparecerá acá."}</p>
-          <span className="mt-5 inline-block rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">{store.status === "ACTIVE" ? "Activa" : "Suspendida"}</span>
-        </div>
-      </aside>
-    </div>
-  );
+        <ConfigBox title="Mercado Pago" description="Cada tienda cobra directamente en su propia cuenta conectada mediante OAuth.">
+          {mercadoPago.connection ? <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold text-emerald-700">Cuenta conectada</p><p className="mt-1 text-xs text-stone-500">Usuario MP {mercadoPago.connection.mercadoPagoUserId} · {mercadoPago.connection.liveMode ? "Producción" : "Prueba"}</p></div>{role === "OWNER" && <button className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700" disabled={busy} onClick={() => void disconnectMercadoPago()} type="button">Desconectar</button>}</div> : <div><p className="text-sm text-stone-600">{mercadoPago.configured ? "Conectá la cuenta del vendedor para habilitar Checkout Pro." : "Primero configurá las credenciales OAuth de InfinityShop en el backend."}</p>{canManage && <button className="mt-4 rounded-xl bg-[#009ee3] px-5 py-3 text-sm font-bold text-white disabled:opacity-40" disabled={busy || !mercadoPago.configured} onClick={() => void connectMercadoPago()} type="button">Conectar Mercado Pago</button>}</div>}
+        </ConfigBox>
+
+        <ConfigBox title="Transferencia bancaria" description="El stock se reserva durante el plazo indicado y el cliente adjunta un comprobante privado.">
+          <label className="mb-4 flex items-center gap-3 text-sm font-semibold"><input defaultChecked={settings?.bankTransferEnabled ?? false} disabled={!canManage} name="bankTransferEnabled" type="checkbox" /> Habilitar transferencias</label>
+          <div className="grid gap-4 sm:grid-cols-2"><Field defaultValue={settings?.bankName ?? ""} disabled={!canManage} label="Banco" name="bankName" /><Field defaultValue={settings?.bankAlias ?? ""} disabled={!canManage} label="Alias" name="bankAlias" /><Field defaultValue={settings?.bankCvu ?? ""} disabled={!canManage} label="CVU" name="bankCvu" /><Field defaultValue={settings?.bankCuit ?? ""} disabled={!canManage} label="CUIT" name="bankCuit" /><Field defaultValue={settings?.bankHolder ?? ""} disabled={!canManage} label="Titular" name="bankHolder" /><Field defaultValue={String(settings?.bankReservationHours ?? 24)} disabled={!canManage} label="Horas de reserva" min="1" name="bankReservationHours" type="number" /></div>
+        </ConfigBox>
+
+        <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Descripción</span><textarea className="control min-h-28 resize-y" defaultValue={settings?.description ?? ""} disabled={!canManage} name="description" /></label>
+        <div className="grid gap-4 sm:grid-cols-2"><Field defaultValue={settings?.logoUrl ?? ""} disabled={!canManage} label="URL del logo" name="logoUrl" type="url" /><Field defaultValue={settings?.bannerUrl ?? ""} disabled={!canManage} label="URL del banner" name="bannerUrl" type="url" /></div>
+        <div className="grid gap-4 sm:grid-cols-2"><Field defaultValue={settings?.contactEmail ?? ""} disabled={!canManage} label="Email de contacto" name="contactEmail" type="email" /><Field defaultValue={settings?.emailFromName ?? ""} disabled={!canManage} label="Nombre en emails" name="emailFromName" /><Field defaultValue={settings?.whatsapp ?? ""} disabled={!canManage} label="WhatsApp" name="whatsapp" /><label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Moneda</span><select className="control" defaultValue={settings?.currency ?? "ARS"} disabled={!canManage} name="currency"><option value="ARS">ARS — Peso argentino</option><option value="USD">USD — Dólar estadounidense</option></select></label></div>
+        <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Color principal</span><input className="h-12 w-20 rounded-xl border border-stone-200 bg-white p-1" defaultValue={settings?.primaryColor ?? "#B89B72"} disabled={!canManage} name="primaryColor" type="color" /></label>
+        {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}{success && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Configuración guardada correctamente.</p>}{canManage && <button className="rounded-xl bg-stone-950 px-6 py-3.5 text-sm font-bold text-white disabled:opacity-50" disabled={busy} type="submit">{busy ? "Guardando…" : "Guardar configuración"}</button>}
+      </form>
+    </section>
+    <aside className="h-fit overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm"><div className="h-28 bg-stone-200 bg-cover bg-center" style={settings?.bannerUrl ? { backgroundImage: `url(${settings.bannerUrl})` } : { background: `linear-gradient(135deg, ${settings?.primaryColor ?? "#B89B72"}, #292524)` }} /><div className="relative p-6 pt-10"><div className="absolute -top-8 grid h-16 w-16 place-items-center rounded-2xl border-4 border-white bg-stone-950 bg-cover bg-center text-xl font-bold text-white" style={settings?.logoUrl ? { backgroundImage: `url(${settings.logoUrl})` } : undefined}>{!settings?.logoUrl && store.name[0]}</div><p className="font-semibold">{store.name}</p><p className="mt-1 text-xs text-stone-400">/{store.slug}</p><p className="mt-4 text-sm leading-6 text-stone-500">{settings?.description || "La descripción de tu tienda aparecerá acá."}</p></div></aside>
+  </div>;
 }
 
-function Field({ label, name, defaultValue, placeholder, type = "text", disabled, required }: { label: string; name: string; defaultValue?: string; placeholder?: string; type?: string; disabled?: boolean; required?: boolean }) {
-  return <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">{label}</span><input className="control disabled:cursor-not-allowed disabled:text-stone-400" defaultValue={defaultValue} disabled={disabled} name={name} placeholder={placeholder} required={required} type={type} /></label>;
-}
+function ConfigBox({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5"><h3 className="font-semibold">{title}</h3><p className="mt-1 text-xs leading-5 text-stone-400">{description}</p><div className="mt-4">{children}</div></div>; }
+function Field({ label, name, defaultValue, type = "text", disabled, required, min }: { label: string; name: string; defaultValue?: string; type?: string; disabled?: boolean; required?: boolean; min?: string }) { return <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">{label}</span><input className="control disabled:cursor-not-allowed disabled:text-stone-400" defaultValue={defaultValue} disabled={disabled} min={min} name={name} required={required} type={type} /></label>; }

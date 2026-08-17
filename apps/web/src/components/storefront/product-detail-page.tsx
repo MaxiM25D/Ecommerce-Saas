@@ -50,10 +50,12 @@ function ProductDetail({ product, store }: { product: StorefrontProduct; store: 
 
         <section className="self-center lg:py-8">
           {product.category && <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">{product.category.name}</p>}
+          {product.brand && <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">{product.brand}</p>}
           <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">{product.name}</h1>
           <p className="mt-5 text-2xl font-semibold">{formatMoney(product.priceInCents, currency)}</p>
           <div className="my-7 h-px bg-stone-200" />
           <p className="whitespace-pre-line text-base leading-7 text-stone-600">{product.description || "Un producto seleccionado especialmente para vos."}</p>
+          {product.tags.length > 0 && <div className="mt-5 flex flex-wrap gap-2">{product.tags.map((tag) => <span className="rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-600" key={tag}>{tag}</span>)}</div>}
           <div className="mt-7 flex items-center gap-2 text-sm"><span className={`h-2.5 w-2.5 rounded-full ${product.stock > 0 ? "bg-emerald-500" : "bg-red-500"}`} /><span className="font-medium">{product.stock > 0 ? `${product.stock} unidades disponibles` : "Producto sin stock"}</span></div>
 
           {product.stock > 0 && <div className="mt-8 flex flex-col gap-3 sm:flex-row">

@@ -14,6 +14,9 @@ export type StorefrontProduct = {
   images: string[];
   priceInCents: number;
   stock: number;
+  brand: string | null;
+  tags: string[];
+  featured: boolean;
   category: Pick<StorefrontCategory, "id" | "name" | "slug"> | null;
 };
 
@@ -29,6 +32,10 @@ export type PublicStore = {
     whatsapp: string | null;
     currency: string;
   } | null;
+  paymentMethods: {
+    bankTransfer: boolean;
+    mercadoPago: boolean;
+  };
   categories?: StorefrontCategory[];
   products?: StorefrontProduct[];
 };
@@ -44,10 +51,18 @@ export type CheckoutResult = {
     totalInCents: number;
     currency: string;
   };
+  orderToken: string;
   payment: {
     method: "BANK_TRANSFER";
     bankName: string | null;
     alias: string | null;
     holder: string | null;
+    cvu: string | null;
+    cuit: string | null;
+    reservationHours: number;
+  } | {
+    method: "MERCADO_PAGO";
+    preferenceId: string;
+    checkoutUrl: string;
   };
 };

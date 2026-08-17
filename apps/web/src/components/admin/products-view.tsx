@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Image from "next/image";
 
 import { ApiError, apiRequest } from "@/lib/api";
 import type { Category, Product, Role } from "./types";
@@ -15,6 +16,7 @@ export function ProductsView({ role }: { role: Role }) {
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
   async function load() {
     const [productResponse, categoryResponse] = await Promise.all([
@@ -44,6 +46,7 @@ export function ProductsView({ role }: { role: Role }) {
     setEditing(product);
     setError("");
     setShowForm(true);
+    setImagePreviews([]);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -51,29 +54,44 @@ export function ProductsView({ role }: { role: Role }) {
     setBusy(true);
     setError("");
     const form = new FormData(event.currentTarget);
+    try {
     const images = String(form.get("images") ?? "")
       .split("\n")
       .map((url) => url.trim())
       .filter(Boolean);
+    const selectedFiles = form.getAll("imageFiles").filter((entry): entry is File => entry instanceof File && entry.size > 0);
+    let uploadedImages: string[] = [];
+    if (selectedFiles.length) {
+      const upload = new FormData();
+      selectedFiles.forEach((file) => upload.append("images", file));
+      const uploadResult = await apiRequest<{ images: string[] }>("/admin/uploads/products", { method: "POST", body: upload });
+      uploadedImages = uploadResult.images;
+    }
+    const name = String(form.get("name") ?? "");
+    const rawSlug = String(form.get("slug") ?? "").trim();
     const body = {
       categoryId: form.get("categoryId") || null,
       sku: form.get("sku"),
-      slug: form.get("slug"),
-      name: form.get("name"),
+      slug: rawSlug || createSlug(name),
+      name,
       description: form.get("description") || null,
       priceInCents: Math.round(Number(form.get("price")) * 100),
       stock: Number(form.get("stock")),
-      images,
+      images: [...images, ...uploadedImages].slice(0, 8),
       active: form.get("active") === "on",
+      brand: form.get("brand") || null,
+      tags: String(form.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean),
+      featured: form.get("featured") === "on",
+      featuredOrder: Number(form.get("featuredOrder") || 0),
     };
 
-    try {
       await apiRequest(editing ? `/admin/products/${editing.id}` : "/admin/products", {
         method: editing ? "PATCH" : "POST",
         body: JSON.stringify(body),
       });
       setShowForm(false);
       setEditing(null);
+      setImagePreviews([]);
       await load();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "No se pudo guardar el producto");
@@ -153,7 +171,10 @@ export function ProductsView({ role }: { role: Role }) {
               <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Catálogo</p><h2 className="mt-1 text-2xl font-semibold">{editing ? "Editar producto" : "Nuevo producto"}</h2></div>
               <button className="grid h-10 w-10 place-items-center rounded-xl bg-stone-100 text-xl" onClick={() => setShowForm(false)} type="button">×</button>
             </div>
-            <ProductForm categories={categories} editing={editing} error={error} busy={busy} onSubmit={submit} />
+            <ProductForm categories={categories} editing={editing} error={error} busy={busy} imagePreviews={imagePreviews} onImagesChange={(files) => {
+              imagePreviews.forEach((url) => URL.revokeObjectURL(url));
+              setImagePreviews(files.map((file) => URL.createObjectURL(file)));
+            }} onSubmit={submit} />
           </aside>
         </div>
       )}
@@ -161,21 +182,25 @@ export function ProductsView({ role }: { role: Role }) {
   );
 }
 
-function ProductForm({ categories, editing, error, busy, onSubmit }: { categories: Category[]; editing: Product | null; error: string; busy: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function ProductForm({ categories, editing, error, busy, imagePreviews, onImagesChange, onSubmit }: { categories: Category[]; editing: Product | null; error: string; busy: boolean; imagePreviews: string[]; onImagesChange: (files: File[]) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <form className="space-y-5" key={editing?.id ?? "new"} onSubmit={onSubmit}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field defaultValue={editing?.name} label="Nombre" name="name" placeholder="Cinturón Toro" />
         <Field defaultValue={editing?.sku} label="SKU" name="sku" placeholder="LUN-CIN-001" />
       </div>
-      <Field defaultValue={editing?.slug} label="Slug" name="slug" placeholder="cinturon-toro" />
+      <Field defaultValue={editing?.slug} label="Slug (se genera si lo dejás vacío)" name="slug" placeholder="cinturon-toro" required={false} />
       <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Categoría</span><select className="control" defaultValue={editing?.categoryId ?? ""} name="categoryId"><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Descripción</span><textarea className="control min-h-24 resize-y" defaultValue={editing?.description ?? ""} name="description" placeholder="Detalles del producto" /></label>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field defaultValue={editing ? String(editing.priceInCents / 100) : undefined} label="Precio (ARS)" min="0" name="price" placeholder="45000" step="0.01" type="number" />
         <Field defaultValue={editing ? String(editing.stock) : undefined} label="Stock" min="0" name="stock" placeholder="10" step="1" type="number" />
       </div>
+      <div className="grid gap-4 sm:grid-cols-2"><Field defaultValue={editing?.brand ?? ""} label="Marca" name="brand" placeholder="InfinityShop" required={false} /><Field defaultValue={editing?.tags.join(", ") ?? ""} label="Etiquetas" name="tags" placeholder="dorado, minimalista" required={false} /></div>
       <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Imágenes <span className="font-normal text-stone-400">(una URL por línea)</span></span><textarea className="control min-h-28 resize-y" defaultValue={editing?.images.join("\n")} name="images" placeholder="https://.../producto.jpg" /></label>
+      <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">Subir imágenes <span className="font-normal text-stone-400">(hasta 8, máximo 5 MB)</span></span><input accept="image/jpeg,image/png,image/webp,image/avif" className="block w-full text-sm" multiple name="imageFiles" onChange={(event) => onImagesChange(Array.from(event.target.files ?? []))} type="file" /></label>
+      {imagePreviews.length > 0 && <div className="grid grid-cols-3 gap-3">{imagePreviews.map((url) => <Image alt="Vista previa" className="aspect-square rounded-xl object-cover" height={160} key={url} src={url} unoptimized width={160} />)}</div>}
+      <div className="grid gap-4 sm:grid-cols-2"><Field defaultValue={String(editing?.featuredOrder ?? 0)} label="Orden destacado" min="0" name="featuredOrder" placeholder="0" type="number" /><label className="flex items-center justify-between rounded-xl border border-stone-200 px-4 py-3"><span className="text-sm font-semibold">Destacado</span><input defaultChecked={editing?.featured ?? false} name="featured" type="checkbox" /></label></div>
       <label className="flex items-center justify-between rounded-xl border border-stone-200 px-4 py-3"><span><span className="block text-sm font-semibold">Producto activo</span><span className="text-xs text-stone-400">Visible en la tienda pública</span></span><input className="h-5 w-5 accent-amber-700" defaultChecked={editing?.active ?? true} name="active" type="checkbox" /></label>
       {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       <button className="w-full rounded-xl bg-stone-950 px-5 py-3.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50" disabled={busy} type="submit">{busy ? "Guardando…" : "Guardar producto"}</button>
@@ -183,6 +208,10 @@ function ProductForm({ categories, editing, error, busy, onSubmit }: { categorie
   );
 }
 
-function Field({ label, name, placeholder, defaultValue, type = "text", min, step }: { label: string; name: string; placeholder: string; defaultValue?: string; type?: string; min?: string; step?: string }) {
-  return <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">{label}</span><input className="control" defaultValue={defaultValue} min={min} name={name} placeholder={placeholder} required step={step} type={type} /></label>;
+function Field({ label, name, placeholder, defaultValue, type = "text", min, step, required = true }: { label: string; name: string; placeholder: string; defaultValue?: string; type?: string; min?: string; step?: string; required?: boolean }) {
+  return <label className="block text-sm font-medium text-stone-700"><span className="mb-1.5 block">{label}</span><input className="control" defaultValue={defaultValue} min={min} name={name} placeholder={placeholder} required={required} step={step} type={type} /></label>;
+}
+
+function createSlug(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }

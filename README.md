@@ -56,6 +56,7 @@ El panel web está disponible en `http://localhost:3000/admin` y consume rutas p
 - `GET /dashboard`: métricas y pedidos recientes.
 - `GET|POST /categories` y `PATCH|DELETE /categories/:id`: CRUD de categorías.
 - `GET|POST /products` y `PATCH|DELETE /products/:id`: CRUD de productos, precio, stock, imágenes y estado.
+- `GET /customers` y `GET /customers/:id`: búsqueda paginada, datos de contacto, estadísticas e historial de compras.
 - `GET|PATCH /store`: identidad, contacto, moneda y configuración visual de la tienda.
 
 Los roles `OWNER` y `ADMIN` pueden modificar datos. `STAFF` tiene acceso de solo lectura. Todas las consultas y mutaciones toman el tenant desde la sesión del servidor.
@@ -66,7 +67,27 @@ Cada comercio activo tiene un storefront responsive en `/tienda/:slug`, con cate
 
 ## Pedidos y checkout
 
-El checkout público está disponible en `/tienda/:slug/checkout` y crea pedidos con transferencia bancaria. El servidor vuelve a consultar precios y stock, bloquea la tienda durante la operación, descuenta existencias de forma atómica y guarda una copia del nombre, SKU y precio de cada producto. El panel permite aprobar o rechazar pagos, avanzar el pedido por sus estados y cancelar reponiendo el stock una sola vez. El modelo incluye `MERCADO_PAGO` como método futuro, pero todavía no realiza cobros mediante esa plataforma.
+El checkout público está disponible en `/tienda/:slug/checkout` y permite transferencia bancaria o Mercado Pago según la configuración del tenant. El servidor vuelve a consultar precios y stock, reserva existencias de forma atómica y guarda una copia del nombre, SKU y precio de cada producto. Las reservas vencidas se liberan automáticamente.
+
+Las transferencias admiten comprobantes privados PDF o imagen. El panel permite revisarlos, confirmar el pago, preparar el pedido, cargar seguimiento, marcar la entrega y reintentar correos fallidos. El cliente consulta su pedido mediante un token secreto guardado únicamente en su navegador.
+
+## Mercado Pago por tienda
+
+Cada tenant conecta su propia cuenta mediante OAuth Authorization Code con PKCE. Los access y refresh tokens se cifran con AES-256-GCM y nunca se envían al frontend.
+
+1. Crear una aplicación de Marketplace en Mercado Pago.
+2. Configurar como callback `http://localhost:4000/api/integrations/mercadopago/callback` en desarrollo.
+3. Configurar el webhook de pagos apuntando a la URL pública del backend y copiar su firma secreta.
+4. Completar en `.env`: `API_PUBLIC_URL`, `MP_CLIENT_ID`, `MP_CLIENT_SECRET`, `MP_WEBHOOK_SECRET` y una `MP_TOKEN_ENCRYPTION_KEY` aleatoria de al menos 32 caracteres.
+5. Reiniciar la API e ingresar a **Mi tienda → Mercado Pago → Conectar Mercado Pago**.
+
+Mercado Pago se ofrece solamente cuando la tienda opera en ARS. Para recibir webhooks reales, `API_PUBLIC_URL` debe ser HTTPS y accesible desde Internet; Mercado Pago no acepta `localhost` como URL de notificación o retorno.
+
+## Archivos y correos
+
+En desarrollo, las imágenes se guardan en `storage/public` y los comprobantes en `storage/private`. Para producción se puede configurar Cloudinary con `CLOUDINARY_NAME`, `CLOUDINARY_KEY` y `CLOUDINARY_SECRET`; los comprobantes se almacenan como recursos autenticados.
+
+Los avisos de despacho usan SMTP. Configurá `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`. Si SMTP no está disponible, el despacho se conserva y el panel permite reintentar la notificación.
 
 ## Funciones SaaS
 

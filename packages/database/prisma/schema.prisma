@@ -55,6 +55,7 @@ enum PaymentStatus {
   PENDING
   APPROVED
   REJECTED
+  CANCELLED
   REFUNDED
 }
 
@@ -63,35 +64,62 @@ enum PaymentMethod {
   MERCADO_PAGO
 }
 
+enum StockStatus {
+  RESERVED
+  COMMITTED
+  RELEASED
+}
+
+enum StorageProvider {
+  LOCAL
+  CLOUDINARY
+}
+
+enum NotificationStatus {
+  NOT_REQUESTED
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
 model Tenant {
-  id           String         @id @default(cuid())
-  slug         String         @unique
-  name         String
-  status       TenantStatus   @default(ACTIVE)
-  memberships  Membership[]
-  categories   Category[]
-  products     Product[]
-  customers    Customer[]
-  carts        Cart[]
-  orders       Order[]
-  authSessions AuthSession[]
-  settings     StoreSettings?
-  subscription Subscription?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id                     String                  @id @default(cuid())
+  slug                   String                  @unique
+  name                   String
+  status                 TenantStatus            @default(ACTIVE)
+  memberships            Membership[]
+  categories             Category[]
+  products               Product[]
+  customers              Customer[]
+  carts                  Cart[]
+  orders                 Order[]
+  authSessions           AuthSession[]
+  settings               StoreSettings?
+  subscription           Subscription?
+  mercadoPagoConnection  MercadoPagoConnection?
+  mercadoPagoOAuthStates MercadoPagoOAuthState[]
+  paymentAttempts        PaymentAttempt[]
+  paymentReceipts        PaymentReceipt[]
+  shipments              Shipment[]
+  orderStatusHistory     OrderStatusHistory[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  passwordHash String
-  firstName    String
-  lastName     String
-  platformRole PlatformRole @default(USER)
-  memberships  Membership[]
-  authSessions AuthSession[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                     String                  @id @default(cuid())
+  email                  String                  @unique
+  passwordHash           String
+  firstName              String
+  lastName               String
+  platformRole           PlatformRole            @default(USER)
+  memberships            Membership[]
+  authSessions           AuthSession[]
+  mercadoPagoOAuthStates MercadoPagoOAuthState[]
+  orderStatusChanges     OrderStatusHistory[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 }
 
 model Plan {
@@ -169,23 +197,27 @@ model Category {
 }
 
 model Product {
-  id           String      @id @default(cuid())
-  tenantId     String
-  categoryId   String?
-  sku          String
-  slug         String
-  name         String
-  description  String?
-  images       String[]    @default([])
-  priceInCents Int
-  stock        Int         @default(0)
-  active       Boolean     @default(true)
-  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category     Category?   @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
-  cartItems    CartItem[]
-  orderItems   OrderItem[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id            String      @id @default(cuid())
+  tenantId      String
+  categoryId    String?
+  sku           String
+  slug          String
+  name          String
+  description   String?
+  images        String[]    @default([])
+  priceInCents  Int
+  stock         Int         @default(0)
+  active        Boolean     @default(true)
+  brand         String?
+  tags          String[]    @default([])
+  featured      Boolean     @default(false)
+  featuredOrder Int         @default(0)
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category      Category?   @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   @@unique([tenantId, sku])
   @@unique([tenantId, slug])
@@ -195,20 +227,25 @@ model Product {
 }
 
 model StoreSettings {
-  tenantId     String   @id
-  description  String?
-  logoUrl      String?
-  bannerUrl    String?
-  primaryColor String   @default("#B89B72")
-  contactEmail String?
-  whatsapp     String?
-  currency     String   @default("ARS")
-  bankName     String?
-  bankAlias    String?
-  bankHolder   String?
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  tenantId             String   @id
+  description          String?
+  logoUrl              String?
+  bannerUrl            String?
+  primaryColor         String   @default("#B89B72")
+  contactEmail         String?
+  whatsapp             String?
+  currency             String   @default("ARS")
+  bankName             String?
+  bankAlias            String?
+  bankHolder           String?
+  bankCvu              String?
+  bankCuit             String?
+  bankTransferEnabled  Boolean  @default(false)
+  bankReservationHours Int      @default(24)
+  emailFromName        String?
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 model Customer {
@@ -261,31 +298,152 @@ model CartItem {
 }
 
 model Order {
-  id              String        @id @default(cuid())
+  id              String               @id @default(cuid())
   tenantId        String
   customerId      String?
   number          Int
-  status          OrderStatus   @default(PENDING)
-  paymentStatus   PaymentStatus @default(PENDING)
-  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
+  status          OrderStatus          @default(PENDING)
+  paymentStatus   PaymentStatus        @default(PENDING)
+  paymentMethod   PaymentMethod        @default(BANK_TRANSFER)
+  stockStatus     StockStatus          @default(RESERVED)
+  stockExpiresAt  DateTime?
+  publicTokenHash String?              @unique
   customerEmail   String
   customerName    String
   customerPhone   String?
   shippingAddress String?
   notes           String?
-  currency        String        @default("ARS")
+  currency        String               @default("ARS")
   subtotalInCents Int
   totalInCents    Int
-  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer        Customer?     @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer        Customer?            @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
   items           OrderItem[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  paymentAttempts PaymentAttempt[]
+  paymentReceipt  PaymentReceipt?
+  shipment        Shipment?
+  statusHistory   OrderStatusHistory[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   @@unique([tenantId, number])
   @@unique([tenantId, id])
   @@index([tenantId, status])
+  @@index([tenantId, stockStatus, stockExpiresAt])
   @@index([tenantId, customerId])
+}
+
+model MercadoPagoConnection {
+  tenantId              String    @id
+  mercadoPagoUserId     String
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String
+  accessTokenExpiresAt  DateTime?
+  publicKey             String?
+  liveMode              Boolean   @default(false)
+  webhookKey            String    @unique
+  connectedAt           DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model MercadoPagoOAuthState {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  userId                String
+  stateHash             String   @unique
+  codeVerifierEncrypted String
+  expiresAt             DateTime
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime @default(now())
+
+  @@index([tenantId, expiresAt])
+  @@index([userId])
+}
+
+model PaymentAttempt {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  orderId            String
+  provider           PaymentMethod
+  status             PaymentStatus @default(PENDING)
+  idempotencyKey     String        @unique
+  preferenceId       String?       @unique
+  checkoutUrl        String?
+  sandboxCheckoutUrl String?
+  externalPaymentId  String?       @unique
+  externalStatus     String?
+  statusDetail       String?
+  amountInCents      Int
+  currency           String
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order              Order         @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([tenantId, id])
+  @@index([tenantId, orderId])
+  @@index([tenantId, status])
+}
+
+model PaymentReceipt {
+  id              String          @id @default(cuid())
+  tenantId        String
+  orderId         String          @unique
+  storageProvider StorageProvider
+  storageKey      String
+  originalName    String
+  mimeType        String
+  sizeInBytes     Int
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order           Order           @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, orderId])
+  @@index([tenantId, orderId])
+}
+
+model Shipment {
+  id                   String             @id @default(cuid())
+  tenantId             String
+  orderId              String             @unique
+  carrier              String
+  trackingCode         String?
+  trackingUrl          String?
+  estimatedDelivery    DateTime?
+  shippedAt            DateTime?
+  deliveredAt          DateTime?
+  notificationStatus   NotificationStatus @default(NOT_REQUESTED)
+  notificationAttempts Int                @default(0)
+  notificationError    String?
+  lastNotificationAt   DateTime?
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order                Order              @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, orderId])
+  @@index([tenantId, orderId])
+}
+
+model OrderStatusHistory {
+  id              String      @id @default(cuid())
+  tenantId        String
+  orderId         String
+  status          OrderStatus
+  changedByUserId String?
+  note            String?
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order           Order       @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  changedBy       User?       @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+
+  @@index([tenantId, orderId, createdAt])
+  @@index([changedByUserId])
 }
 
 model OrderItem {

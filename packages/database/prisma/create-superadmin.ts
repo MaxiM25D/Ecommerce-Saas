@@ -58,7 +58,13 @@ async function createSuperAdmin(): Promise<void> {
           bankName: "Banco Demo",
           bankAlias: "INFINITYSHOP.DEMO",
           bankHolder: "InfinityShop Demo",
+          bankTransferEnabled: true,
         },
+      });
+    } else if (!settings.bankTransferEnabled) {
+      await transaction.storeSettings.update({
+        where: { tenantId: tenant.id },
+        data: { bankTransferEnabled: true },
       });
     }
 

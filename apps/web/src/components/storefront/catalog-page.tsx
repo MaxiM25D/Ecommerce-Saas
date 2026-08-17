@@ -87,6 +87,7 @@ function ProductCard({ currency, product, storeSlug }: { currency: string; produ
         <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl">
           <ProductImage className="aspect-[4/5] w-full transition duration-500 group-hover:scale-[1.025]" image={product.images[0]} name={product.name} />
           {product.stock === 0 && <span className="absolute left-3 top-3 rounded-full bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider">Sin stock</span>}
+          {product.featured && product.stock > 0 && <span className="absolute left-3 top-3 rounded-full bg-stone-950 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white">Destacado</span>}
         </div>
         <p className="mt-4 truncate text-sm font-semibold sm:text-base">{product.name}</p>
         <p className="mt-1 text-sm text-stone-500">{formatMoney(product.priceInCents, currency)}</p>

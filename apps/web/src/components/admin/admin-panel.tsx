@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { ApiError, apiRequest } from "@/lib/api";
 import { CategoriesView } from "./categories-view";
+import { CustomersView } from "./customers-view";
 import { DashboardView } from "./dashboard-view";
 import { ProductsView } from "./products-view";
 import { OrdersView } from "./orders-view";
@@ -14,7 +15,7 @@ import { StoreView } from "./store-view";
 import { TeamView } from "./team-view";
 import type { Role } from "./types";
 
-type Tab = "dashboard" | "categories" | "products" | "orders" | "team" | "plan" | "store";
+type Tab = "dashboard" | "categories" | "products" | "orders" | "customers" | "team" | "plan" | "store";
 type Session = {
   user: { firstName: string; lastName: string; email: string; platformRole: "USER" | "SUPERADMIN" };
   tenant: { name: string; slug: string };
@@ -26,15 +27,16 @@ const navigation: Array<{ id: Tab; label: string; symbol: string }> = [
   { id: "categories", label: "Categorías", symbol: "◇" },
   { id: "products", label: "Productos", symbol: "▦" },
   { id: "orders", label: "Pedidos", symbol: "◎" },
+  { id: "customers", label: "Clientes", symbol: "○" },
   { id: "team", label: "Equipo", symbol: "♙" },
   { id: "plan", label: "Plan y uso", symbol: "◫" },
   { id: "store", label: "Mi tienda", symbol: "◉" },
 ];
 
-export function AdminPanel() {
+export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMessage }: { openStore?: boolean; mercadoPagoResult?: string; mercadoPagoMessage?: string }) {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>(openStore ? "store" : "dashboard");
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -69,9 +71,10 @@ export function AdminPanel() {
     categories: <CategoriesView role={session.role} />,
     products: <ProductsView role={session.role} />,
     orders: <OrdersView role={session.role} />,
+    customers: <CustomersView />,
     team: <TeamView role={session.role} />,
     plan: <PlanView />,
-    store: <StoreView role={session.role} onStoreUpdated={(name) => setSession({ ...session, tenant: { ...session.tenant, name } })} />,
+    store: <StoreView mercadoPagoMessage={mercadoPagoMessage} mercadoPagoResult={mercadoPagoResult} role={session.role} onStoreUpdated={(name) => setSession({ ...session, tenant: { ...session.tenant, name } })} />,
   }[tab];
 
   return (

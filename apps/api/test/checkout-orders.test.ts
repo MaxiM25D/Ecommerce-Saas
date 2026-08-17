@@ -15,6 +15,7 @@ const ownerAgent = request.agent(app);
 const otherAgent = request.agent(app);
 let productId = "";
 let orderId = "";
+let orderToken = "";
 
 async function cleanup(): Promise<void> {
   const tenants = await database.tenant.findMany({
@@ -66,6 +67,7 @@ before(async () => {
     bankName: "Banco Demo",
     bankAlias: "INFINITY.DEMO",
     bankHolder: "InfinityShop Demo",
+    bankTransferEnabled: true,
   });
 });
 
@@ -92,6 +94,7 @@ test("checkout copia precios y productos y descuenta stock", async () => {
   assert.equal(response.body.order.totalInCents, 246800);
   assert.equal(response.body.payment.alias, "INFINITY.DEMO");
   orderId = response.body.order.id;
+  orderToken = response.body.orderToken;
 
   const [product, order] = await Promise.all([
     database.product.findUniqueOrThrow({ where: { id: productId } }),
@@ -105,6 +108,15 @@ test("checkout copia precios y productos y descuenta stock", async () => {
   await database.product.update({ where: { id: productId }, data: { priceInCents: 999900 } });
   const snapshot = await database.orderItem.findFirstOrThrow({ where: { orderId } });
   assert.equal(snapshot.unitPriceInCents, 123400);
+});
+
+test("el seguimiento público requiere el token secreto del pedido", async () => {
+  assert.equal((await request(app).get(`/api/storefront/${slug}/orders/${orderId}`)).status, 404);
+  const allowed = await request(app)
+    .get(`/api/storefront/${slug}/orders/${orderId}`)
+    .set("x-order-token", orderToken);
+  assert.equal(allowed.status, 200);
+  assert.equal(allowed.body.order.id, orderId);
 });
 
 test("stock insuficiente revierte el pedido completo", async () => {
@@ -127,6 +139,20 @@ test("stock insuficiente revierte el pedido completo", async () => {
 test("el panel administra estados y una cancelación repone stock una sola vez", async () => {
   assert.equal((await otherAgent.get(`/api/admin/orders/${orderId}`)).status, 404);
   assert.equal((await ownerAgent.patch(`/api/admin/orders/${orderId}`).send({ status: "DELIVERED" })).status, 409);
+  assert.equal((await ownerAgent.patch(`/api/admin/orders/${orderId}`).send({ paymentStatus: "APPROVED" })).status, 409);
+
+  const order = await database.order.findUniqueOrThrow({ where: { id: orderId } });
+  await database.paymentReceipt.create({
+    data: {
+      tenantId: order.tenantId,
+      orderId,
+      storageProvider: "LOCAL",
+      storageKey: "test/receipt.pdf",
+      originalName: "comprobante.pdf",
+      mimeType: "application/pdf",
+      sizeInBytes: 100,
+    },
+  });
 
   const confirmed = await ownerAgent.patch(`/api/admin/orders/${orderId}`).send({
     status: "CONFIRMED",
