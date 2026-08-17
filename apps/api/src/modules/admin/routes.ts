@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 
+import { environment } from "../../config.js";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { getAuthContext, requireRoles, requireSession } from "../auth/session.js";
@@ -19,7 +20,8 @@ import {
   updateStoreSchema,
 } from "./schemas.js";
 import { getStoredReceiptAccess, uploadProductFiles } from "../../services/storage.js";
-import { sendShipmentEmail } from "../../services/mail.js";
+import { sendShipmentEmail, sendTeamInvitationEmail } from "../../services/mail.js";
+import { createAccountToken, developmentUrl, expiresInHours } from "../../services/account-tokens.js";
 
 export const adminRouter = Router();
 const canManage = requireRoles("OWNER", "ADMIN");
@@ -613,37 +615,64 @@ adminRouter.get("/subscription", async (request, response) => {
 
 adminRouter.get("/team", async (request, response) => {
   const { tenant } = getAuthContext(request);
-  const members = await database.membership.findMany({
-    where: { tenantId: tenant.id },
-    orderBy: { createdAt: "asc" },
-    include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+  const [members, invitations] = await Promise.all([
+    database.membership.findMany({
+      where: { tenantId: tenant.id },
+      orderBy: { createdAt: "asc" },
+      include: { user: { select: { id: true, email: true, firstName: true, lastName: true, emailVerifiedAt: true } } },
+    }),
+    database.teamInvitation.findMany({
+      where: { tenantId: tenant.id, acceptedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, email: true, role: true, expiresAt: true, createdAt: true },
+    }),
+  ]);
+  response.json({
+    members: members.map((member) => ({ ...member, user: { ...member.user, emailVerified: Boolean(member.user.emailVerifiedAt), emailVerifiedAt: undefined } })),
+    invitations,
   });
-  response.json({ members });
 });
 
 adminRouter.post("/team", canManageTeam, async (request, response) => {
-  const { tenant } = getAuthContext(request);
+  const { tenant, user: inviter } = getAuthContext(request);
   const input = addMemberSchema.parse(request.body);
-  const member = await database.$transaction(async (transaction) => {
+  const { token, tokenHash } = createAccountToken();
+  const invitation = await database.$transaction(async (transaction) => {
     await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenant.id} FOR UPDATE`;
     const subscription = await transaction.subscription.findUnique({ where: { tenantId: tenant.id }, include: { plan: true } });
     if (!subscription) throw new HttpError(409, "La tienda no tiene un plan asignado");
     const memberCount = await transaction.membership.count({ where: { tenantId: tenant.id } });
-    if (memberCount >= subscription.plan.maxMembers) {
+    const pendingInvitations = await transaction.teamInvitation.count({ where: { tenantId: tenant.id, acceptedAt: null, expiresAt: { gt: new Date() }, email: { not: input.email } } });
+    if (memberCount + pendingInvitations >= subscription.plan.maxMembers) {
       throw new HttpError(409, `Alcanzaste el límite de ${subscription.plan.maxMembers} miembros del plan ${subscription.plan.name}`);
     }
     const user = await transaction.user.findUnique({ where: { email: input.email } });
-    if (!user) throw new HttpError(404, "No existe un usuario registrado con ese email");
-    const existing = await transaction.membership.findUnique({
-      where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
-    });
-    if (existing) throw new HttpError(409, "El usuario ya pertenece a esta tienda");
-    return transaction.membership.create({
-      data: { tenantId: tenant.id, userId: user.id, role: input.role },
-      include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+    if (user) {
+      const existing = await transaction.membership.findUnique({ where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } } });
+      if (existing) throw new HttpError(409, "El usuario ya pertenece a esta tienda");
+    }
+    return transaction.teamInvitation.upsert({
+      where: { tenantId_email: { tenantId: tenant.id, email: input.email } },
+      update: { role: input.role, tokenHash, invitedByUserId: inviter.id, expiresAt: expiresInHours(24 * environment.TEAM_INVITATION_TTL_DAYS), acceptedAt: null },
+      create: { tenantId: tenant.id, email: input.email, role: input.role, tokenHash, invitedByUserId: inviter.id, expiresAt: expiresInHours(24 * environment.TEAM_INVITATION_TTL_DAYS) },
+      select: { id: true, email: true, role: true, expiresAt: true, createdAt: true },
     });
   });
-  response.status(201).json({ member });
+  let emailSent = true;
+  try {
+    await sendTeamInvitationEmail({ email: invitation.email, tenantName: tenant.name, inviterName: `${inviter.firstName} ${inviter.lastName}`, role: invitation.role, token });
+  } catch {
+    emailSent = false;
+  }
+  response.status(201).json({ invitation, emailSent, invitationUrl: developmentUrl("/invitacion", token) });
+});
+
+adminRouter.delete("/team/invitations/:id", canManageTeam, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const id = resourceIdSchema.parse(request.params.id);
+  const removed = await database.teamInvitation.deleteMany({ where: { id, tenantId: tenant.id, acceptedAt: null } });
+  if (removed.count !== 1) throw new HttpError(404, "Invitación no encontrada");
+  response.status(204).send();
 });
 
 adminRouter.patch("/team/:userId", canManageTeam, async (request, response) => {

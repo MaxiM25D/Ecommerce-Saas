@@ -3,9 +3,21 @@ import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 
 import { database } from "../../database.js";
+import { environment } from "../../config.js";
 import { HttpError } from "../../errors.js";
+import { createAccountToken, developmentUrl, expiresInHours, expiresInMinutes, hashAccountToken } from "../../services/account-tokens.js";
+import { sendEmailVerification, sendPasswordResetEmail } from "../../services/mail.js";
 import { getAuthContext, createSession, destroySession, requireSession } from "./session.js";
-import { loginSchema, registerSchema, selectTenantSchema } from "./schemas.js";
+import {
+  acceptInvitationSchema,
+  forgotPasswordSchema,
+  invitationTokenSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+  selectTenantSchema,
+  verifyEmailSchema,
+} from "./schemas.js";
 
 export const authRouter = Router();
 
@@ -15,6 +27,21 @@ const authLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
 });
+
+async function issueEmailVerification(user: { id: string; email: string; firstName: string }) {
+  const { token, tokenHash } = createAccountToken();
+  await database.$transaction([
+    database.emailVerificationToken.deleteMany({ where: { userId: user.id } }),
+    database.emailVerificationToken.create({ data: { userId: user.id, tokenHash, expiresAt: expiresInHours(environment.EMAIL_VERIFICATION_TTL_HOURS) } }),
+  ]);
+  let emailSent = true;
+  try {
+    await sendEmailVerification({ email: user.email, firstName: user.firstName, token });
+  } catch {
+    emailSent = false;
+  }
+  return { emailSent, verificationUrl: developmentUrl("/verificar-email", token) };
+}
 
 authRouter.post("/register", authLimiter, async (request, response) => {
   const input = registerSchema.parse(request.body);
@@ -50,6 +77,7 @@ authRouter.post("/register", authLimiter, async (request, response) => {
       return { user, tenant };
     });
 
+    const verification = await issueEmailVerification(result.user);
     await createSession(response, result.user.id, result.tenant.id);
     response.status(201).json({
       user: {
@@ -58,9 +86,11 @@ authRouter.post("/register", authLimiter, async (request, response) => {
         firstName: result.user.firstName,
         lastName: result.user.lastName,
         platformRole: result.user.platformRole,
+        emailVerified: false,
       },
       tenant: { slug: result.tenant.slug, name: result.tenant.name },
       role: "OWNER",
+      verification,
     });
   } catch (error) {
     if ((error as { code?: string }).code === "P2002") {
@@ -92,7 +122,7 @@ authRouter.post("/login", authLimiter, async (request, response) => {
 
   await createSession(response, user.id, membership.tenantId);
   response.json({
-    user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, platformRole: user.platformRole },
+    user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, platformRole: user.platformRole, emailVerified: Boolean(user.emailVerifiedAt) },
     tenant: { slug: membership.tenant.slug, name: membership.tenant.name },
     role: membership.role,
   });
@@ -101,6 +131,140 @@ authRouter.post("/login", authLimiter, async (request, response) => {
 authRouter.post("/logout", async (request, response) => {
   await destroySession(request, response);
   response.status(204).send();
+});
+
+authRouter.post("/email-verification", authLimiter, requireSession, async (request, response) => {
+  const { user } = getAuthContext(request);
+  const storedUser = await database.user.findUniqueOrThrow({ where: { id: user.id } });
+  if (storedUser.emailVerifiedAt) {
+    response.json({ emailVerified: true, emailSent: false });
+    return;
+  }
+  const verification = await issueEmailVerification(storedUser);
+  response.status(202).json({ emailVerified: false, ...verification });
+});
+
+authRouter.post("/verify-email", authLimiter, async (request, response) => {
+  const { token } = verifyEmailSchema.parse(request.body);
+  const tokenHash = hashAccountToken(token);
+  const verification = await database.emailVerificationToken.findUnique({ where: { tokenHash } });
+  if (!verification || verification.expiresAt <= new Date()) {
+    if (verification) await database.emailVerificationToken.delete({ where: { id: verification.id } });
+    throw new HttpError(400, "El enlace de verificación venció o no es válido");
+  }
+  await database.$transaction([
+    database.user.update({ where: { id: verification.userId }, data: { emailVerifiedAt: new Date() } }),
+    database.emailVerificationToken.deleteMany({ where: { userId: verification.userId } }),
+  ]);
+  response.json({ emailVerified: true });
+});
+
+authRouter.post("/forgot-password", authLimiter, async (request, response) => {
+  const { email } = forgotPasswordSchema.parse(request.body);
+  const user = await database.user.findUnique({ where: { email } });
+  let resetUrl: string | undefined;
+  if (user) {
+    const { token, tokenHash } = createAccountToken();
+    await database.$transaction([
+      database.passwordResetToken.deleteMany({ where: { userId: user.id } }),
+      database.passwordResetToken.create({ data: { userId: user.id, tokenHash, expiresAt: expiresInMinutes(environment.PASSWORD_RESET_TTL_MINUTES) } }),
+    ]);
+    try {
+      await sendPasswordResetEmail({ email: user.email, firstName: user.firstName, token });
+    } catch {
+      // La respuesta pública no revela si la cuenta o el servicio SMTP existen.
+    }
+    resetUrl = developmentUrl("/restablecer-clave", token);
+  }
+  response.status(202).json({
+    message: "Si existe una cuenta con ese email, enviamos las instrucciones para recuperar la contraseña.",
+    ...(resetUrl ? { resetUrl } : {}),
+  });
+});
+
+authRouter.post("/reset-password", authLimiter, async (request, response) => {
+  const input = resetPasswordSchema.parse(request.body);
+  const reset = await database.passwordResetToken.findUnique({ where: { tokenHash: hashAccountToken(input.token) } });
+  if (!reset || reset.expiresAt <= new Date()) {
+    if (reset) await database.passwordResetToken.delete({ where: { id: reset.id } });
+    throw new HttpError(400, "El enlace de recuperación venció o no es válido");
+  }
+  const passwordHash = await bcrypt.hash(input.password, 12);
+  await database.$transaction([
+    database.user.update({ where: { id: reset.userId }, data: { passwordHash, emailVerifiedAt: new Date() } }),
+    database.passwordResetToken.deleteMany({ where: { userId: reset.userId } }),
+    database.emailVerificationToken.deleteMany({ where: { userId: reset.userId } }),
+    database.authSession.deleteMany({ where: { userId: reset.userId } }),
+  ]);
+  await destroySession(request, response);
+  response.status(204).send();
+});
+
+authRouter.get("/invitations/:token", authLimiter, async (request, response) => {
+  const { token } = invitationTokenSchema.parse(request.params);
+  const invitation = await database.teamInvitation.findUnique({
+    where: { tokenHash: hashAccountToken(token) },
+    include: { tenant: { select: { name: true, status: true } } },
+  });
+  if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date() || invitation.tenant.status !== "ACTIVE") {
+    throw new HttpError(404, "La invitación venció o no es válida");
+  }
+  const existingUser = Boolean(await database.user.findUnique({ where: { email: invitation.email }, select: { id: true } }));
+  response.json({ invitation: { email: invitation.email, role: invitation.role, tenantName: invitation.tenant.name, expiresAt: invitation.expiresAt, existingUser } });
+});
+
+authRouter.post("/invitations/accept", authLimiter, async (request, response) => {
+  const input = acceptInvitationSchema.parse(request.body);
+  const tokenHash = hashAccountToken(input.token);
+  const initialInvitation = await database.teamInvitation.findUnique({ where: { tokenHash } });
+  if (!initialInvitation || initialInvitation.acceptedAt || initialInvitation.expiresAt <= new Date()) {
+    throw new HttpError(400, "La invitación venció o no es válida");
+  }
+  const existingUser = await database.user.findUnique({ where: { email: initialInvitation.email } });
+  if (existingUser && !(await bcrypt.compare(input.password, existingUser.passwordHash))) {
+    throw new HttpError(401, "La contraseña no es correcta para la cuenta invitada");
+  }
+  if (!existingUser && (!input.firstName || !input.lastName)) {
+    throw new HttpError(400, "Completá nombre y apellido para crear tu cuenta");
+  }
+  const passwordHash = existingUser ? null : await bcrypt.hash(input.password, 12);
+
+  const accepted = await database.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${initialInvitation.tenantId} FOR UPDATE`;
+    const invitation = await transaction.teamInvitation.findUnique({
+      where: { tokenHash },
+      include: { tenant: { include: { subscription: { include: { plan: true } } } } },
+    });
+    if (!invitation || invitation.acceptedAt || invitation.expiresAt <= new Date()) throw new HttpError(400, "La invitación venció o no es válida");
+    if (invitation.tenant.status !== "ACTIVE") throw new HttpError(403, "La tienda está suspendida");
+    if (!invitation.tenant.subscription || !["TRIALING", "ACTIVE"].includes(invitation.tenant.subscription.status)) {
+      throw new HttpError(409, "La suscripción de la tienda no permite incorporar miembros");
+    }
+    const memberCount = await transaction.membership.count({ where: { tenantId: invitation.tenantId } });
+    if (memberCount >= invitation.tenant.subscription.plan.maxMembers) {
+      throw new HttpError(409, `La tienda alcanzó el límite de ${invitation.tenant.subscription.plan.maxMembers} miembros`);
+    }
+    let user = await transaction.user.findUnique({ where: { email: invitation.email } });
+    if (!user) {
+      user = await transaction.user.create({
+        data: { email: invitation.email, passwordHash: passwordHash!, firstName: input.firstName!, lastName: input.lastName!, emailVerifiedAt: new Date() },
+      });
+    } else if (!user.emailVerifiedAt) {
+      user = await transaction.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
+    }
+    const membership = await transaction.membership.findUnique({ where: { tenantId_userId: { tenantId: invitation.tenantId, userId: user.id } } });
+    if (membership) throw new HttpError(409, "La cuenta ya pertenece a esta tienda");
+    await transaction.membership.create({ data: { tenantId: invitation.tenantId, userId: user.id, role: invitation.role } });
+    await transaction.teamInvitation.update({ where: { id: invitation.id }, data: { acceptedAt: new Date() } });
+    return { user, tenant: invitation.tenant, role: invitation.role };
+  });
+
+  await createSession(response, accepted.user.id, accepted.tenant.id);
+  response.json({
+    user: { id: accepted.user.id, email: accepted.user.email, firstName: accepted.user.firstName, lastName: accepted.user.lastName, platformRole: accepted.user.platformRole, emailVerified: true },
+    tenant: { slug: accepted.tenant.slug, name: accepted.tenant.name },
+    role: accepted.role,
+  });
 });
 
 authRouter.get("/me", requireSession, (request, response) => {

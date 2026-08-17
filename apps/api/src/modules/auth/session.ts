@@ -93,6 +93,7 @@ export async function requireSession(
         firstName: session.user.firstName,
         lastName: session.user.lastName,
         platformRole: session.user.platformRole,
+        emailVerified: Boolean(session.user.emailVerifiedAt),
       },
       tenant: {
         id: session.activeTenant.id,

@@ -83,7 +83,11 @@ test("el plan FREE aplica límites y el upgrade habilita capacidad", async () =>
   const upgrade = await superAgent.patch(`/api/platform/tenants/${ownerTenantId}/subscription`).send({ planCode: "STARTER" });
   assert.equal(upgrade.status, 200);
   assert.equal(upgrade.body.subscription.plan.code, "STARTER");
-  assert.equal((await ownerAgent.post("/api/admin/team").send({ email: memberEmail, role: "STAFF" })).status, 201);
+  const invitation = await ownerAgent.post("/api/admin/team").send({ email: memberEmail, role: "STAFF" });
+  assert.equal(invitation.status, 201);
+  const invitationToken = new URL(invitation.body.invitationUrl).searchParams.get("token");
+  assert.ok(invitationToken);
+  assert.equal((await memberAgent.post("/api/auth/invitations/accept").send({ token: invitationToken, password })).status, 200);
   assert.equal((await ownerAgent.post("/api/admin/products").send({ sku: "LIMIT-EXTRA", slug: "limit-extra", name: "Producto extra", priceInCents: 1000, stock: 1 })).status, 201);
 });
 

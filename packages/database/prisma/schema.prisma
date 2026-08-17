@@ -103,6 +103,7 @@ model Tenant {
   paymentReceipts        PaymentReceipt[]
   shipments              Shipment[]
   orderStatusHistory     OrderStatusHistory[]
+  teamInvitations        TeamInvitation[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 }
@@ -114,8 +115,12 @@ model User {
   firstName              String
   lastName               String
   platformRole           PlatformRole            @default(USER)
+  emailVerifiedAt        DateTime?
   memberships            Membership[]
   authSessions           AuthSession[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens    PasswordResetToken[]
+  sentTeamInvitations    TeamInvitation[]         @relation("TeamInvitationInviter")
   mercadoPagoOAuthStates MercadoPagoOAuthState[]
   orderStatusChanges     OrderStatusHistory[]
   createdAt              DateTime                @default(now())
@@ -167,6 +172,49 @@ model AuthSession {
   @@index([userId])
   @@index([activeTenantId, userId])
   @@index([expiresAt])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model TeamInvitation {
+  id              String         @id @default(cuid())
+  tenantId        String
+  email           String
+  role            MembershipRole @default(STAFF)
+  tokenHash       String         @unique
+  invitedByUserId String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy       User           @relation("TeamInvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([tenantId, email])
+  @@index([tenantId, acceptedAt, expiresAt])
+  @@index([invitedByUserId])
 }
 
 model Membership {

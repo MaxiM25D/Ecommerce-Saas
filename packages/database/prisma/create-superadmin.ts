@@ -22,8 +22,8 @@ async function createSuperAdmin(): Promise<void> {
   const result = await database.$transaction(async (transaction) => {
     const user = await transaction.user.upsert({
       where: { email },
-      update: { passwordHash, firstName: "Super", lastName: "Admin", platformRole: "SUPERADMIN" },
-      create: { email, passwordHash, firstName: "Super", lastName: "Admin", platformRole: "SUPERADMIN" },
+      update: { passwordHash, firstName: "Super", lastName: "Admin", platformRole: "SUPERADMIN", emailVerifiedAt: new Date() },
+      create: { email, passwordHash, firstName: "Super", lastName: "Admin", platformRole: "SUPERADMIN", emailVerifiedAt: new Date() },
     });
     const tenant = await transaction.tenant.upsert({
       where: { slug: storeSlug },

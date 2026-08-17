@@ -33,22 +33,24 @@ async function seed(): Promise<void> {
   const [infinityShopOwner, norteOwner] = await Promise.all([
     database.user.upsert({
       where: { email: "owner@infinityshop.test" },
-      update: { firstName: "Maxi", lastName: "InfinityShop" },
+      update: { firstName: "Maxi", lastName: "InfinityShop", emailVerifiedAt: new Date() },
       create: {
         email: "owner@infinityshop.test",
         passwordHash: "seed-only-not-a-real-password-hash",
         firstName: "Maxi",
         lastName: "InfinityShop",
+        emailVerifiedAt: new Date(),
       },
     }),
     database.user.upsert({
       where: { email: "owner@norte.test" },
-      update: { firstName: "Ana", lastName: "Norte" },
+      update: { firstName: "Ana", lastName: "Norte", emailVerifiedAt: new Date() },
       create: {
         email: "owner@norte.test",
         passwordHash: "seed-only-not-a-real-password-hash",
         firstName: "Ana",
         lastName: "Norte",
+        emailVerifiedAt: new Date(),
       },
     }),
   ]);

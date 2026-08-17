@@ -44,10 +44,15 @@ Las entidades comerciales incluyen `tenantId`, las restricciones únicas se comp
 - `POST /api/auth/logout`: invalida la sesión actual.
 - `GET /api/auth/me`: devuelve el usuario y la tienda activos.
 - `POST /api/auth/select-tenant`: cambia de tienda usando un slug y verificando la membresía.
+- `POST /api/auth/email-verification` y `POST /api/auth/verify-email`: generan y consumen enlaces de verificación.
+- `POST /api/auth/forgot-password` y `POST /api/auth/reset-password`: recuperan la contraseña y revocan las sesiones anteriores.
+- `GET /api/auth/invitations/:token` y `POST /api/auth/invitations/accept`: validan y aceptan invitaciones al equipo.
 - `GET /api/tenants/resolve/:slug`: resuelve públicamente una tienda activa.
 - `GET /api/tenants/context`: devuelve el tenant guardado en la sesión.
 
 La cookie de sesión es `httpOnly`, el token se almacena hasheado en PostgreSQL y el `tenantId` activo nunca se toma del body, query string o parámetros enviados por el frontend.
+
+Los tokens de verificación, recuperación e invitación también se guardan únicamente como hashes SHA-256, vencen y son de un solo uso. En desarrollo, si SMTP no está configurado, la interfaz muestra un enlace local para probar el flujo. Esos enlaces no se incluyen en respuestas de producción.
 
 ## Panel administrativo
 
@@ -59,7 +64,7 @@ El panel web está disponible en `http://localhost:3000/admin` y consume rutas p
 - `GET /customers` y `GET /customers/:id`: búsqueda paginada, datos de contacto, estadísticas e historial de compras.
 - `GET|PATCH /store`: identidad, contacto, moneda y configuración visual de la tienda.
 
-Los roles `OWNER` y `ADMIN` pueden modificar datos. `STAFF` tiene acceso de solo lectura. Todas las consultas y mutaciones toman el tenant desde la sesión del servidor.
+Los roles `OWNER` y `ADMIN` pueden modificar datos. `STAFF` tiene acceso de solo lectura. El propietario invita colaboradores por email, puede cancelar invitaciones pendientes y el límite del plan contempla tanto miembros como invitaciones activas. Todas las consultas y mutaciones toman el tenant desde la sesión del servidor.
 
 ## Tienda pública
 

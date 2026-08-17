@@ -6,6 +6,7 @@ export type AuthContext = {
     firstName: string;
     lastName: string;
     platformRole: "USER" | "SUPERADMIN";
+    emailVerified: boolean;
   };
   tenant: {
     id: string;

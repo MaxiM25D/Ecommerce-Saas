@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { ApiError, apiRequest } from "@/lib/api";
 
@@ -36,11 +37,16 @@ export function AccessForm() {
           };
 
     try {
-      await apiRequest(mode === "login" ? "/auth/login" : "/auth/register", {
+      const result = await apiRequest<{ verification?: { verificationUrl?: string } }>(mode === "login" ? "/auth/login" : "/auth/register", {
         method: "POST",
         body: JSON.stringify(body),
       });
-      router.push("/admin");
+      if (mode === "register") {
+        const verificationUrl = result.verification?.verificationUrl;
+        router.push(verificationUrl ? `${new URL(verificationUrl).pathname}${new URL(verificationUrl).search}` : "/verificar-email?sent=1");
+      } else {
+        router.push("/admin");
+      }
       router.refresh();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "No se pudo conectar con la API");
@@ -90,6 +96,7 @@ export function AccessForm() {
         )}
         <Field label="Email" name="email" placeholder="vos@tienda.com" required type="email" />
         <Field label="Contraseña" name="password" placeholder="Mínimo 10 caracteres" required type="password" />
+        {mode === "login" && <Link className="block text-right text-xs font-semibold text-amber-700 hover:text-amber-900" href="/recuperar-clave">¿Olvidaste tu contraseña?</Link>}
         {mode === "register" ? (
           <>
             <Field label="Nombre de la tienda" name="storeName" placeholder="Mi tienda" required />

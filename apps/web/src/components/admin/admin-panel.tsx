@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { ApiError, apiRequest } from "@/lib/api";
 import { CategoriesView } from "./categories-view";
+import { AccountView } from "./account-view";
 import { CustomersView } from "./customers-view";
 import { DashboardView } from "./dashboard-view";
 import { ProductsView } from "./products-view";
@@ -15,9 +16,9 @@ import { StoreView } from "./store-view";
 import { TeamView } from "./team-view";
 import type { Role } from "./types";
 
-type Tab = "dashboard" | "categories" | "products" | "orders" | "customers" | "team" | "plan" | "store";
+type Tab = "dashboard" | "categories" | "products" | "orders" | "customers" | "team" | "plan" | "store" | "account";
 type Session = {
-  user: { firstName: string; lastName: string; email: string; platformRole: "USER" | "SUPERADMIN" };
+  user: { firstName: string; lastName: string; email: string; platformRole: "USER" | "SUPERADMIN"; emailVerified: boolean };
   tenant: { name: string; slug: string };
   role: Role;
 };
@@ -31,6 +32,7 @@ const navigation: Array<{ id: Tab; label: string; symbol: string }> = [
   { id: "team", label: "Equipo", symbol: "♙" },
   { id: "plan", label: "Plan y uso", symbol: "◫" },
   { id: "store", label: "Mi tienda", symbol: "◉" },
+  { id: "account", label: "Mi cuenta", symbol: "●" },
 ];
 
 export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMessage }: { openStore?: boolean; mercadoPagoResult?: string; mercadoPagoMessage?: string }) {
@@ -75,6 +77,7 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
     team: <TeamView role={session.role} />,
     plan: <PlanView />,
     store: <StoreView mercadoPagoMessage={mercadoPagoMessage} mercadoPagoResult={mercadoPagoResult} role={session.role} onStoreUpdated={(name) => setSession({ ...session, tenant: { ...session.tenant, name } })} />,
+    account: <AccountView user={session.user} />,
   }[tab];
 
   return (
