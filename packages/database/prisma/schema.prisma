@@ -104,6 +104,7 @@ model Tenant {
   shipments              Shipment[]
   orderStatusHistory     OrderStatusHistory[]
   teamInvitations        TeamInvitation[]
+  lastActiveUsers        User[]                  @relation("UserLastTenant")
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 }
@@ -116,6 +117,8 @@ model User {
   lastName               String
   platformRole           PlatformRole            @default(USER)
   emailVerifiedAt        DateTime?
+  lastTenantId           String?
+  lastTenant             Tenant?                 @relation("UserLastTenant", fields: [lastTenantId], references: [id], onDelete: SetNull)
   memberships            Membership[]
   authSessions           AuthSession[]
   emailVerificationTokens EmailVerificationToken[]
@@ -125,6 +128,8 @@ model User {
   orderStatusChanges     OrderStatusHistory[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
+
+  @@index([lastTenantId])
 }
 
 model Plan {

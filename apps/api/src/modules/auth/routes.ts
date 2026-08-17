@@ -7,9 +7,10 @@ import { environment } from "../../config.js";
 import { HttpError } from "../../errors.js";
 import { createAccountToken, developmentUrl, expiresInHours, expiresInMinutes, hashAccountToken } from "../../services/account-tokens.js";
 import { sendEmailVerification, sendPasswordResetEmail } from "../../services/mail.js";
-import { getAuthContext, createSession, destroySession, requireSession } from "./session.js";
+import { getAuthContext, createSession, destroySession, requireSession, selectSessionTenant } from "./session.js";
 import {
   acceptInvitationSchema,
+  createTenantSchema,
   forgotPasswordSchema,
   invitationTokenSchema,
   loginSchema,
@@ -117,7 +118,10 @@ authRouter.post("/login", authLimiter, async (request, response) => {
     throw new HttpError(401, "Email o contraseña incorrectos");
   }
 
-  const membership = user.memberships.find(({ tenant }) => tenant.status === "ACTIVE");
+  const membership = input.tenantSlug
+    ? user.memberships.find(({ tenant }) => tenant.status === "ACTIVE")
+    : user.memberships.find(({ tenantId, tenant }) => tenantId === user.lastTenantId && tenant.status === "ACTIVE")
+      ?? user.memberships.find(({ tenant }) => tenant.status === "ACTIVE");
   if (!membership) throw new HttpError(403, "No tenés acceso a una tienda activa");
 
   await createSession(response, user.id, membership.tenantId);
@@ -272,6 +276,48 @@ authRouter.get("/me", requireSession, (request, response) => {
   response.json({ user: auth.user, tenant: { slug: auth.tenant.slug, name: auth.tenant.name }, role: auth.role });
 });
 
+authRouter.get("/tenants", requireSession, async (request, response) => {
+  const auth = getAuthContext(request);
+  const memberships = await database.membership.findMany({
+    where: { userId: auth.user.id },
+    orderBy: { createdAt: "asc" },
+    select: { role: true, createdAt: true, tenant: { select: { name: true, slug: true, status: true } } },
+  });
+  response.json({
+    tenants: memberships.map((membership) => ({
+      ...membership.tenant,
+      role: membership.role,
+      joinedAt: membership.createdAt,
+      current: membership.tenant.slug === auth.tenant.slug,
+    })),
+  });
+});
+
+authRouter.post("/tenants", requireSession, async (request, response) => {
+  const auth = getAuthContext(request);
+  if (!auth.user.emailVerified) throw new HttpError(403, "Verificá tu email antes de crear otra tienda");
+  const input = createTenantSchema.parse(request.body);
+  try {
+    const tenant = await database.$transaction(async (transaction) => {
+      const created = await transaction.tenant.create({
+        data: {
+          name: input.name,
+          slug: input.slug,
+          memberships: { create: { userId: auth.user.id, role: "OWNER" } },
+          subscription: { create: { planId: "plan_free", status: "ACTIVE" } },
+        },
+      });
+      await transaction.authSession.update({ where: { id: auth.sessionId }, data: { activeTenantId: created.id } });
+      await transaction.user.update({ where: { id: auth.user.id }, data: { lastTenantId: created.id } });
+      return created;
+    });
+    response.status(201).json({ tenant: { name: tenant.name, slug: tenant.slug, status: tenant.status }, role: "OWNER" });
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") throw new HttpError(409, "Ese slug de tienda ya está ocupado");
+    throw error;
+  }
+});
+
 authRouter.post("/select-tenant", requireSession, async (request, response) => {
   const auth = getAuthContext(request);
   const input = selectTenantSchema.parse(request.body);
@@ -282,10 +328,7 @@ authRouter.post("/select-tenant", requireSession, async (request, response) => {
 
   if (!membership) throw new HttpError(403, "No tenés acceso a esa tienda");
 
-  await database.authSession.update({
-    where: { id: auth.sessionId },
-    data: { activeTenantId: membership.tenantId },
-  });
+  await selectSessionTenant(auth.sessionId, auth.user.id, membership.tenantId);
   response.json({
     tenant: { slug: membership.tenant.slug, name: membership.tenant.name },
     role: membership.role,

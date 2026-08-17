@@ -25,7 +25,6 @@ export function AccessForm() {
         ? {
             email: form.get("email"),
             password: form.get("password"),
-            tenantSlug: form.get("tenantSlug") || undefined,
           }
         : {
             email: form.get("email"),
@@ -102,9 +101,7 @@ export function AccessForm() {
             <Field label="Nombre de la tienda" name="storeName" placeholder="Mi tienda" required />
             <Field label="Slug de la tienda" name="storeSlug" placeholder="mi-tienda" required />
           </>
-        ) : (
-          <Field label="Slug de tienda (opcional)" name="tenantSlug" placeholder="mi-tienda" />
-        )}
+        ) : null}
 
         {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 

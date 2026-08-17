@@ -14,6 +14,7 @@ import { OrdersView } from "./orders-view";
 import { PlanView } from "./plan-view";
 import { StoreView } from "./store-view";
 import { TeamView } from "./team-view";
+import { TenantSwitcher } from "./tenant-switcher";
 import type { Role } from "./types";
 
 type Tab = "dashboard" | "categories" | "products" | "orders" | "customers" | "team" | "plan" | "store" | "account";
@@ -96,10 +97,7 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
           <button className="text-stone-400 lg:hidden" onClick={() => setMenuOpen(false)} type="button">×</button>
         </div>
 
-        <div className="my-7 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
-          <p className="truncate text-sm font-semibold">{session.tenant.name}</p>
-          <p className="mt-1 truncate text-xs text-stone-400">/{session.tenant.slug}</p>
-        </div>
+        <TenantSwitcher current={session.tenant} emailVerified={session.user.emailVerified} key={session.tenant.slug} onSelected={(selection) => { setSession({ ...session, tenant: selection.tenant, role: selection.role }); setTab("dashboard"); }} />
 
         <nav className="space-y-1.5">
           {navigation.map((item) => (
@@ -150,7 +148,7 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
           </div>
           <Link className="rounded-full bg-stone-950 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-amber-700" href={`/tienda/${session.tenant.slug}`} target="_blank">Ver tienda ↗</Link>
         </header>
-        <div className="p-5 sm:p-8 lg:p-10">{content}</div>
+        <div className="p-5 sm:p-8 lg:p-10" key={session.tenant.slug}>{content}</div>
       </main>
     </div>
   );

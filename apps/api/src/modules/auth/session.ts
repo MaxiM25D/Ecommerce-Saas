@@ -36,10 +36,20 @@ export async function createSession(
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + environment.SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
 
-  await database.authSession.create({
-    data: { tokenHash: hashSessionToken(token), userId, activeTenantId, expiresAt },
-  });
+  await database.$transaction([
+    database.authSession.create({ data: { tokenHash: hashSessionToken(token), userId, activeTenantId, expiresAt } }),
+    database.user.update({ where: { id: userId }, data: { lastTenantId: activeTenantId } }),
+  ]);
   setSessionCookie(response, token);
+}
+
+export async function selectSessionTenant(sessionId: string, userId: string, tenantId: string): Promise<void> {
+  const membership = await database.membership.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
+  if (!membership) throw new HttpError(403, "No tenés acceso a esa tienda");
+  await database.$transaction([
+    database.authSession.update({ where: { id: sessionId }, data: { activeTenantId: tenantId } }),
+    database.user.update({ where: { id: userId }, data: { lastTenantId: tenantId } }),
+  ]);
 }
 
 export async function destroySession(request: Request, response: Response): Promise<void> {
@@ -76,14 +86,27 @@ export async function requireSession(
       throw new HttpError(401, "La sesión venció o no es válida");
     }
 
-    const membership = await database.membership.findUnique({
+    let activeTenant = session.activeTenant;
+    let membership = await database.membership.findUnique({
       where: {
         tenantId_userId: { tenantId: session.activeTenantId, userId: session.userId },
       },
     });
 
-    if (!membership) throw new HttpError(403, "La sesión no tiene acceso a esta tienda");
-    if (session.activeTenant.status !== "ACTIVE") throw new HttpError(403, "La tienda está suspendida");
+    if (!membership || activeTenant.status !== "ACTIVE") {
+      const fallback = await database.membership.findFirst({
+        where: { userId: session.userId, tenant: { status: "ACTIVE" } },
+        include: { tenant: true },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!fallback) throw new HttpError(403, "No tenés acceso a una tienda activa");
+      membership = fallback;
+      activeTenant = fallback.tenant;
+      await database.$transaction([
+        database.authSession.update({ where: { id: session.id }, data: { activeTenantId: fallback.tenantId } }),
+        database.user.update({ where: { id: session.userId }, data: { lastTenantId: fallback.tenantId } }),
+      ]);
+    }
 
     request.auth = {
       sessionId: session.id,
@@ -96,9 +119,9 @@ export async function requireSession(
         emailVerified: Boolean(session.user.emailVerifiedAt),
       },
       tenant: {
-        id: session.activeTenant.id,
-        slug: session.activeTenant.slug,
-        name: session.activeTenant.name,
+        id: activeTenant.id,
+        slug: activeTenant.slug,
+        name: activeTenant.name,
       },
       role: membership.role,
     };

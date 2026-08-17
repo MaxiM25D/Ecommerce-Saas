@@ -31,6 +31,11 @@ export const loginSchema = z
 
 export const selectTenantSchema = z.object({ tenantSlug }).strict();
 
+export const createTenantSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  slug: tenantSlug,
+}).strict();
+
 const accountToken = z.string().trim().min(32).max(256);
 
 export const forgotPasswordSchema = z.object({ email }).strict();

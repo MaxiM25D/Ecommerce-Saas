@@ -10,13 +10,14 @@ const alphaEmail = "owner.alpha@auth-test.local";
 const betaEmail = "owner.beta@auth-test.local";
 const alphaSlug = "alpha-auth-test";
 const betaSlug = "beta-auth-test";
+const alphaSecondSlug = "alpha-second-store";
 const password = "StrongPass123!";
 
 const alphaAgent = request.agent(app);
 const betaAgent = request.agent(app);
 
 async function cleanup(): Promise<void> {
-  await database.tenant.deleteMany({ where: { slug: { in: [alphaSlug, betaSlug] } } });
+  await database.tenant.deleteMany({ where: { slug: { in: [alphaSlug, betaSlug, alphaSecondSlug] } } });
   await database.user.deleteMany({ where: { email: { in: [alphaEmail, betaEmail] } } });
 }
 
@@ -137,4 +138,36 @@ test("logout invalida la sesión y login crea una nueva usando el slug", async (
   assert.equal(meResponse.status, 200);
   assert.equal(meResponse.body.tenant.slug, alphaSlug);
   assert.equal(meResponse.body.role, "OWNER");
+});
+
+test("crea, lista y recuerda la última tienda sin aceptar tenantId del frontend", async () => {
+  const unverified = await alphaAgent.post("/api/auth/tenants").send({ name: "Segunda tienda", slug: alphaSecondSlug });
+  assert.equal(unverified.status, 403);
+  await database.user.update({ where: { email: alphaEmail }, data: { emailVerifiedAt: new Date() } });
+
+  const manipulated = await alphaAgent.post("/api/auth/tenants").send({ name: "Segunda tienda", slug: alphaSecondSlug, tenantId: "externo" });
+  assert.equal(manipulated.status, 400);
+  const created = await alphaAgent.post("/api/auth/tenants").send({ name: "Segunda tienda", slug: alphaSecondSlug });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.role, "OWNER");
+
+  const stores = await alphaAgent.get("/api/auth/tenants");
+  assert.equal(stores.status, 200);
+  assert.deepEqual(stores.body.tenants.map(({ slug }: { slug: string }) => slug), [alphaSlug, alphaSecondSlug]);
+  assert.equal(stores.body.tenants.find(({ current }: { current: boolean }) => current).slug, alphaSecondSlug);
+
+  assert.equal((await alphaAgent.post("/api/auth/select-tenant").send({ tenantSlug: alphaSlug })).status, 200);
+  await alphaAgent.post("/api/auth/logout");
+  const rememberedAlpha = await alphaAgent.post("/api/auth/login").send({ email: alphaEmail, password });
+  assert.equal(rememberedAlpha.body.tenant.slug, alphaSlug);
+
+  assert.equal((await alphaAgent.post("/api/auth/select-tenant").send({ tenantSlug: alphaSecondSlug })).status, 200);
+  await alphaAgent.post("/api/auth/logout");
+  const rememberedSecond = await alphaAgent.post("/api/auth/login").send({ email: alphaEmail, password });
+  assert.equal(rememberedSecond.body.tenant.slug, alphaSecondSlug);
+
+  await database.tenant.update({ where: { slug: alphaSecondSlug }, data: { status: "SUSPENDED" } });
+  const automaticFallback = await alphaAgent.get("/api/auth/me");
+  assert.equal(automaticFallback.status, 200);
+  assert.equal(automaticFallback.body.tenant.slug, alphaSlug);
 });

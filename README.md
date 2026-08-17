@@ -44,6 +44,7 @@ Las entidades comerciales incluyen `tenantId`, las restricciones únicas se comp
 - `POST /api/auth/logout`: invalida la sesión actual.
 - `GET /api/auth/me`: devuelve el usuario y la tienda activos.
 - `POST /api/auth/select-tenant`: cambia de tienda usando un slug y verificando la membresía.
+- `GET|POST /api/auth/tenants`: lista las tiendas accesibles o crea una nueva con el usuario como `OWNER`.
 - `POST /api/auth/email-verification` y `POST /api/auth/verify-email`: generan y consumen enlaces de verificación.
 - `POST /api/auth/forgot-password` y `POST /api/auth/reset-password`: recuperan la contraseña y revocan las sesiones anteriores.
 - `GET /api/auth/invitations/:token` y `POST /api/auth/invitations/accept`: validan y aceptan invitaciones al equipo.
@@ -51,6 +52,8 @@ Las entidades comerciales incluyen `tenantId`, las restricciones únicas se comp
 - `GET /api/tenants/context`: devuelve el tenant guardado en la sesión.
 
 La cookie de sesión es `httpOnly`, el token se almacena hasheado en PostgreSQL y el `tenantId` activo nunca se toma del body, query string o parámetros enviados por el frontend.
+
+El panel incluye un selector multi-tienda. La última selección queda asociada al usuario y se recupera en el próximo login; si esa tienda es suspendida o la membresía desaparece, la sesión cambia automáticamente a otra tienda activa disponible.
 
 Los tokens de verificación, recuperación e invitación también se guardan únicamente como hashes SHA-256, vencen y son de un solo uso. En desarrollo, si SMTP no está configurado, la interfaz muestra un enlace local para probar el flujo. Esos enlaces no se incluyen en respuestas de producción.
 
