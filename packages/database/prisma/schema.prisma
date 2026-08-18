@@ -24,7 +24,6 @@ enum PlatformRole {
 }
 
 enum PlanCode {
-  FREE
   STARTER
   PRO
 }
@@ -34,6 +33,18 @@ enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
   CANCELED
+}
+
+enum BillingProvider {
+  MERCADO_PAGO
+}
+
+enum BillingInvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELED
+  REFUNDED
 }
 
 enum CartStatus {
@@ -104,63 +115,116 @@ model Tenant {
   shipments              Shipment[]
   orderStatusHistory     OrderStatusHistory[]
   teamInvitations        TeamInvitation[]
+  billingInvoices        BillingInvoice[]
   lastActiveUsers        User[]                  @relation("UserLastTenant")
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 }
 
 model User {
-  id                     String                  @id @default(cuid())
-  email                  String                  @unique
-  passwordHash           String
-  firstName              String
-  lastName               String
-  platformRole           PlatformRole            @default(USER)
-  emailVerifiedAt        DateTime?
-  lastTenantId           String?
-  lastTenant             Tenant?                 @relation("UserLastTenant", fields: [lastTenantId], references: [id], onDelete: SetNull)
-  memberships            Membership[]
-  authSessions           AuthSession[]
+  id                      String                   @id @default(cuid())
+  email                   String                   @unique
+  passwordHash            String
+  firstName               String
+  lastName                String
+  platformRole            PlatformRole             @default(USER)
+  emailVerifiedAt         DateTime?
+  lastTenantId            String?
+  lastTenant              Tenant?                  @relation("UserLastTenant", fields: [lastTenantId], references: [id], onDelete: SetNull)
+  memberships             Membership[]
+  authSessions            AuthSession[]
   emailVerificationTokens EmailVerificationToken[]
-  passwordResetTokens    PasswordResetToken[]
-  sentTeamInvitations    TeamInvitation[]         @relation("TeamInvitationInviter")
-  mercadoPagoOAuthStates MercadoPagoOAuthState[]
-  orderStatusChanges     OrderStatusHistory[]
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
+  passwordResetTokens     PasswordResetToken[]
+  sentTeamInvitations     TeamInvitation[]         @relation("TeamInvitationInviter")
+  mercadoPagoOAuthStates  MercadoPagoOAuthState[]
+  orderStatusChanges      OrderStatusHistory[]
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
   @@index([lastTenantId])
 }
 
 model Plan {
-  id                String         @id
-  code              PlanCode       @unique
-  name              String
-  priceInCents      Int
-  currency          String         @default("ARS")
-  maxProducts       Int
-  maxMembers        Int
-  maxOrdersPerMonth Int
-  active            Boolean        @default(true)
-  subscriptions     Subscription[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  id                   String         @id
+  code                 PlanCode       @unique
+  name                 String
+  description          String?
+  priceInCents         Int
+  currency             String         @default("ARS")
+  maxProducts          Int
+  maxMembers           Int
+  maxOrdersPerMonth    Int?
+  trialDays            Int            @default(14)
+  features             String[]       @default([])
+  active               Boolean        @default(true)
+  subscriptions        Subscription[]
+  pendingSubscriptions Subscription[] @relation("PendingSubscriptionPlan")
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 }
 
 model Subscription {
-  tenantId          String             @id
-  planId            String
-  status            SubscriptionStatus @default(TRIALING)
-  trialEndsAt       DateTime?
-  currentPeriodFrom DateTime?
-  currentPeriodTo   DateTime?
-  cancelAtPeriodEnd Boolean            @default(false)
-  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  plan              Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  tenantId               String             @id
+  planId                 String
+  status                 SubscriptionStatus @default(TRIALING)
+  trialEndsAt            DateTime?
+  currentPeriodFrom      DateTime?
+  currentPeriodTo        DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  pendingPlanId          String?
+  billingProvider        BillingProvider?
+  providerSubscriptionId String?            @unique
+  providerStatus         String?
+  providerCheckoutUrl    String?
+  payerEmail             String?
+  lastPaymentAt          DateTime?
+  lastPaymentFailedAt    DateTime?
+  tenant                 Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan                   Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  pendingPlan            Plan?              @relation("PendingSubscriptionPlan", fields: [pendingPlanId], references: [id], onDelete: SetNull)
+  invoices               BillingInvoice[]
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   @@index([planId, status])
+  @@index([pendingPlanId])
+}
+
+model BillingInvoice {
+  id                String               @id @default(cuid())
+  tenantId          String
+  provider          BillingProvider
+  providerInvoiceId String
+  providerPaymentId String?
+  status            BillingInvoiceStatus @default(PENDING)
+  planCode          PlanCode
+  planName          String
+  amountInCents     Int
+  currency          String
+  periodFrom        DateTime?
+  periodTo          DateTime?
+  paidAt            DateTime?
+  failureReason     String?
+  rawStatus         String?
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade, map: "BillingInvoice_tenantId_fkey")
+  subscription      Subscription         @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade, map: "BillingInvoice_subscription_fkey")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([provider, providerInvoiceId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+}
+
+model BillingWebhookEvent {
+  id          String          @id
+  provider    BillingProvider
+  eventType   String
+  resourceId  String
+  processedAt DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+
+  @@index([provider, resourceId])
 }
 
 model AuthSession {

@@ -6,7 +6,7 @@ import multer from "multer";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { tenantSlug } from "../auth/schemas.js";
-import { assertSubscriptionWritable, monthStart } from "../saas/limits.js";
+import { assertSubscriptionWritable } from "../saas/limits.js";
 import { checkoutSchema } from "./schemas.js";
 import { createCheckoutPreference } from "../../services/mercado-pago.js";
 import { releaseReservedOrder, requirePublicOrder } from "../../services/orders.js";
@@ -153,14 +153,7 @@ storefrontRouter.post("/:slug/orders", async (request, response) => {
       include: { plan: true },
     });
     if (!subscription) throw new HttpError(409, "La tienda no tiene un plan asignado");
-    assertSubscriptionWritable(subscription.status);
-    const monthlyOrders = await transaction.order.count({
-      where: { tenantId: tenant.id, createdAt: { gte: monthStart() } },
-    });
-    if (monthlyOrders >= subscription.plan.maxOrdersPerMonth) {
-      throw new HttpError(409, `La tienda alcanzó el límite mensual de ${subscription.plan.maxOrdersPerMonth} pedidos`);
-    }
-
+    assertSubscriptionWritable(subscription.status, subscription.trialEndsAt);
     const productIds = input.items.map(({ productId }) => productId);
     const products = await transaction.product.findMany({
       where: { tenantId: tenant.id, id: { in: productIds }, active: true },

@@ -13,7 +13,10 @@ export async function getSubscriptionContext(tenantId: string) {
   return subscription;
 }
 
-export function assertSubscriptionWritable(status: string): void {
+export function assertSubscriptionWritable(status: string, trialEndsAt?: Date | null): void {
+  if (status === "TRIALING" && (!trialEndsAt || trialEndsAt <= new Date())) {
+    throw new HttpError(402, "El período de prueba terminó; elegí un plan para continuar");
+  }
   if (!new Set(["ACTIVE", "TRIALING"]).has(status)) {
     throw new HttpError(402, "La suscripción de la tienda necesita regularizarse para continuar");
   }
@@ -27,7 +30,7 @@ export async function requireWritableSubscription(
   try {
     const { tenant } = getAuthContext(request);
     const subscription = await getSubscriptionContext(tenant.id);
-    assertSubscriptionWritable(subscription.status);
+    assertSubscriptionWritable(subscription.status, subscription.trialEndsAt);
     next();
   } catch (error) {
     next(error);
@@ -36,4 +39,9 @@ export async function requireWritableSubscription(
 
 export function monthStart(date = new Date()): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+export function newTrialSubscription(planId: string, trialDays: number, now = new Date()) {
+  const trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+  return { planId, status: "TRIALING" as const, trialEndsAt, currentPeriodFrom: now, currentPeriodTo: trialEndsAt };
 }

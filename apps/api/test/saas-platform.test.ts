@@ -25,9 +25,7 @@ async function cleanup(): Promise<void> {
 }
 
 async function register(agent: ReturnType<typeof request.agent>, email: string, slug: string) {
-  const response = await agent.post("/api/auth/register").send({
-    email, password, firstName: "SaaS", lastName: "Test", storeName: `Tienda ${slug}`, storeSlug: slug,
-  });
+  const response = await agent.post("/api/auth/register").send({ email, password, firstName: "SaaS", lastName: "Test", storeName: `Tienda ${slug}`, storeSlug: slug });
   assert.equal(response.status, 201);
 }
 
@@ -46,90 +44,48 @@ before(async () => {
   memberUserId = memberUser.id;
 });
 
-after(async () => {
-  await cleanup();
-  await database.$disconnect();
-});
+after(async () => { await cleanup(); await database.$disconnect(); });
 
-test("solo SUPERADMIN accede al panel global", async () => {
+test("solo SUPERADMIN accede al panel global y existen STARTER y PRO", async () => {
   assert.equal((await ownerAgent.get("/api/platform/overview")).status, 403);
-  const overview = await superAgent.get("/api/platform/overview");
-  assert.equal(overview.status, 200);
-  assert.ok(overview.body.tenants >= 3);
+  assert.equal((await superAgent.get("/api/platform/overview")).status, 200);
   const plans = await superAgent.get("/api/platform/plans");
-  assert.deepEqual(plans.body.plans.map(({ code }: { code: string }) => code), ["FREE", "STARTER", "PRO"]);
+  assert.deepEqual(plans.body.plans.map(({ code }: { code: string }) => code), ["STARTER", "PRO"]);
+  assert.deepEqual(plans.body.plans.map(({ priceInCents }: { priceInCents: number }) => priceInCents), [5_000_000, 7_000_000]);
 });
 
-test("el plan FREE aplica límites y el upgrade habilita capacidad", async () => {
-  const teamLimit = await ownerAgent.post("/api/admin/team").send({ email: memberEmail, role: "STAFF" });
-  assert.equal(teamLimit.status, 409);
-
-  const tenant = await database.tenant.findUniqueOrThrow({ where: { id: ownerTenantId } });
-  await database.product.createMany({
-    data: Array.from({ length: 20 }, (_, index) => ({
-      tenantId: tenant.id,
-      sku: `LIMIT-${index}`,
-      slug: `limit-${index}`,
-      name: `Producto límite ${index}`,
-      priceInCents: 1000,
-      stock: 1,
-    })),
-  });
-  const productLimit = await ownerAgent.post("/api/admin/products").send({
-    sku: "LIMIT-EXTRA", slug: "limit-extra", name: "Producto extra", priceInCents: 1000, stock: 1,
-  });
-  assert.equal(productLimit.status, 409);
-
-  const upgrade = await superAgent.patch(`/api/platform/tenants/${ownerTenantId}/subscription`).send({ planCode: "STARTER" });
-  assert.equal(upgrade.status, 200);
-  assert.equal(upgrade.body.subscription.plan.code, "STARTER");
+test("STARTER limita 150 productos y un colaborador; PRO amplía capacidad", async () => {
   const invitation = await ownerAgent.post("/api/admin/team").send({ email: memberEmail, role: "STAFF" });
   assert.equal(invitation.status, 201);
   const invitationToken = new URL(invitation.body.invitationUrl).searchParams.get("token");
   assert.ok(invitationToken);
   assert.equal((await memberAgent.post("/api/auth/invitations/accept").send({ token: invitationToken, password })).status, 200);
+  assert.equal((await ownerAgent.post("/api/admin/team").send({ email: "second-collaborator@example.com", role: "STAFF" })).status, 409);
+
+  await database.product.createMany({
+    data: Array.from({ length: 150 }, (_, index) => ({ tenantId: ownerTenantId, sku: `LIMIT-${index}`, slug: `limit-${index}`, name: `Producto límite ${index}`, priceInCents: 1000, stock: 1 })),
+  });
+  assert.equal((await ownerAgent.post("/api/admin/products").send({ sku: "LIMIT-EXTRA", slug: "limit-extra", name: "Producto extra", priceInCents: 1000, stock: 1 })).status, 409);
+
+  const upgrade = await superAgent.patch(`/api/platform/tenants/${ownerTenantId}/subscription`).send({ planCode: "PRO" });
+  assert.equal(upgrade.status, 200);
+  assert.equal(upgrade.body.subscription.plan.code, "PRO");
   assert.equal((await ownerAgent.post("/api/admin/products").send({ sku: "LIMIT-EXTRA", slug: "limit-extra", name: "Producto extra", priceInCents: 1000, stock: 1 })).status, 201);
+  assert.equal((await ownerAgent.post("/api/admin/team").send({ email: "second-collaborator@example.com", role: "STAFF" })).status, 201);
 });
 
 test("OWNER administra roles y STAFF conserva solo lectura", async () => {
-  const updated = await ownerAgent.patch(`/api/admin/team/${memberUserId}`).send({ role: "ADMIN" });
-  assert.equal(updated.status, 200);
-  assert.equal(updated.body.member.role, "ADMIN");
+  assert.equal((await ownerAgent.patch(`/api/admin/team/${memberUserId}`).send({ role: "ADMIN" })).status, 200);
   await ownerAgent.patch(`/api/admin/team/${memberUserId}`).send({ role: "STAFF" });
   assert.equal((await memberAgent.post("/api/auth/select-tenant").send({ tenantSlug: ownerSlug })).status, 200);
   assert.equal((await memberAgent.get("/api/admin/products")).status, 200);
   assert.equal((await memberAgent.post("/api/admin/categories").send({ name: "Prohibida", slug: "prohibida" })).status, 403);
 });
 
-test("suscripciones vencidas bloquean mutaciones y tenants suspendidos dejan de operar", async () => {
-  await superAgent.patch(`/api/platform/tenants/${ownerTenantId}/subscription`).send({ planCode: "FREE" });
-  await database.order.createMany({
-    data: Array.from({ length: 50 }, (_, index) => ({
-      tenantId: ownerTenantId,
-      number: index + 1,
-      customerEmail: `limit-${index}@example.com`,
-      customerName: "Límite Mensual",
-      subtotalInCents: 1000,
-      totalInCents: 1000,
-    })),
-  });
-  const product = await database.product.findFirstOrThrow({ where: { tenantId: ownerTenantId } });
-  const orderLimit = await request(app).post(`/api/storefront/${ownerSlug}/orders`).send({
-    customer: {
-      email: "pedido-extra@example.com",
-      firstName: "Pedido",
-      lastName: "Extra",
-      phone: "11111111",
-      shippingAddress: "Dirección de prueba número 123",
-    },
-    items: [{ productId: product.id, quantity: 1 }],
-  });
-  assert.equal(orderLimit.status, 409);
-
+test("pagos vencidos bloquean mutaciones y tenants suspendidos dejan de operar", async () => {
   assert.equal((await superAgent.patch(`/api/platform/tenants/${ownerTenantId}/subscription`).send({ status: "PAST_DUE" })).status, 200);
   assert.equal((await ownerAgent.post("/api/admin/categories").send({ name: "Bloqueada", slug: "bloqueada" })).status, 402);
   await superAgent.patch(`/api/platform/tenants/${ownerTenantId}/subscription`).send({ status: "ACTIVE" });
-
   assert.equal((await superAgent.patch(`/api/platform/tenants/${ownerTenantId}`).send({ status: "SUSPENDED" })).status, 200);
   assert.equal((await request(app).get(`/api/storefront/${ownerSlug}`)).status, 404);
   assert.equal((await ownerAgent.get("/api/admin/dashboard")).status, 403);

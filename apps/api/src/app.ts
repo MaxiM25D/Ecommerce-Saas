@@ -14,6 +14,7 @@ import { platformRouter } from "./modules/platform/routes.js";
 import { tenantRouter } from "./modules/tenants/routes.js";
 import { adminIntegrationRouter, integrationRouter } from "./modules/integrations/routes.js";
 import { paymentRouter } from "./modules/payments/routes.js";
+import { billingRouter } from "./modules/billing/routes.js";
 import { publicRoot } from "./services/storage.js";
 import { database } from "./database.js";
 import { log } from "./services/logger.js";
@@ -77,6 +78,7 @@ app.use("/api/admin", adminRouter);
 app.use("/api/admin/integrations", adminIntegrationRouter);
 app.use("/api/integrations", integrationRouter);
 app.use("/api/payments", paymentRouter);
+app.use("/api/billing", billingRouter);
 app.use("/api/platform", platformRouter);
 
 app.use((_request, response) => {

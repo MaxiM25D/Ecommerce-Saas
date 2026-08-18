@@ -3,6 +3,7 @@ import { configurationWarnings, environment } from "./config.js";
 import { database } from "./database.js";
 import { releaseExpiredReservations } from "./services/orders.js";
 import { log } from "./services/logger.js";
+import { processDueBillingCancellations, processExpiredTrials } from "./services/saas-billing.js";
 
 const port = environment.PORT ?? environment.API_PORT;
 const server = app.listen(port, "0.0.0.0", () => {
@@ -17,6 +18,10 @@ async function sweepReservations(): Promise<void> {
   try {
     const released = await releaseExpiredReservations();
     if (released > 0) log("info", "reservations_released", { released });
+    const canceledSubscriptions = await processDueBillingCancellations();
+    if (canceledSubscriptions > 0) log("info", "subscriptions_canceled", { canceledSubscriptions });
+    const expiredTrials = await processExpiredTrials();
+    if (expiredTrials > 0) log("info", "subscription_trials_expired", { expiredTrials });
   } catch (error) {
     log("error", "reservation_sweep_failed", { error });
   } finally {

@@ -33,6 +33,9 @@ const environmentSchema = z.object({
   MP_CLIENT_SECRET: optionalText,
   MP_WEBHOOK_SECRET: optionalText,
   MP_TOKEN_ENCRYPTION_KEY: z.preprocess(emptyAsUndefined, z.string().min(32).optional()),
+  SAAS_BILLING_PROVIDER: z.enum(["disabled", "mercado_pago"]).default("disabled"),
+  SAAS_MP_ACCESS_TOKEN: optionalSecret,
+  SAAS_MP_WEBHOOK_SECRET: optionalSecret,
   SMTP_HOST: optionalText,
   SMTP_PORT: z.coerce.number().int().positive().default(465),
   SMTP_SECURE: z.string().default("true").transform((value) => value === "true"),
@@ -64,6 +67,11 @@ const environmentSchema = z.object({
       if (!value[key]) context.addIssue({ code: "custom", path: [key], message: "Completá todas las credenciales de Mercado Pago" });
     }
   }
+  if (value.SAAS_BILLING_PROVIDER === "mercado_pago") {
+    for (const key of ["SAAS_MP_ACCESS_TOKEN", "SAAS_MP_WEBHOOK_SECRET"] as const) {
+      if (!value[key]) context.addIssue({ code: "custom", path: [key], message: "Es obligatoria para facturar InfinityShop con Mercado Pago" });
+    }
+  }
 });
 
 export const environment = environmentSchema.parse(process.env);
@@ -72,5 +80,6 @@ export function configurationWarnings(): string[] {
   const warnings: string[] = [];
   if (environment.NODE_ENV === "production" && environment.STORAGE_PROVIDER === "local") warnings.push("El almacenamiento local requiere un volumen persistente y backups propios");
   if (environment.NODE_ENV === "production" && !environment.MP_CLIENT_ID) warnings.push("Mercado Pago está deshabilitado porque no hay credenciales configuradas");
+  if (environment.NODE_ENV === "production" && environment.SAAS_BILLING_PROVIDER === "disabled") warnings.push("La facturación automática de InfinityShop está deshabilitada");
   return warnings;
 }

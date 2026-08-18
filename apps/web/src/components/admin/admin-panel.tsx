@@ -76,7 +76,7 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
     orders: <OrdersView role={session.role} />,
     customers: <CustomersView />,
     team: <TeamView role={session.role} />,
-    plan: <PlanView />,
+    plan: <PlanView role={session.role} />,
     store: <StoreView mercadoPagoMessage={mercadoPagoMessage} mercadoPagoResult={mercadoPagoResult} role={session.role} onStoreUpdated={(name) => setSession({ ...session, tenant: { ...session.tenant, name } })} />,
     account: <AccountView user={session.user} />,
   }[tab];

@@ -7,6 +7,7 @@ import { environment } from "../../config.js";
 import { HttpError } from "../../errors.js";
 import { createAccountToken, developmentUrl, expiresInHours, expiresInMinutes, hashAccountToken } from "../../services/account-tokens.js";
 import { sendEmailVerification, sendPasswordResetEmail } from "../../services/mail.js";
+import { newTrialSubscription } from "../saas/limits.js";
 import { getAuthContext, createSession, destroySession, requireSession, selectSessionTenant } from "./session.js";
 import {
   acceptInvitationSchema,
@@ -58,6 +59,7 @@ authRouter.post("/register", authLimiter, async (request, response) => {
 
   try {
     const result = await database.$transaction(async (transaction) => {
+      const starterPlan = await transaction.plan.findUniqueOrThrow({ where: { code: "STARTER" } });
       const user = await transaction.user.create({
         data: {
           email: input.email,
@@ -71,7 +73,7 @@ authRouter.post("/register", authLimiter, async (request, response) => {
           name: input.storeName,
           slug: input.storeSlug,
           memberships: { create: { userId: user.id, role: "OWNER" } },
-          subscription: { create: { planId: "plan_free", status: "ACTIVE" } },
+          subscription: { create: newTrialSubscription(starterPlan.id, starterPlan.trialDays) },
         },
       });
 
@@ -299,12 +301,13 @@ authRouter.post("/tenants", requireSession, async (request, response) => {
   const input = createTenantSchema.parse(request.body);
   try {
     const tenant = await database.$transaction(async (transaction) => {
+      const starterPlan = await transaction.plan.findUniqueOrThrow({ where: { code: "STARTER" } });
       const created = await transaction.tenant.create({
         data: {
           name: input.name,
           slug: input.slug,
           memberships: { create: { userId: auth.user.id, role: "OWNER" } },
-          subscription: { create: { planId: "plan_free", status: "ACTIVE" } },
+          subscription: { create: newTrialSubscription(starterPlan.id, starterPlan.trialDays) },
         },
       });
       await transaction.authSession.update({ where: { id: auth.sessionId }, data: { activeTenantId: created.id } });

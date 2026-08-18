@@ -72,6 +72,24 @@ En la aplicación Marketplace de Mercado Pago configurar:
 
 Completar juntas `MP_CLIENT_ID`, `MP_CLIENT_SECRET`, `MP_WEBHOOK_SECRET` y `MP_TOKEN_ENCRYPTION_KEY`. La API rechaza una configuración parcial.
 
+### Facturación de InfinityShop
+
+La suscripción STARTER/PRO se cobra con la cuenta vendedora propia de InfinityShop, no con las cuentas OAuth de los tenants. Configurar:
+
+```text
+SAAS_BILLING_PROVIDER=mercado_pago
+SAAS_MP_ACCESS_TOKEN=APP_USR-...
+SAAS_MP_WEBHOOK_SECRET=...
+```
+
+En la aplicación de Mercado Pago de InfinityShop activar los tópicos `subscription_preapproval` y `subscription_authorized_payment`, apuntando a:
+
+```text
+https://api.tudominio.com/api/billing/mercadopago/webhook?source_news=webhooks
+```
+
+El backend valida la firma, vuelve a consultar el recurso en Mercado Pago y actualiza suscripción, renovaciones, pagos fallidos e historial de facturas. Nunca reutilizar aquí un access token cifrado perteneciente a una tienda.
+
 ## 6. Archivos y correo
 
 En producción se recomienda `STORAGE_PROVIDER=cloudinary` y las tres credenciales de Cloudinary. Los comprobantes se suben como recursos autenticados y se entregan mediante enlaces breves.

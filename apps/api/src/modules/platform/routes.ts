@@ -90,7 +90,7 @@ platformRouter.patch("/tenants/:id/subscription", async (request, response) => {
     },
     create: {
       tenantId,
-      planId: plan?.id ?? "plan_free",
+      planId: plan?.id ?? "plan_starter",
       status: input.status ?? "ACTIVE",
       cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
       currentPeriodFrom: new Date(),

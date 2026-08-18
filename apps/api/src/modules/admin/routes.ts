@@ -4,8 +4,9 @@ import multer from "multer";
 import { environment } from "../../config.js";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
+import { getBillingOverview } from "../../services/saas-billing.js";
 import { getAuthContext, requireRoles, requireSession } from "../auth/session.js";
-import { assertSubscriptionWritable, getSubscriptionContext, monthStart, requireWritableSubscription } from "../saas/limits.js";
+import { assertSubscriptionWritable, requireWritableSubscription } from "../saas/limits.js";
 import {
   addMemberSchema,
   createCategorySchema,
@@ -187,7 +188,7 @@ adminRouter.post("/products", canManage, async (request, response) => {
         include: { plan: true },
       });
       if (!subscription) throw new HttpError(409, "La tienda no tiene un plan asignado");
-      assertSubscriptionWritable(subscription.status);
+      assertSubscriptionWritable(subscription.status, subscription.trialEndsAt);
       const productCount = await transaction.product.count({ where: { tenantId: tenant.id } });
       if (productCount >= subscription.plan.maxProducts) {
         throw new HttpError(409, `Alcanzaste el límite de ${subscription.plan.maxProducts} productos del plan ${subscription.plan.name}`);
@@ -599,18 +600,7 @@ adminRouter.post("/orders/:id/shipment-email", canManage, async (request, respon
 
 adminRouter.get("/subscription", async (request, response) => {
   const { tenant } = getAuthContext(request);
-  const [subscription, products, members, monthlyOrders, plans] = await Promise.all([
-    getSubscriptionContext(tenant.id),
-    database.product.count({ where: { tenantId: tenant.id } }),
-    database.membership.count({ where: { tenantId: tenant.id } }),
-    database.order.count({ where: { tenantId: tenant.id, createdAt: { gte: monthStart() } } }),
-    database.plan.findMany({ where: { active: true }, orderBy: { priceInCents: "asc" } }),
-  ]);
-  response.json({
-    subscription,
-    usage: { products, members, monthlyOrders },
-    plans,
-  });
+  response.json(await getBillingOverview(tenant.id));
 });
 
 adminRouter.get("/team", async (request, response) => {

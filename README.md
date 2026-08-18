@@ -99,7 +99,9 @@ Los avisos de despacho usan SMTP. Configurá `SMTP_HOST`, `SMTP_PORT`, `SMTP_SEC
 
 ## Funciones SaaS
 
-Cada tenant tiene una suscripción y uno de los planes `FREE`, `STARTER` o `PRO`. Los límites de productos, miembros y pedidos mensuales se verifican dentro de transacciones del servidor. Los estados `TRIALING` y `ACTIVE` permiten operar; `PAST_DUE` y `CANCELED` bloquean mutaciones. El propietario administra su equipo con roles `OWNER`, `ADMIN` y `STAFF`, mientras que un `SUPERADMIN` global puede acceder a `/platform` para cambiar planes, estados de suscripción y activar o suspender tenants.
+Cada tenant tiene una suscripción `STARTER` o `PRO`. STARTER cuesta $50.000 ARS/mes e incluye 150 productos y un colaborador; PRO cuesta $70.000 ARS/mes e incluye 1.000 productos y cinco colaboradores. Los límites se verifican dentro de transacciones del servidor. Pedidos, checkout, pagos, seguridad y aislamiento no tienen límites por volumen del plan.
+
+El onboarding inicia una prueba STARTER de 14 días. El OWNER consulta uso, elige plan, sincroniza el estado, programa la cancelación y revisa facturas desde **Plan y uso**. La facturación recurrente usa credenciales propias de InfinityShop, completamente separadas del OAuth de Mercado Pago que cada tenant utiliza para cobrar sus pedidos. `SUPERADMIN` conserva `/platform` para soporte operativo.
 
 ## Preparación para producción
 
