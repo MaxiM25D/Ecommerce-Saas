@@ -2,6 +2,8 @@ import type { ErrorRequestHandler } from "express";
 import { MulterError } from "multer";
 import { ZodError } from "zod";
 
+import { log } from "./services/logger.js";
+
 export class HttpError extends Error {
   constructor(
     public readonly status: number,
@@ -11,7 +13,7 @@ export class HttpError extends Error {
   }
 }
 
-export const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
+export const errorHandler: ErrorRequestHandler = (error, request, response, _next) => {
   if (error instanceof MulterError) {
     response.status(400).json({
       error: "UPLOAD_ERROR",
@@ -29,10 +31,11 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
   }
 
   if (error instanceof HttpError) {
+    if (error.status >= 500) log("error", "http_error", { requestId: request.requestId, method: request.method, path: request.path, status: error.status, error });
     response.status(error.status).json({ error: "REQUEST_ERROR", message: error.message });
     return;
   }
 
-  console.error(error);
+  log("error", "unhandled_request_error", { requestId: request.requestId, method: request.method, path: request.path, error });
   response.status(500).json({ error: "INTERNAL_ERROR", message: "Error interno del servidor" });
 };

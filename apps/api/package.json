@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/auth-tenants.test.ts test/admin-panel.test.ts test/storefront.test.ts test/checkout-orders.test.ts test/saas-platform.test.ts test/payments-security.test.ts test/customers.test.ts test/account-security.test.ts"
+    "test": "tsx --test test/auth-tenants.test.ts test/admin-panel.test.ts test/storefront.test.ts test/checkout-orders.test.ts test/saas-platform.test.ts test/payments-security.test.ts test/customers.test.ts test/account-security.test.ts test/production-readiness.test.ts"
   },
   "dependencies": {
     "@infinityshop/database": "*",

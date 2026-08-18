@@ -14,17 +14,23 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:generate": "prisma generate --config packages/database/prisma.config.ts",
     "db:migrate": "prisma migrate dev --config packages/database/prisma.config.ts",
+    "db:deploy": "prisma migrate deploy --config packages/database/prisma.config.ts",
     "db:seed": "prisma db seed --config packages/database/prisma.config.ts",
     "db:studio": "prisma studio --config packages/database/prisma.config.ts",
     "db:test:isolation": "npm run test:isolation --workspace @infinityshop/database",
     "db:superadmin": "npm run db:superadmin --workspace @infinityshop/database",
     "test:api": "npm run build --workspace @infinityshop/database && npm run test --workspace @infinityshop/api",
+    "check": "npm run typecheck && npm run lint && npm run build && npm run test:api && npm run db:test:isolation",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.0.0"
   },
-  "packageManager": "npm@10.8.2"
+  "packageManager": "npm@10.8.2",
+  "overrides": {
+    "deepmerge-ts": "^8.0.0",
+    "nanoid": "^3.3.18"
+  }
 }

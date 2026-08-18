@@ -12,6 +12,7 @@ coverage/
 Thumbs.db
 *.log
 storage/
+backups/
 
 packages/database/src/generated/
 

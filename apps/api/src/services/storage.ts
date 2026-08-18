@@ -9,7 +9,7 @@ import { environment } from "../config.js";
 
 const publicRoot = resolve(environment.PUBLIC_UPLOAD_DIR);
 const privateRoot = resolve(environment.PRIVATE_UPLOAD_DIR);
-const cloudinaryEnabled = Boolean(
+const cloudinaryEnabled = environment.STORAGE_PROVIDER === "cloudinary" && Boolean(
   environment.CLOUDINARY_NAME && environment.CLOUDINARY_KEY && environment.CLOUDINARY_SECRET,
 );
 

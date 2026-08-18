@@ -13,7 +13,7 @@ Plataforma ecommerce multi-tenant. El ecommerce original de LUNEK se conserva si
 
 ## Requisitos
 
-- Node.js 20.19 o superior.
+- Node.js 22 LTS o superior.
 - PostgreSQL (el entorno Docker local usa el puerto `5433` para no interferir con instalaciones existentes).
 
 ## Inicio local
@@ -100,3 +100,13 @@ Los avisos de despacho usan SMTP. Configurá `SMTP_HOST`, `SMTP_PORT`, `SMTP_SEC
 ## Funciones SaaS
 
 Cada tenant tiene una suscripción y uno de los planes `FREE`, `STARTER` o `PRO`. Los límites de productos, miembros y pedidos mensuales se verifican dentro de transacciones del servidor. Los estados `TRIALING` y `ACTIVE` permiten operar; `PAST_DUE` y `CANCELED` bloquean mutaciones. El propietario administra su equipo con roles `OWNER`, `ADMIN` y `STAFF`, mientras que un `SUPERADMIN` global puede acceder a `/platform` para cambiar planes, estados de suscripción y activar o suspender tenants.
+
+## Preparación para producción
+
+- `GET /api/health` comprueba el proceso y `GET /api/ready` verifica además PostgreSQL.
+- `npm run check` ejecuta tipos, lint, builds, pruebas de API y aislamiento multi-tenant.
+- `Dockerfile.api` y `apps/web/Dockerfile` generan imágenes de producción con usuarios sin privilegios.
+- `railway.json` despliega migraciones antes de iniciar la API y configura el health check.
+- `scripts/backup-postgres.ps1` crea backups verificables con `pg_dump`.
+
+La guía completa, variables y checklist están en [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Ningún secreto real debe guardarse en Git.

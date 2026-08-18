@@ -15,8 +15,9 @@ function hashSessionToken(token: string): string {
 function setSessionCookie(response: Response, token: string): void {
   response.cookie(sessionCookieName, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: environment.SESSION_COOKIE_SAME_SITE,
     secure: environment.NODE_ENV === "production",
+    domain: environment.SESSION_COOKIE_DOMAIN,
     maxAge: environment.SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
     path: "/",
   });
@@ -61,8 +62,9 @@ export async function destroySession(request: Request, response: Response): Prom
 
   response.clearCookie(sessionCookieName, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: environment.SESSION_COOKIE_SAME_SITE,
     secure: environment.NODE_ENV === "production",
+    domain: environment.SESSION_COOKIE_DOMAIN,
     path: "/",
   });
 }
