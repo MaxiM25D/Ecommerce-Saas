@@ -31,8 +31,8 @@ jobs:
       MP_TOKEN_ENCRYPTION_KEY: ci-only-encryption-key-32-characters
       NEXT_PUBLIC_API_URL: http://localhost:4000/api
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -40,12 +40,21 @@ jobs:
       - run: npm run db:generate
       - run: npm run db:deploy
       - run: npm run db:seed
-      - run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: API tests
+        run: npm run test:api
+      - name: Tenant isolation tests
+        run: npm run db:test:isolation
 
   docker-images:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build -f Dockerfile.api -t infinityshop-api:ci .
       - run: docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://localhost:4000/api -t infinityshop-web:ci .
