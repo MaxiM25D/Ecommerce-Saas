@@ -17,6 +17,14 @@ export type StorefrontProduct = {
   brand: string | null;
   tags: string[];
   featured: boolean;
+  variants: Array<{
+    id: string;
+    sku: string;
+    name: string;
+    options: Record<string, string>;
+    priceInCents: number;
+    stock: number;
+  }>;
   category: Pick<StorefrontCategory, "id" | "name" | "slug"> | null;
 };
 
@@ -28,6 +36,11 @@ export type PublicStore = {
     logoUrl: string | null;
     bannerUrl: string | null;
     primaryColor: string;
+    secondaryColor: string;
+    fontFamily: string;
+    borderRadius: string;
+    announcement: string | null;
+    showPoweredBy: boolean;
     contactEmail: string | null;
     whatsapp: string | null;
     currency: string;
@@ -36,11 +49,25 @@ export type PublicStore = {
     bankTransfer: boolean;
     mercadoPago: boolean;
   };
+  shippingZones: Array<{
+    id: string;
+    name: string;
+    postalPrefixes: string[];
+    methods: Array<{
+      id: string;
+      name: string;
+      priceInCents: number;
+      estimatedDays: number | null;
+    }>;
+  }>;
   categories?: StorefrontCategory[];
   products?: StorefrontProduct[];
 };
 
-export type CartItem = StorefrontProduct & { quantity: number };
+export type CartItem = StorefrontProduct & {
+  quantity: number;
+  selectedVariant?: StorefrontProduct["variants"][number];
+};
 
 export type CheckoutResult = {
   order: {
@@ -52,17 +79,19 @@ export type CheckoutResult = {
     currency: string;
   };
   orderToken: string;
-  payment: {
-    method: "BANK_TRANSFER";
-    bankName: string | null;
-    alias: string | null;
-    holder: string | null;
-    cvu: string | null;
-    cuit: string | null;
-    reservationHours: number;
-  } | {
-    method: "MERCADO_PAGO";
-    preferenceId: string;
-    checkoutUrl: string;
-  };
+  payment:
+    | {
+        method: "BANK_TRANSFER";
+        bankName: string | null;
+        alias: string | null;
+        holder: string | null;
+        cvu: string | null;
+        cuit: string | null;
+        reservationHours: number;
+      }
+    | {
+        method: "MERCADO_PAGO";
+        preferenceId: string;
+        checkoutUrl: string;
+      };
 };

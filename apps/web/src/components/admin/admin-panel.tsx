@@ -14,17 +14,35 @@ import { OrdersView } from "./orders-view";
 import { PlanView } from "./plan-view";
 import { StoreView } from "./store-view";
 import { TeamView } from "./team-view";
+import { GrowthView } from "./growth-view";
 import { TenantSwitcher } from "./tenant-switcher";
 import type { Role } from "./types";
 
-type Tab = "dashboard" | "categories" | "products" | "orders" | "customers" | "team" | "plan" | "store" | "account";
+type Tab =
+  | "dashboard"
+  | "categories"
+  | "products"
+  | "orders"
+  | "customers"
+  | "growth"
+  | "team"
+  | "plan"
+  | "store"
+  | "account";
 type Session = {
-  user: { firstName: string; lastName: string; email: string; platformRole: "USER" | "SUPERADMIN"; emailVerified: boolean };
+  user: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    platformRole: "USER" | "SUPERADMIN";
+    emailVerified: boolean;
+  };
   tenant: { name: string; slug: string };
   role: Role;
 };
 
 const navigation: Array<{ id: Tab; label: string; symbol: string }> = [
+  { id: "growth", label: "Crecimiento", symbol: "↗" },
   { id: "dashboard", label: "Resumen", symbol: "⌁" },
   { id: "categories", label: "Categorías", symbol: "◇" },
   { id: "products", label: "Productos", symbol: "▦" },
@@ -36,7 +54,15 @@ const navigation: Array<{ id: Tab; label: string; symbol: string }> = [
   { id: "account", label: "Mi cuenta", symbol: "●" },
 ];
 
-export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMessage }: { openStore?: boolean; mercadoPagoResult?: string; mercadoPagoMessage?: string }) {
+export function AdminPanel({
+  openStore = false,
+  mercadoPagoResult,
+  mercadoPagoMessage,
+}: {
+  openStore?: boolean;
+  mercadoPagoResult?: string;
+  mercadoPagoMessage?: string;
+}) {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [tab, setTab] = useState<Tab>(openStore ? "store" : "dashboard");
@@ -47,7 +73,8 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
     apiRequest<Session>("/auth/me")
       .then(setSession)
       .catch((error) => {
-        if (error instanceof ApiError && error.status === 401) router.replace("/login");
+        if (error instanceof ApiError && error.status === 401)
+          router.replace("/login");
       })
       .finally(() => setLoading(false));
   }, [router]);
@@ -61,7 +88,8 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
     return (
       <main className="grid min-h-screen place-items-center bg-[#f6f4ef]">
         <div className="flex items-center gap-3 text-sm font-semibold text-stone-600">
-          <span className="h-3 w-3 animate-pulse rounded-full bg-amber-600" /> Cargando tu tienda…
+          <span className="h-3 w-3 animate-pulse rounded-full bg-amber-600" />{" "}
+          Cargando tu tienda…
         </div>
       </main>
     );
@@ -75,9 +103,19 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
     products: <ProductsView role={session.role} />,
     orders: <OrdersView role={session.role} />,
     customers: <CustomersView />,
+    growth: <GrowthView role={session.role} />,
     team: <TeamView role={session.role} />,
     plan: <PlanView role={session.role} />,
-    store: <StoreView mercadoPagoMessage={mercadoPagoMessage} mercadoPagoResult={mercadoPagoResult} role={session.role} onStoreUpdated={(name) => setSession({ ...session, tenant: { ...session.tenant, name } })} />,
+    store: (
+      <StoreView
+        mercadoPagoMessage={mercadoPagoMessage}
+        mercadoPagoResult={mercadoPagoResult}
+        role={session.role}
+        onStoreUpdated={(name) =>
+          setSession({ ...session, tenant: { ...session.tenant, name } })
+        }
+      />
+    ),
     account: <AccountView user={session.user} />,
   }[tab];
 
@@ -88,22 +126,46 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
       >
         <div className="flex items-center justify-between px-2 py-3">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#b89b72] font-serif text-xl">∞</span>
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#b89b72] font-serif text-xl">
+              ∞
+            </span>
             <div>
               <p className="font-semibold tracking-tight">InfinityShop</p>
-              <p className="text-[10px] uppercase tracking-[0.18em] text-stone-400">Commerce OS</p>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-stone-400">
+                Commerce OS
+              </p>
             </div>
           </div>
-          <button className="text-stone-400 lg:hidden" onClick={() => setMenuOpen(false)} type="button">×</button>
+          <button
+            className="text-stone-400 lg:hidden"
+            onClick={() => setMenuOpen(false)}
+            type="button"
+          >
+            ×
+          </button>
         </div>
 
-        <TenantSwitcher current={session.tenant} emailVerified={session.user.emailVerified} key={session.tenant.slug} onSelected={(selection) => { setSession({ ...session, tenant: selection.tenant, role: selection.role }); setTab("dashboard"); }} />
+        <TenantSwitcher
+          current={session.tenant}
+          emailVerified={session.user.emailVerified}
+          key={session.tenant.slug}
+          onSelected={(selection) => {
+            setSession({
+              ...session,
+              tenant: selection.tenant,
+              role: selection.role,
+            });
+            setTab("dashboard");
+          }}
+        />
 
         <nav className="space-y-1.5">
           {navigation.map((item) => (
             <button
               className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
-                tab === item.id ? "bg-[#b89b72] text-white" : "text-stone-400 hover:bg-white/[0.06] hover:text-white"
+                tab === item.id
+                  ? "bg-[#b89b72] text-white"
+                  : "text-stone-400 hover:bg-white/[0.06] hover:text-white"
               }`}
               key={item.id}
               onClick={() => {
@@ -119,36 +181,77 @@ export function AdminPanel({ openStore = false, mercadoPagoResult, mercadoPagoMe
         </nav>
 
         <div className="mt-auto border-t border-white/10 pt-5">
-          {session.user.platformRole === "SUPERADMIN" && <Link className="mb-4 block w-full rounded-xl bg-[#b89b72] px-4 py-2.5 text-center text-sm font-semibold text-white" href="/platform">Panel SaaS</Link>}
+          {session.user.platformRole === "SUPERADMIN" && (
+            <Link
+              className="mb-4 block w-full rounded-xl bg-[#b89b72] px-4 py-2.5 text-center text-sm font-semibold text-white"
+              href="/platform"
+            >
+              Panel SaaS
+            </Link>
+          )}
           <div className="mb-4 flex items-center gap-3 px-2">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-stone-700 text-xs font-bold">
-              {session.user.firstName[0]}{session.user.lastName[0]}
+              {session.user.firstName[0]}
+              {session.user.lastName[0]}
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{session.user.firstName} {session.user.lastName}</p>
-              <p className="text-[10px] uppercase tracking-wider text-stone-500">{session.role}</p>
+              <p className="truncate text-sm font-medium">
+                {session.user.firstName} {session.user.lastName}
+              </p>
+              <p className="text-[10px] uppercase tracking-wider text-stone-500">
+                {session.role}
+              </p>
             </div>
           </div>
-          <button className="w-full rounded-xl border border-white/10 px-4 py-2.5 text-sm text-stone-400 transition hover:bg-white/[0.06] hover:text-white" onClick={logout} type="button">
+          <button
+            className="w-full rounded-xl border border-white/10 px-4 py-2.5 text-sm text-stone-400 transition hover:bg-white/[0.06] hover:text-white"
+            onClick={logout}
+            type="button"
+          >
             Cerrar sesión
           </button>
         </div>
       </aside>
 
-      {menuOpen && <button aria-label="Cerrar menú" className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setMenuOpen(false)} type="button" />}
+      {menuOpen && (
+        <button
+          aria-label="Cerrar menú"
+          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
+          onClick={() => setMenuOpen(false)}
+          type="button"
+        />
+      )}
 
       <main className="min-w-0">
         <header className="flex h-20 items-center justify-between border-b border-stone-200 bg-white/80 px-5 backdrop-blur sm:px-8 lg:px-10">
           <div className="flex items-center gap-3">
-            <button className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 lg:hidden" onClick={() => setMenuOpen(true)} type="button">☰</button>
+            <button
+              className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 lg:hidden"
+              onClick={() => setMenuOpen(true)}
+              type="button"
+            >
+              ☰
+            </button>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Panel administrativo</p>
-              <h1 className="text-lg font-semibold">{navigation.find(({ id }) => id === tab)?.label}</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">
+                Panel administrativo
+              </p>
+              <h1 className="text-lg font-semibold">
+                {navigation.find(({ id }) => id === tab)?.label}
+              </h1>
             </div>
           </div>
-          <Link className="rounded-full bg-stone-950 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-amber-700" href={`/tienda/${session.tenant.slug}`} target="_blank">Ver tienda ↗</Link>
+          <Link
+            className="rounded-full bg-stone-950 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+            href={`/tienda/${session.tenant.slug}`}
+            target="_blank"
+          >
+            Ver tienda ↗
+          </Link>
         </header>
-        <div className="p-5 sm:p-8 lg:p-10" key={session.tenant.slug}>{content}</div>
+        <div className="p-5 sm:p-8 lg:p-10" key={session.tenant.slug}>
+          {content}
+        </div>
       </main>
     </div>
   );

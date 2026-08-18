@@ -15,6 +15,7 @@ import { tenantRouter } from "./modules/tenants/routes.js";
 import { adminIntegrationRouter, integrationRouter } from "./modules/integrations/routes.js";
 import { paymentRouter } from "./modules/payments/routes.js";
 import { billingRouter } from "./modules/billing/routes.js";
+import { growthRouter } from "./modules/growth/routes.js";
 import { publicRoot } from "./services/storage.js";
 import { database } from "./database.js";
 import { log } from "./services/logger.js";
@@ -42,11 +43,24 @@ app.use((request, response, next) => {
   next();
 });
 app.use(helmet());
-app.use(cors({ origin: environment.WEB_URL, credentials: true }));
-app.use((request, _response, next) => {
+async function isVerifiedStoreOrigin(origin: string): Promise<boolean> {
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    return Boolean(await database.customDomain.findFirst({ where: { hostname, status: "VERIFIED", tenant: { status: "ACTIVE" } }, select: { id: true } }));
+  } catch { return false; }
+}
+
+app.use(cors((request, callback) => {
+  const origin = request.get("origin");
+  if (!origin || origin === new URL(environment.WEB_URL).origin) return callback(null, { origin: origin ?? false, credentials: true });
+  if (!request.path.startsWith("/api/storefront/")) return callback(null, { origin: false });
+  void isVerifiedStoreOrigin(origin).then((allowed) => callback(null, { origin: allowed ? origin : false, credentials: false })).catch(() => callback(null, { origin: false }));
+}));
+app.use(async (request, _response, next) => {
   if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
     const origin = request.get("origin");
-    if (origin && origin !== new URL(environment.WEB_URL).origin) {
+    const customStoreOrigin = origin && request.path.startsWith("/api/storefront/") ? await isVerifiedStoreOrigin(origin) : false;
+    if (origin && origin !== new URL(environment.WEB_URL).origin && !customStoreOrigin) {
       next(new HttpError(403, "Origen no permitido"));
       return;
     }
@@ -79,6 +93,7 @@ app.use("/api/admin/integrations", adminIntegrationRouter);
 app.use("/api/integrations", integrationRouter);
 app.use("/api/payments", paymentRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/admin/growth", growthRouter);
 app.use("/api/platform", platformRouter);
 
 app.use((_request, response) => {

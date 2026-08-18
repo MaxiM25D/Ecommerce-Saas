@@ -6,7 +6,10 @@ const slug = z
   .toLowerCase()
   .min(2)
   .max(80)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Usá letras minúsculas, números y guiones simples");
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    "Usá letras minúsculas, números y guiones simples",
+  );
 const resourceId = z.string().trim().min(1).max(64);
 const optionalUrl = z.url().trim().max(2048).nullable().optional();
 
@@ -62,6 +65,15 @@ export const updateStoreSchema = z
       .trim()
       .regex(/^#[0-9A-Fa-f]{6}$/, "Usá un color hexadecimal de seis dígitos")
       .optional(),
+    secondaryColor: z
+      .string()
+      .trim()
+      .regex(/^#[0-9A-Fa-f]{6}$/, "Usá un color hexadecimal de seis dígitos")
+      .optional(),
+    fontFamily: z.enum(["SYSTEM", "SERIF", "MODERN"]).optional(),
+    borderRadius: z.enum(["SQUARE", "MEDIUM", "SOFT"]).optional(),
+    announcement: z.string().trim().max(180).nullable().optional(),
+    showPoweredBy: z.boolean().optional(),
     contactEmail: z.email().trim().toLowerCase().max(254).nullable().optional(),
     whatsapp: z.string().trim().max(30).nullable().optional(),
     currency: z.string().trim().toUpperCase().length(3).optional(),
@@ -79,24 +91,45 @@ export const updateStoreSchema = z
 
 export const updateOrderSchema = z
   .object({
-    status: z.enum(["PENDING", "CONFIRMED", "PREPARING", "SHIPPED", "DELIVERED", "CANCELLED"]).optional(),
-    paymentStatus: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED", "REFUNDED"]).optional(),
+    status: z
+      .enum([
+        "PENDING",
+        "CONFIRMED",
+        "PREPARING",
+        "SHIPPED",
+        "DELIVERED",
+        "CANCELLED",
+      ])
+      .optional(),
+    paymentStatus: z
+      .enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED", "REFUNDED"])
+      .optional(),
   })
   .strict()
   .refine((input) => Object.keys(input).length > 0, "Enviá al menos un estado");
 
-export const addMemberSchema = z.object({
-  email: z.email().trim().toLowerCase().max(254),
-  role: z.enum(["ADMIN", "STAFF"]),
-}).strict();
+export const addMemberSchema = z
+  .object({
+    email: z.email().trim().toLowerCase().max(254),
+    role: z.enum(["ADMIN", "STAFF"]),
+  })
+  .strict();
 
-export const updateMemberSchema = z.object({
-  role: z.enum(["ADMIN", "STAFF"]),
-}).strict();
+export const updateMemberSchema = z
+  .object({
+    role: z.enum(["ADMIN", "STAFF"]),
+  })
+  .strict();
 
-export const dispatchOrderSchema = z.object({
-  carrier: z.string().trim().min(2).max(80),
-  trackingCode: z.string().trim().max(100).nullable().optional(),
-  trackingUrl: z.url().trim().max(2048).nullable().optional(),
-  estimatedDelivery: z.coerce.date().min(new Date(), "La entrega estimada no puede estar en el pasado").nullable().optional(),
-}).strict();
+export const dispatchOrderSchema = z
+  .object({
+    carrier: z.string().trim().min(2).max(80),
+    trackingCode: z.string().trim().max(100).nullable().optional(),
+    trackingUrl: z.url().trim().max(2048).nullable().optional(),
+    estimatedDelivery: z.coerce
+      .date()
+      .min(new Date(), "La entrega estimada no puede estar en el pasado")
+      .nullable()
+      .optional(),
+  })
+  .strict();

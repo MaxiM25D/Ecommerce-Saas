@@ -34,6 +34,11 @@ export type Store = {
     logoUrl: string | null;
     bannerUrl: string | null;
     primaryColor: string;
+    secondaryColor: string;
+    fontFamily: string;
+    borderRadius: string;
+    announcement: string | null;
+    showPoweredBy: boolean;
     contactEmail: string | null;
     whatsapp: string | null;
     currency: string;
@@ -80,7 +85,12 @@ export type OrderDetail = OrderSummary & {
     notificationAttempts: number;
     notificationError: string | null;
   } | null;
-  statusHistory: Array<{ id: string; status: string; note: string | null; createdAt: string }>;
+  statusHistory: Array<{
+    id: string;
+    status: string;
+    note: string | null;
+    createdAt: string;
+  }>;
   items: Array<{
     id: string;
     sku: string;

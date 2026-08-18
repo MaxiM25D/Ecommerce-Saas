@@ -1,16 +1,32 @@
-import { Router, type NextFunction, type Request, type Response } from "express";
+import {
+  Router,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { getAuthContext, requireSession } from "../auth/session.js";
-import { tenantIdSchema, updateSubscriptionSchema, updateTenantSchema } from "./schemas.js";
+import {
+  tenantIdSchema,
+  updateSubscriptionSchema,
+  updateTenantSchema,
+} from "./schemas.js";
 
 export const platformRouter = Router();
 
-function requirePlatformAdmin(request: Request, _response: Response, next: NextFunction): void {
+function requirePlatformAdmin(
+  request: Request,
+  _response: Response,
+  next: NextFunction,
+): void {
   try {
     if (getAuthContext(request).user.platformRole !== "SUPERADMIN") {
-      throw new HttpError(403, "Esta sección es exclusiva del equipo de InfinityShop");
+      throw new HttpError(
+        403,
+        "Esta sección es exclusiva del equipo de InfinityShop",
+      );
     }
     next();
   } catch (error) {
@@ -21,7 +37,17 @@ function requirePlatformAdmin(request: Request, _response: Response, next: NextF
 platformRouter.use(requireSession, requirePlatformAdmin);
 
 platformRouter.get("/overview", async (_request, response) => {
-  const [tenants, activeTenants, users, subscriptions, billableSubscriptions] = await Promise.all([
+  const [
+    tenants,
+    activeTenants,
+    users,
+    subscriptions,
+    billableSubscriptions,
+    orders,
+    approvedGmv,
+    storefrontViews,
+    abandonedCarts,
+  ] = await Promise.all([
     database.tenant.count(),
     database.tenant.count({ where: { status: "ACTIVE" } }),
     database.user.count(),
@@ -30,12 +56,29 @@ platformRouter.get("/overview", async (_request, response) => {
       where: { status: { in: ["ACTIVE", "TRIALING"] } },
       select: { plan: { select: { priceInCents: true } } },
     }),
+    database.order.count(),
+    database.order.aggregate({
+      where: { paymentStatus: "APPROVED" },
+      _sum: { totalInCents: true },
+    }),
+    database.analyticsEvent.count({ where: { type: "STOREFRONT_VIEW" } }),
+    database.cart.count({ where: { status: "ABANDONED" } }),
   ]);
   const estimatedMonthlyRevenueInCents = billableSubscriptions.reduce(
     (total, subscription) => total + subscription.plan.priceInCents,
     0,
   );
-  response.json({ tenants, activeTenants, users, subscriptions, estimatedMonthlyRevenueInCents });
+  response.json({
+    tenants,
+    activeTenants,
+    users,
+    subscriptions,
+    estimatedMonthlyRevenueInCents,
+    orders,
+    approvedGmvInCents: approvedGmv._sum.totalInCents ?? 0,
+    storefrontViews,
+    abandonedCarts,
+  });
 });
 
 platformRouter.get("/plans", async (_request, response) => {
@@ -62,7 +105,10 @@ platformRouter.patch("/tenants/:id", async (request, response) => {
   const id = tenantIdSchema.parse(request.params.id);
   const input = updateTenantSchema.parse(request.body);
   if (id === auth.tenant.id && input.status === "SUSPENDED") {
-    throw new HttpError(409, "No podés suspender la tienda usada por tu sesión actual");
+    throw new HttpError(
+      409,
+      "No podés suspender la tienda usada por tu sesión actual",
+    );
   }
   const existing = await database.tenant.findUnique({ where: { id } });
   if (!existing) throw new HttpError(404, "Tenant no encontrado");
@@ -79,14 +125,17 @@ platformRouter.patch("/tenants/:id/subscription", async (request, response) => {
   const plan = input.planCode
     ? await database.plan.findUnique({ where: { code: input.planCode } })
     : null;
-  if (input.planCode && (!plan || !plan.active)) throw new HttpError(404, "Plan no disponible");
+  if (input.planCode && (!plan || !plan.active))
+    throw new HttpError(404, "Plan no disponible");
 
   const subscription = await database.subscription.upsert({
     where: { tenantId },
     update: {
       ...(plan ? { planId: plan.id } : {}),
       ...(input.status ? { status: input.status } : {}),
-      ...(input.cancelAtPeriodEnd !== undefined ? { cancelAtPeriodEnd: input.cancelAtPeriodEnd } : {}),
+      ...(input.cancelAtPeriodEnd !== undefined
+        ? { cancelAtPeriodEnd: input.cancelAtPeriodEnd }
+        : {}),
     },
     create: {
       tenantId,

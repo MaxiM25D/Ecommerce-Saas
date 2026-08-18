@@ -8,7 +8,11 @@ type CartContextValue = {
   items: CartItem[];
   itemCount: number;
   subtotalInCents: number;
-  addItem: (product: StorefrontProduct, quantity?: number) => void;
+  addItem: (
+    product: StorefrontProduct,
+    quantity?: number,
+    variant?: StorefrontProduct["variants"][number],
+  ) => void;
   removeItem: (productId: string) => void;
   setQuantity: (productId: string, quantity: number) => void;
   clear: () => void;
@@ -16,7 +20,13 @@ type CartContextValue = {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
-export function CartProvider({ storeSlug, children }: { storeSlug: string; children: React.ReactNode }) {
+export function CartProvider({
+  storeSlug,
+  children,
+}: {
+  storeSlug: string;
+  children: React.ReactNode;
+}) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [ready, setReady] = useState(false);
   const storageKey = `infinityshop:cart:${storeSlug}`;
@@ -34,41 +44,81 @@ export function CartProvider({ storeSlug, children }: { storeSlug: string; child
         setReady(true);
       }
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [storageKey]);
 
   useEffect(() => {
     if (ready) window.localStorage.setItem(storageKey, JSON.stringify(items));
   }, [items, ready, storageKey]);
 
-  const value = useMemo<CartContextValue>(() => ({
-    items,
-    itemCount: items.reduce((total, item) => total + item.quantity, 0),
-    subtotalInCents: items.reduce((total, item) => total + item.priceInCents * item.quantity, 0),
-    addItem(product, quantity = 1) {
-      if (product.stock < 1) return;
-      setItems((current) => {
-        const existing = current.find((item) => item.id === product.id);
-        if (!existing) return [...current, { ...product, quantity: Math.min(quantity, product.stock) }];
-        return current.map((item) =>
-          item.id === product.id
-            ? { ...item, ...product, quantity: Math.min(item.quantity + quantity, product.stock) }
-            : item,
+  const value = useMemo<CartContextValue>(
+    () => ({
+      items,
+      itemCount: items.reduce((total, item) => total + item.quantity, 0),
+      subtotalInCents: items.reduce(
+        (total, item) => total + item.priceInCents * item.quantity,
+        0,
+      ),
+      addItem(product, quantity = 1, variant) {
+        const purchasable = variant
+          ? {
+              ...product,
+              sku: variant.sku,
+              priceInCents: variant.priceInCents,
+              stock: variant.stock,
+              selectedVariant: variant,
+            }
+          : product;
+        if (purchasable.stock < 1) return;
+        setItems((current) => {
+          const existing = current.find((item) => item.id === product.id);
+          if (!existing)
+            return [
+              ...current,
+              {
+                ...purchasable,
+                quantity: Math.min(quantity, purchasable.stock),
+              },
+            ];
+          return current.map((item) =>
+            item.id === product.id
+              ? {
+                  ...item,
+                  ...purchasable,
+                  quantity: Math.min(
+                    item.quantity + quantity,
+                    purchasable.stock,
+                  ),
+                }
+              : item,
+          );
+        });
+      },
+      removeItem(productId) {
+        setItems((current) => current.filter((item) => item.id !== productId));
+      },
+      setQuantity(productId, quantity) {
+        setItems((current) =>
+          current
+            .map((item) =>
+              item.id === productId
+                ? {
+                    ...item,
+                    quantity: Math.min(Math.max(quantity, 0), item.stock),
+                  }
+                : item,
+            )
+            .filter((item) => item.quantity > 0),
         );
-      });
-    },
-    removeItem(productId) {
-      setItems((current) => current.filter((item) => item.id !== productId));
-    },
-    setQuantity(productId, quantity) {
-      setItems((current) => current
-        .map((item) => item.id === productId ? { ...item, quantity: Math.min(Math.max(quantity, 0), item.stock) } : item)
-        .filter((item) => item.quantity > 0));
-    },
-    clear() {
-      setItems([]);
-    },
-  }), [items]);
+      },
+      clear() {
+        setItems([]);
+      },
+    }),
+    [items],
+  );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

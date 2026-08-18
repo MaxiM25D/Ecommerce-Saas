@@ -94,6 +94,31 @@ enum NotificationStatus {
   FAILED
 }
 
+enum DomainStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum NotificationEvent {
+  ORDER_CREATED
+  ORDER_PAID
+  ORDER_SHIPPED
+  CART_ABANDONED
+}
+
+enum AnalyticsEventType {
+  STOREFRONT_VIEW
+  PRODUCT_VIEW
+  ADD_TO_CART
+  CHECKOUT_STARTED
+}
+
 model Tenant {
   id                     String                  @id @default(cuid())
   slug                   String                  @unique
@@ -102,6 +127,7 @@ model Tenant {
   memberships            Membership[]
   categories             Category[]
   products               Product[]
+  productVariants        ProductVariant[]
   customers              Customer[]
   carts                  Cart[]
   orders                 Order[]
@@ -116,6 +142,12 @@ model Tenant {
   orderStatusHistory     OrderStatusHistory[]
   teamInvitations        TeamInvitation[]
   billingInvoices        BillingInvoice[]
+  customDomains          CustomDomain[]
+  coupons                Coupon[]
+  shippingZones          ShippingZone[]
+  notificationRules      NotificationRule[]
+  notificationLogs       NotificationLog[]
+  analyticsEvents        AnalyticsEvent[]
   lastActiveUsers        User[]                  @relation("UserLastTenant")
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
@@ -314,27 +346,28 @@ model Category {
 }
 
 model Product {
-  id            String      @id @default(cuid())
+  id            String           @id @default(cuid())
   tenantId      String
   categoryId    String?
   sku           String
   slug          String
   name          String
   description   String?
-  images        String[]    @default([])
+  images        String[]         @default([])
   priceInCents  Int
-  stock         Int         @default(0)
-  active        Boolean     @default(true)
+  stock         Int              @default(0)
+  active        Boolean          @default(true)
   brand         String?
-  tags          String[]    @default([])
-  featured      Boolean     @default(false)
-  featuredOrder Int         @default(0)
-  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category      Category?   @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  tags          String[]         @default([])
+  featured      Boolean          @default(false)
+  featuredOrder Int              @default(0)
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category      Category?        @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
   cartItems     CartItem[]
   orderItems    OrderItem[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  variants      ProductVariant[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   @@unique([tenantId, sku])
   @@unique([tenantId, slug])
@@ -343,12 +376,39 @@ model Product {
   @@index([tenantId, categoryId])
 }
 
+model ProductVariant {
+  id           String      @id @default(cuid())
+  tenantId     String
+  productId    String
+  sku          String
+  name         String
+  options      Json
+  priceInCents Int
+  stock        Int         @default(0)
+  active       Boolean     @default(true)
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product      Product     @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([tenantId, sku])
+  @@unique([tenantId, id])
+  @@index([tenantId, productId, active])
+}
+
 model StoreSettings {
   tenantId             String   @id
   description          String?
   logoUrl              String?
   bannerUrl            String?
   primaryColor         String   @default("#B89B72")
+  secondaryColor       String   @default("#292524")
+  fontFamily           String   @default("SYSTEM")
+  borderRadius         String   @default("MEDIUM")
+  announcement         String?
+  showPoweredBy        Boolean  @default(true)
   contactEmail         String?
   whatsapp             String?
   currency             String   @default("ARS")
@@ -384,15 +444,19 @@ model Customer {
 }
 
 model Cart {
-  id         String     @id @default(cuid())
-  tenantId   String
-  customerId String?
-  status     CartStatus @default(ACTIVE)
-  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer   Customer?  @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
-  items      CartItem[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id                String     @id @default(cuid())
+  tenantId          String
+  customerId        String?
+  status            CartStatus @default(ACTIVE)
+  recoveryEmail     String?
+  recoveryTokenHash String?    @unique
+  abandonedAt       DateTime?
+  recoveredAt       DateTime?
+  tenant            Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer          Customer?  @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
+  items             CartItem[]
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   @@unique([tenantId, id])
   @@index([tenantId, status])
@@ -403,45 +467,53 @@ model CartItem {
   tenantId         String
   cartId           String
   productId        String
+  variantId        String?
   quantity         Int
   unitPriceInCents Int
-  cart             Cart     @relation(fields: [tenantId, cartId], references: [tenantId, id], onDelete: Cascade)
-  product          Product  @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  cart             Cart            @relation(fields: [tenantId, cartId], references: [tenantId, id], onDelete: Cascade)
+  product          Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  variant          ProductVariant? @relation(fields: [tenantId, variantId], references: [tenantId, id], onDelete: Restrict)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@id([tenantId, cartId, productId])
   @@index([tenantId, productId])
+  @@index([tenantId, variantId])
 }
 
 model Order {
-  id              String               @id @default(cuid())
-  tenantId        String
-  customerId      String?
-  number          Int
-  status          OrderStatus          @default(PENDING)
-  paymentStatus   PaymentStatus        @default(PENDING)
-  paymentMethod   PaymentMethod        @default(BANK_TRANSFER)
-  stockStatus     StockStatus          @default(RESERVED)
-  stockExpiresAt  DateTime?
-  publicTokenHash String?              @unique
-  customerEmail   String
-  customerName    String
-  customerPhone   String?
-  shippingAddress String?
-  notes           String?
-  currency        String               @default("ARS")
-  subtotalInCents Int
-  totalInCents    Int
-  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer        Customer?            @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
-  items           OrderItem[]
-  paymentAttempts PaymentAttempt[]
-  paymentReceipt  PaymentReceipt?
-  shipment        Shipment?
-  statusHistory   OrderStatusHistory[]
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id                 String               @id @default(cuid())
+  tenantId           String
+  customerId         String?
+  number             Int
+  status             OrderStatus          @default(PENDING)
+  paymentStatus      PaymentStatus        @default(PENDING)
+  paymentMethod      PaymentMethod        @default(BANK_TRANSFER)
+  stockStatus        StockStatus          @default(RESERVED)
+  stockExpiresAt     DateTime?
+  publicTokenHash    String?              @unique
+  customerEmail      String
+  customerName       String
+  customerPhone      String?
+  shippingAddress    String?
+  notes              String?
+  currency           String               @default("ARS")
+  subtotalInCents    Int
+  discountInCents    Int                  @default(0)
+  couponCode         String?
+  shippingInCents    Int                  @default(0)
+  shippingMethod     String?
+  shippingPostalCode String?
+  totalInCents       Int
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer           Customer?            @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
+  items              OrderItem[]
+  paymentAttempts    PaymentAttempt[]
+  paymentReceipt     PaymentReceipt?
+  shipment           Shipment?
+  statusHistory      OrderStatusHistory[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   @@unique([tenantId, number])
   @@unique([tenantId, id])
@@ -564,19 +636,135 @@ model OrderStatusHistory {
 }
 
 model OrderItem {
-  id               String   @id @default(cuid())
+  id               String          @id @default(cuid())
   tenantId         String
   orderId          String
   productId        String?
+  variantId        String?
   sku              String
   productName      String
+  variantName      String?
   quantity         Int
   unitPriceInCents Int
   subtotalInCents  Int
-  order            Order    @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
-  product          Product? @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
-  createdAt        DateTime @default(now())
+  order            Order           @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  product          Product?        @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  variant          ProductVariant? @relation(fields: [tenantId, variantId], references: [tenantId, id], onDelete: Restrict)
+  createdAt        DateTime        @default(now())
 
   @@index([tenantId, orderId])
   @@index([tenantId, productId])
+  @@index([tenantId, variantId])
+}
+
+model CustomDomain {
+  id                String       @id @default(cuid())
+  tenantId          String
+  hostname          String       @unique
+  status            DomainStatus @default(PENDING)
+  verificationToken String       @unique
+  verifiedAt        DateTime?
+  lastCheckedAt     DateTime?
+  failureReason     String?
+  tenant            Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([tenantId, status])
+}
+
+model Coupon {
+  id             String       @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  type           DiscountType
+  value          Int
+  minimumInCents Int          @default(0)
+  maximumUses    Int?
+  usedCount      Int          @default(0)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  active         Boolean      @default(true)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, id])
+  @@index([tenantId, active])
+}
+
+model ShippingZone {
+  id             String           @id @default(cuid())
+  tenantId       String
+  name           String
+  postalPrefixes String[]         @default([])
+  active         Boolean          @default(true)
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  methods        ShippingMethod[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, active])
+}
+
+model ShippingMethod {
+  id             String       @id @default(cuid())
+  tenantId       String
+  shippingZoneId String
+  name           String
+  priceInCents   Int
+  estimatedDays  Int?
+  active         Boolean      @default(true)
+  zone           ShippingZone @relation(fields: [tenantId, shippingZoneId], references: [tenantId, id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([tenantId, id])
+  @@index([tenantId, shippingZoneId, active])
+}
+
+model NotificationRule {
+  id        String            @id @default(cuid())
+  tenantId  String
+  event     NotificationEvent
+  active    Boolean           @default(true)
+  subject   String
+  message   String
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([tenantId, event])
+  @@index([tenantId, active])
+}
+
+model NotificationLog {
+  id        String             @id @default(cuid())
+  tenantId  String
+  event     NotificationEvent
+  recipient String
+  status    NotificationStatus @default(PENDING)
+  error     String?
+  sentAt    DateTime?
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime           @default(now())
+
+  @@index([tenantId, event, createdAt])
+}
+
+model AnalyticsEvent {
+  id        String             @id @default(cuid())
+  tenantId  String
+  type      AnalyticsEventType
+  productId String?
+  sessionId String?
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime           @default(now())
+
+  @@index([tenantId, type, createdAt])
+  @@index([tenantId, productId, createdAt])
 }

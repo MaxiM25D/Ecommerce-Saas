@@ -111,4 +111,12 @@ El onboarding inicia una prueba STARTER de 14 días. El OWNER consulta uso, elig
 - `railway.json` despliega migraciones antes de iniciar la API y configura el health check.
 - `scripts/backup-postgres.ps1` crea backups verificables con `pg_dump`.
 
+## Crecimiento posterior al piloto
+
+El panel **Crecimiento** reúne analytics por tienda, cupones, variantes, zonas y métodos de envío, dominios personalizados, reglas de notificación y recuperación de carritos. Los cupones, precios de variantes, stock y costos de envío se validan nuevamente en la transacción del checkout. Las funciones PRO se autorizan en la API usando las features del plan.
+
+Para un dominio personalizado, el OWNER registra el hostname y publica el TXT indicado en `_infinityshop.<dominio>`. Después de verificarlo, el proxy de Next.js resuelve el tenant sin aceptar un `tenantId` del navegador. En producción configurá `PLATFORM_HOSTS` con los dominios propios de InfinityShop y `API_INTERNAL_URL` con la URL alcanzable de la API desde el servidor web. El proveedor de hosting también debe tener el dominio y su certificado TLS asociados.
+
+Las automatizaciones guardan un historial de entrega y usan SMTP. Sin credenciales SMTP los intentos quedan como fallidos para poder diagnosticarlos, sin impedir que se cree o cobre un pedido.
+
 La guía completa, variables y checklist están en [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Ningún secreto real debe guardarse en Git.
