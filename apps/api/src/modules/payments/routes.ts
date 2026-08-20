@@ -25,6 +25,13 @@ paymentRouter.post("/mercadopago/webhook/:webhookKey", async (request, response)
   });
   if (!valid) throw new HttpError(401, "Firma de webhook inválida");
 
+  // Mercado Pago exige una URL fija para configurar y simular el webhook.
+  // Los pagos reales usan una clave propia por tenant en notification_url.
+  if (request.params.webhookKey === "setup") {
+    response.status(200).json({ received: true, setup: true });
+    return;
+  }
+
   await processMercadoPagoWebhook(request.params.webhookKey, dataId);
   response.status(200).json({ received: true });
 });

@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npm run db:up && concurrently --kill-others-on-fail --names WEB,API \"npm:dev:web\" \"npm:dev:api\"",
     "dev:web": "npm run dev --workspace @infinityshop/web",
     "dev:api": "npm run build --workspace @infinityshop/database && npm run dev --workspace @infinityshop/api",
     "build": "npm run build --workspaces --if-present",
@@ -32,5 +33,8 @@
   "overrides": {
     "deepmerge-ts": "^8.0.0",
     "nanoid": "^3.3.18"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
   }
 }

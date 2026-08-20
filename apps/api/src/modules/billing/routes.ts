@@ -27,6 +27,12 @@ billingRouter.post("/mercadopago/webhook", async (request, response) => {
   if (!validateMercadoPagoSignature({ dataId, xRequestId: requestId, xSignature: request.get("x-signature"), secret: environment.SAAS_MP_WEBHOOK_SECRET })) {
     throw new HttpError(401, "Firma de webhook inválida");
   }
+  // La URL registrada usa setup=true para validar firma y conectividad con
+  // los identificadores ficticios del simulador de Mercado Pago.
+  if (request.query.setup === "true") {
+    response.status(200).json({ received: true, setup: true });
+    return;
+  }
   const eventId = `MERCADO_PAGO:${requestId}`;
   if (await database.billingWebhookEvent.findUnique({ where: { id: eventId } })) {
     response.status(200).json({ received: true, duplicate: true });
