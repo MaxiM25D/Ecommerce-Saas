@@ -743,17 +743,25 @@ model NotificationRule {
 }
 
 model NotificationLog {
-  id        String             @id @default(cuid())
-  tenantId  String
-  event     NotificationEvent
-  recipient String
-  status    NotificationStatus @default(PENDING)
-  error     String?
-  sentAt    DateTime?
-  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdAt DateTime           @default(now())
+  id            String             @id @default(cuid())
+  tenantId      String
+  event         NotificationEvent
+  recipient     String
+  subject       String             @default("")
+  message       String             @default("")
+  actionUrl     String             @default("")
+  status        NotificationStatus @default(PENDING)
+  attempts      Int                @default(0)
+  nextAttemptAt DateTime           @default(now())
+  lockedAt      DateTime?
+  error         String?
+  sentAt        DateTime?
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   @@index([tenantId, event, createdAt])
+  @@index([status, nextAttemptAt])
 }
 
 model AnalyticsEvent {

@@ -13,7 +13,7 @@ import {
   syncProviderSubscription,
 } from "../../services/saas-billing.js";
 import { getProviderSubscription } from "../../services/saas-billing-provider.js";
-import { getAuthContext, requireRoles, requireSession } from "../auth/session.js";
+import { getAuthContext, requireRoles, requireSession, requireVerifiedEmail } from "../auth/session.js";
 import { billingWebhookSchema, cancelBillingSchema, selectBillingPlanSchema } from "./schemas.js";
 
 export const billingRouter = Router();
@@ -56,7 +56,7 @@ billingRouter.get("/overview", async (request, response) => {
   response.json(await getBillingOverview(getAuthContext(request).tenant.id));
 });
 
-billingRouter.post("/checkout", requireRoles("OWNER"), async (request, response) => {
+billingRouter.post("/checkout", requireRoles("OWNER"), requireVerifiedEmail, async (request, response) => {
   const auth = getAuthContext(request);
   const input = selectBillingPlanSchema.parse(request.body);
   response.json(await startBillingCheckout({ tenantId: auth.tenant.id, tenantName: auth.tenant.name, payerEmail: auth.user.email, planCode: input.planCode }));

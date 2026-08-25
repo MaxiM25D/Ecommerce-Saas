@@ -4,7 +4,7 @@ import { z } from "zod";
 import { environment } from "../../config.js";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
-import { getAuthContext, requireRoles, requireSession } from "../auth/session.js";
+import { getAuthContext, requireRoles, requireSession, requireVerifiedEmail } from "../auth/session.js";
 import {
   completeMercadoPagoAuthorization,
   createMercadoPagoAuthorization,
@@ -40,7 +40,7 @@ adminIntegrationRouter.get("/mercadopago", async (request, response) => {
   });
 });
 
-adminIntegrationRouter.post("/mercadopago/authorize", requireRoles("OWNER", "ADMIN"), async (request, response) => {
+adminIntegrationRouter.post("/mercadopago/authorize", requireRoles("OWNER", "ADMIN"), requireVerifiedEmail, async (request, response) => {
   const { tenant, user } = getAuthContext(request);
   const authorizationUrl = await createMercadoPagoAuthorization(tenant.id, user.id);
   response.json({ authorizationUrl });

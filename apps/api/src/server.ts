@@ -3,6 +3,7 @@ import { configurationWarnings, environment } from "./config.js";
 import { database } from "./database.js";
 import { releaseExpiredReservations } from "./services/orders.js";
 import { log } from "./services/logger.js";
+import { processPendingNotifications } from "./services/notifications.js";
 import { processDueBillingCancellations, processExpiredTrials } from "./services/saas-billing.js";
 
 const port = environment.PORT ?? environment.API_PORT;
@@ -35,12 +36,30 @@ const reservationTimer = setInterval(() => {
 reservationTimer.unref();
 void sweepReservations();
 
+let notificationSweepRunning = false;
+async function sweepNotifications(): Promise<void> {
+  if (notificationSweepRunning) return;
+  notificationSweepRunning = true;
+  try {
+    const result = await processPendingNotifications();
+    if (result.sent > 0 || result.failed > 0) log("info", "notification_queue_processed", result);
+  } catch (error) {
+    log("error", "notification_queue_failed", { error });
+  } finally {
+    notificationSweepRunning = false;
+  }
+}
+const notificationTimer = setInterval(() => void sweepNotifications(), environment.EMAIL_QUEUE_INTERVAL_MS);
+notificationTimer.unref();
+void sweepNotifications();
+
 let shuttingDown = false;
 async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   log("info", "server_stopping", { signal });
   clearInterval(reservationTimer);
+  clearInterval(notificationTimer);
   const forceTimer = setTimeout(() => {
     log("error", "server_shutdown_timeout", { signal });
     process.exit(1);

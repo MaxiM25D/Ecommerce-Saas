@@ -20,6 +20,10 @@ before(async () => {
     const response = await currentAgent.post("/api/auth/register").send({ email: emails[index], password: "StrongPass123!", firstName: "Billing", lastName: "Owner", storeName: `Billing ${index}`, storeSlug: slugs[index] });
     assert.equal(response.status, 201);
   }
+  await database.user.updateMany({
+    where: { email: { in: emails } },
+    data: { emailVerifiedAt: new Date() },
+  });
   alphaTenantId = (await database.tenant.findUniqueOrThrow({ where: { slug: slugs[0] } })).id;
   betaTenantId = (await database.tenant.findUniqueOrThrow({ where: { slug: slugs[1] } })).id;
 });

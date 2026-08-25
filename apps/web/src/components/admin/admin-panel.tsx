@@ -249,6 +249,14 @@ export function AdminPanel({
             Ver tienda ↗
           </Link>
         </header>
+        {!session.user.emailVerified && (
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-900 sm:px-8 lg:px-10">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p><strong>Email pendiente.</strong> Podés preparar la tienda, pero los cobros, suscripciones e invitaciones se habilitan después de verificarlo.</p>
+              <button className="font-semibold underline" onClick={() => setTab("account")} type="button">Verificar ahora</button>
+            </div>
+          </div>
+        )}
         <div className="p-5 sm:p-8 lg:p-10" key={session.tenant.slug}>
           {content}
         </div>

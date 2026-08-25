@@ -154,3 +154,14 @@ export function requireRoles(
     }
   };
 }
+
+export const requireVerifiedEmail: RequestHandler = (request, _response, next) => {
+  try {
+    if (!getAuthContext(request).user.emailVerified) {
+      throw new HttpError(403, "Verificá tu email para habilitar cobros, suscripciones e invitaciones");
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};

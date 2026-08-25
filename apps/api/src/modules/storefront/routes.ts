@@ -108,6 +108,7 @@ storefrontRouter.get("/:slug", async (request, response) => {
       slug: true,
       settings: { select: publicSettingsSelection },
       mercadoPagoConnection: { select: { tenantId: true } },
+      memberships: { where: { role: "OWNER" }, select: { user: { select: { emailVerifiedAt: true } } } },
       shippingZones: {
         where: { active: true },
         select: {
@@ -160,14 +161,15 @@ storefrontRouter.get("/:slug", async (request, response) => {
       sessionId: request.get("x-store-session")?.slice(0, 100),
     },
   });
-  const { mercadoPagoConnection, ...publicStore } = store;
+  const ownerVerified = store.memberships.some(({ user }) => Boolean(user.emailVerifiedAt));
+  const { mercadoPagoConnection, memberships: _memberships, ...publicStore } = store;
   response.json({
     store: {
       ...publicStore,
       paymentMethods: {
-        bankTransfer: Boolean(store.settings?.bankTransferEnabled),
+        bankTransfer: ownerVerified && Boolean(store.settings?.bankTransferEnabled),
         mercadoPago: Boolean(
-          mercadoPagoConnection && store.settings?.currency === "ARS",
+          ownerVerified && mercadoPagoConnection && store.settings?.currency === "ARS",
         ),
       },
     },
@@ -186,6 +188,7 @@ storefrontRouter.get(
         slug: true,
         settings: { select: publicSettingsSelection },
         mercadoPagoConnection: { select: { tenantId: true } },
+        memberships: { where: { role: "OWNER" }, select: { user: { select: { emailVerifiedAt: true } } } },
         shippingZones: {
           where: { active: true },
           select: {
@@ -228,14 +231,15 @@ storefrontRouter.get(
         sessionId: request.get("x-store-session")?.slice(0, 100),
       },
     });
-    const { mercadoPagoConnection, ...publicStore } = store;
+    const ownerVerified = store.memberships.some(({ user }) => Boolean(user.emailVerifiedAt));
+    const { mercadoPagoConnection, memberships: _memberships, ...publicStore } = store;
     response.json({
       store: {
         ...publicStore,
         paymentMethods: {
-          bankTransfer: Boolean(store.settings?.bankTransferEnabled),
+          bankTransfer: ownerVerified && Boolean(store.settings?.bankTransferEnabled),
           mercadoPago: Boolean(
-            mercadoPagoConnection && store.settings?.currency === "ARS",
+            ownerVerified && mercadoPagoConnection && store.settings?.currency === "ARS",
           ),
         },
       },
@@ -356,9 +360,13 @@ storefrontRouter.post("/:slug/orders", async (request, response) => {
             id: true,
             settings: true,
             mercadoPagoConnection: { select: { tenantId: true } },
+            memberships: { where: { role: "OWNER" }, select: { user: { select: { emailVerifiedAt: true } } } },
           },
         });
         if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+        if (!tenant.memberships.some(({ user }) => Boolean(user.emailVerifiedAt))) {
+          throw new HttpError(409, "La tienda debe verificar el email de su propietario antes de recibir pedidos");
+        }
 
         if (
           input.paymentMethod === "BANK_TRANSFER" &&

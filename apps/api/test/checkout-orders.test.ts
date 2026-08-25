@@ -5,6 +5,7 @@ import request from "supertest";
 
 import { app } from "../src/app.js";
 import { database } from "../src/database.js";
+import { processPendingNotifications } from "../src/services/notifications.js";
 
 const slug = "checkout-orders-test";
 const otherSlug = "checkout-orders-other";
@@ -47,6 +48,7 @@ before(async () => {
   }
 
   const tenant = await database.tenant.findUniqueOrThrow({ where: { slug } });
+  await database.user.update({ where: { email }, data: { emailVerifiedAt: new Date() } });
   const category = await database.category.create({
     data: { tenantId: tenant.id, name: "Checkout", slug: "checkout" },
   });
@@ -79,7 +81,7 @@ after(async () => {
 test("checkout copia precios y productos y descuenta stock", async () => {
   const response = await request(app).post(`/api/storefront/${slug}/orders`).send({
     customer: {
-      email: "comprador@example.com",
+      email: "comprador@checkout.test",
       firstName: "María",
       lastName: "Cliente",
       phone: "+54 9 11 1234 5678",
@@ -104,6 +106,13 @@ test("checkout copia precios y productos y descuenta stock", async () => {
   assert.equal(order.items[0]!.productName, "Producto Checkout");
   assert.equal(order.items[0]!.unitPriceInCents, 123400);
   assert.equal(order.shippingAddress, "Av. Siempre Viva 742, Buenos Aires");
+  const notification = await database.notificationLog.findFirstOrThrow({ where: { tenantId: order.tenantId, event: "ORDER_CREATED", recipient: "comprador@checkout.test" } });
+  assert.equal(notification.status, "PENDING");
+  assert.equal(notification.attempts, 0);
+  await processPendingNotifications();
+  const deliveredNotification = await database.notificationLog.findUniqueOrThrow({ where: { id: notification.id } });
+  assert.equal(deliveredNotification.status, "SENT");
+  assert.equal(deliveredNotification.attempts, 1);
 
   await database.product.update({ where: { id: productId }, data: { priceInCents: 999900 } });
   const snapshot = await database.orderItem.findFirstOrThrow({ where: { orderId } });

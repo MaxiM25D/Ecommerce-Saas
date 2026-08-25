@@ -55,7 +55,7 @@ La cookie de sesión es `httpOnly`, el token se almacena hasheado en PostgreSQL 
 
 El panel incluye un selector multi-tienda. La última selección queda asociada al usuario y se recupera en el próximo login; si esa tienda es suspendida o la membresía desaparece, la sesión cambia automáticamente a otra tienda activa disponible.
 
-Los tokens de verificación, recuperación e invitación también se guardan únicamente como hashes SHA-256, vencen y son de un solo uso. En desarrollo, si SMTP no está configurado, la interfaz muestra un enlace local para probar el flujo. Esos enlaces no se incluyen en respuestas de producción.
+Los tokens de verificación, recuperación e invitación también se guardan únicamente como hashes SHA-256, vencen y son de un solo uso. En desarrollo, si el correo no está configurado, la interfaz muestra un enlace local para probar el flujo. Esos enlaces no se incluyen en respuestas de producción. Mientras el email no esté verificado, el OWNER puede preparar la tienda, pero los cobros, la facturación SaaS y las invitaciones permanecen bloqueados.
 
 ## Panel administrativo
 
@@ -95,7 +95,7 @@ Mercado Pago se ofrece solamente cuando la tienda opera en ARS. Para recibir web
 
 En desarrollo, las imágenes se guardan en `storage/public` y los comprobantes en `storage/private`. Para producción se puede configurar Cloudinary con `CLOUDINARY_NAME`, `CLOUDINARY_KEY` y `CLOUDINARY_SECRET`; los comprobantes se almacenan como recursos autenticados.
 
-Los avisos de despacho usan SMTP. Configurá `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`. Si SMTP no está disponible, el despacho se conserva y el panel permite reintentar la notificación.
+En Railway se recomienda `EMAIL_PROVIDER=resend`, `EMAIL_FROM` y `RESEND_API_KEY`, porque el plan Hobby restringe SMTP saliente. SMTP continúa disponible como alternativa mediante las variables `SMTP_*`. Los avisos se registran en PostgreSQL para que una falla del proveedor no revierta ni bloquee una operación comercial.
 
 ## Funciones SaaS
 
@@ -117,6 +117,6 @@ El panel **Crecimiento** reúne analytics por tienda, cupones, variantes, zonas 
 
 Para un dominio personalizado, el OWNER registra el hostname y publica el TXT indicado en `_infinityshop.<dominio>`. Después de verificarlo, el proxy de Next.js resuelve el tenant sin aceptar un `tenantId` del navegador. En producción configurá `PLATFORM_HOSTS` con los dominios propios de InfinityShop y `API_INTERNAL_URL` con la URL alcanzable de la API desde el servidor web. El proveedor de hosting también debe tener el dominio y su certificado TLS asociados.
 
-Las automatizaciones guardan un historial de entrega y usan SMTP. Sin credenciales SMTP los intentos quedan como fallidos para poder diagnosticarlos, sin impedir que se cree o cobre un pedido.
+Las automatizaciones guardan un historial de entrega y usan el proveedor configurado. Los envíos pendientes se procesan en segundo plano con reintentos; una falla queda diagnosticada sin impedir que se cree o cobre un pedido.
 
 La guía completa, variables y checklist están en [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Ningún secreto real debe guardarse en Git.

@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
-import { sendStoreNotification } from "../../services/mail.js";
+import { dispatchTenantNotification } from "../../services/notifications.js";
 import {
   getAuthContext,
   requireRoles,
@@ -477,44 +477,12 @@ growthRouter.post(
     });
     if (!cart?.recoveryEmail)
       throw new HttpError(404, "Carrito recuperable no encontrado");
-    const rule = await database.notificationRule.findUnique({
-      where: {
-        tenantId_event: { tenantId: tenant.id, event: "CART_ABANDONED" },
-      },
+    await dispatchTenantNotification({
+      tenantId: tenant.id,
+      event: "CART_ABANDONED",
+      recipient: cart.recoveryEmail,
+      actionUrl: `/tienda/${cart.tenant.slug}`,
     });
-    const log = await database.notificationLog.create({
-      data: {
-        tenantId: tenant.id,
-        event: "CART_ABANDONED",
-        recipient: cart.recoveryEmail,
-        status: "SENDING",
-      },
-    });
-    try {
-      await sendStoreNotification({
-        storeName: cart.tenant.name,
-        fromName: cart.tenant.settings?.emailFromName,
-        to: cart.recoveryEmail,
-        subject: rule?.subject ?? `Tu carrito te espera en ${cart.tenant.name}`,
-        message:
-          rule?.message ??
-          "Guardamos los productos que elegiste. Volvé a la tienda para terminar tu compra.",
-        actionUrl: `/tienda/${cart.tenant.slug}`,
-      });
-      await database.notificationLog.update({
-        where: { id: log.id },
-        data: { status: "SENT", sentAt: new Date() },
-      });
-    } catch (error) {
-      await database.notificationLog.update({
-        where: { id: log.id },
-        data: {
-          status: "FAILED",
-          error: error instanceof Error ? error.message : "Error de envío",
-        },
-      });
-      throw error;
-    }
-    response.json({ sent: true });
+    response.json({ sent: true, queued: true });
   },
 );

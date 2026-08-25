@@ -29,6 +29,12 @@ const environmentSchema = z.object({
   EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(10).max(1440).default(60),
   TEAM_INVITATION_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+  EMAIL_PROVIDER: z.enum(["smtp", "resend"]).default("smtp"),
+  EMAIL_FROM: optionalEmail,
+  EMAIL_SEND_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(8_000),
+  EMAIL_QUEUE_INTERVAL_MS: z.coerce.number().int().min(1_000).default(5_000),
+  EMAIL_QUEUE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+  RESEND_API_KEY: optionalSecret,
   MP_CLIENT_ID: optionalText,
   MP_CLIENT_SECRET: optionalText,
   MP_WEBHOOK_SECRET: optionalText,
@@ -53,8 +59,14 @@ const environmentSchema = z.object({
   if (value.NODE_ENV !== "production") return;
   if (!value.API_PUBLIC_URL.startsWith("https://")) context.addIssue({ code: "custom", path: ["API_PUBLIC_URL"], message: "Debe usar HTTPS en producción" });
   if (!value.WEB_URL.startsWith("https://")) context.addIssue({ code: "custom", path: ["WEB_URL"], message: "Debe usar HTTPS en producción" });
-  for (const key of ["SMTP_HOST", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"] as const) {
-    if (!value[key]) context.addIssue({ code: "custom", path: [key], message: "Es obligatoria para correos de cuenta en producción" });
+  if (value.EMAIL_PROVIDER === "resend") {
+    for (const key of ["RESEND_API_KEY", "EMAIL_FROM"] as const) {
+      if (!value[key]) context.addIssue({ code: "custom", path: [key], message: "Es obligatoria para usar Resend en producción" });
+    }
+  } else {
+    for (const key of ["SMTP_HOST", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"] as const) {
+      if (!value[key]) context.addIssue({ code: "custom", path: [key], message: "Es obligatoria para usar SMTP en producción" });
+    }
   }
   if (value.STORAGE_PROVIDER === "cloudinary") {
     for (const key of ["CLOUDINARY_NAME", "CLOUDINARY_KEY", "CLOUDINARY_SECRET"] as const) {
@@ -81,5 +93,6 @@ export function configurationWarnings(): string[] {
   if (environment.NODE_ENV === "production" && environment.STORAGE_PROVIDER === "local") warnings.push("El almacenamiento local requiere un volumen persistente y backups propios");
   if (environment.NODE_ENV === "production" && !environment.MP_CLIENT_ID) warnings.push("Mercado Pago está deshabilitado porque no hay credenciales configuradas");
   if (environment.NODE_ENV === "production" && environment.SAAS_BILLING_PROVIDER === "disabled") warnings.push("La facturación automática de InfinityShop está deshabilitada");
+  if (environment.NODE_ENV === "production" && environment.EMAIL_PROVIDER === "smtp") warnings.push("SMTP puede estar bloqueado por el hosting; Resend es el proveedor recomendado");
   return warnings;
 }

@@ -9,6 +9,7 @@ import {
   getAuthContext,
   requireRoles,
   requireSession,
+  requireVerifiedEmail,
 } from "../auth/session.js";
 import {
   assertSubscriptionWritable,
@@ -890,7 +891,7 @@ adminRouter.get("/team", async (request, response) => {
   });
 });
 
-adminRouter.post("/team", canManageTeam, async (request, response) => {
+adminRouter.post("/team", canManageTeam, requireVerifiedEmail, async (request, response) => {
   const { tenant, user: inviter } = getAuthContext(request);
   const input = addMemberSchema.parse(request.body);
   const { token, tokenHash } = createAccountToken();

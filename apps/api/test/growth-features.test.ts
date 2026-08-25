@@ -57,6 +57,10 @@ before(async () => {
       });
     assert.equal(registered.status, 201);
   }
+  await database.user.updateMany({
+    where: { email: { in: [email, otherEmail] } },
+    data: { emailVerifiedAt: new Date() },
+  });
   tenantId = (await database.tenant.findUniqueOrThrow({ where: { slug } })).id;
 });
 

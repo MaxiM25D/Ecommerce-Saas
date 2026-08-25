@@ -5,6 +5,14 @@ import { HttpError } from "../errors.js";
 
 let transporter: nodemailer.Transporter | null = null;
 
+type EmailMessage = {
+  fromName: string;
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+};
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -27,8 +35,57 @@ function getTransporter(): nodemailer.Transporter {
     port: environment.SMTP_PORT,
     secure: environment.SMTP_SECURE,
     auth: { user: environment.SMTP_USER, pass: environment.SMTP_PASS },
+    connectionTimeout: environment.EMAIL_SEND_TIMEOUT_MS,
+    greetingTimeout: environment.EMAIL_SEND_TIMEOUT_MS,
+    socketTimeout: environment.EMAIL_SEND_TIMEOUT_MS,
   });
   return transporter;
+}
+
+async function deliverEmail(input: EmailMessage): Promise<void> {
+  const recipientDomain = input.to.split("@").at(-1)?.toLowerCase();
+  if (
+    environment.NODE_ENV !== "production" &&
+    (recipientDomain?.endsWith(".test") || recipientDomain?.endsWith(".local"))
+  ) {
+    return;
+  }
+
+  const fromAddress = environment.EMAIL_FROM ?? environment.SMTP_FROM ?? environment.SMTP_USER;
+  if (!fromAddress) throw new HttpError(503, "El remitente de correo no está configurado");
+  const from = `"${input.fromName.replaceAll('"', "")}" <${fromAddress}>`;
+
+  if (environment.EMAIL_PROVIDER === "resend") {
+    if (!environment.RESEND_API_KEY) throw new HttpError(503, "Resend no está configurado");
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${environment.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [input.to],
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      }),
+      signal: AbortSignal.timeout(environment.EMAIL_SEND_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Resend rechazó el correo (${response.status}): ${body.slice(0, 300)}`);
+    }
+    return;
+  }
+
+  await getTransporter().sendMail({
+    from,
+    to: input.to,
+    subject: input.subject,
+    text: input.text,
+    html: input.html,
+  });
 }
 
 async function sendAccountEmail(input: {
@@ -39,9 +96,8 @@ async function sendAccountEmail(input: {
   actionLabel: string;
   actionUrl: string;
 }): Promise<void> {
-  const fromAddress = environment.SMTP_FROM ?? environment.SMTP_USER;
-  await getTransporter().sendMail({
-    from: `"InfinityShop" <${fromAddress}>`,
+  await deliverEmail({
+    fromName: "InfinityShop",
     to: input.to,
     subject: input.subject,
     text: `${input.heading}\n\n${input.message}\n\n${input.actionLabel}: ${input.actionUrl}\n\nSi no solicitaste esta acción, ignorá este correo.`,
@@ -121,7 +177,6 @@ export async function sendShipmentEmail(input: {
         input.estimatedDelivery,
       )
     : null;
-  const fromAddress = environment.SMTP_FROM ?? environment.SMTP_USER;
   const fromName = input.fromName?.trim() || input.storeName;
   const lines = [
     `Hola ${input.customerName},`,
@@ -137,8 +192,8 @@ export async function sendShipmentEmail(input: {
     .filter(Boolean)
     .join("\n");
 
-  await getTransporter().sendMail({
-    from: `"${fromName.replaceAll('"', "")}" <${fromAddress}>`,
+  await deliverEmail({
+    fromName,
     to: input.customerEmail,
     subject: `Tu pedido #${input.orderNumber} de ${input.storeName} fue enviado`,
     text: lines,
@@ -154,11 +209,10 @@ export async function sendStoreNotification(input: {
   message: string;
   actionUrl: string;
 }): Promise<void> {
-  const fromAddress = environment.SMTP_FROM ?? environment.SMTP_USER;
   const fromName = input.fromName?.trim() || input.storeName;
   const actionUrl = new URL(input.actionUrl, environment.WEB_URL).toString();
-  await getTransporter().sendMail({
-    from: `"${fromName.replaceAll('"', "")}" <${fromAddress}>`,
+  await deliverEmail({
+    fromName,
     to: input.to,
     subject: input.subject,
     text: `${input.message}\n\nVolver a la tienda: ${actionUrl}`,

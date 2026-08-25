@@ -6,7 +6,7 @@
 - **API:** Railway, construida con `Dockerfile.api`.
 - **PostgreSQL:** Railway PostgreSQL en la misma región que la API.
 - **Archivos:** Cloudinary; evita depender del disco efímero del contenedor.
-- **Correo:** un proveedor SMTP transaccional con dominio autenticado.
+- **Correo:** Resend mediante API HTTPS y un dominio autenticado.
 - **DNS:** `app.tudominio.com` para web y `api.tudominio.com` para API.
 
 Usar subdominios del mismo dominio permite conservar `SESSION_COOKIE_SAME_SITE=lax`. Si se prueban primero los dominios gratuitos de Vercel y Railway, usar `SESSION_COOKIE_SAME_SITE=none` y dejar `SESSION_COOKIE_DOMAIN` vacío.
@@ -94,7 +94,22 @@ El backend valida la firma, vuelve a consultar el recurso en Mercado Pago y actu
 
 En producción se recomienda `STORAGE_PROVIDER=cloudinary` y las tres credenciales de Cloudinary. Los comprobantes se suben como recursos autenticados y se entregan mediante enlaces breves.
 
-SMTP es obligatorio en `NODE_ENV=production`, porque verificación, recuperación de contraseña e invitaciones dependen del correo. Autenticar SPF, DKIM y DMARC en el proveedor antes del piloto.
+Railway Hobby restringe SMTP saliente. Para evitar conexiones bloqueadas, configurar el correo transaccional mediante la API HTTPS de Resend:
+
+```text
+EMAIL_PROVIDER=resend
+EMAIL_FROM=no-reply@tudominio.com
+RESEND_API_KEY=re_...
+EMAIL_SEND_TIMEOUT_MS=8000
+EMAIL_QUEUE_INTERVAL_MS=5000
+EMAIL_QUEUE_MAX_ATTEMPTS=5
+```
+
+El dominio remitente debe estar validado en Resend con SPF y DKIM; también se recomienda publicar DMARC antes del piloto. `EMAIL_PROVIDER=smtp` queda disponible para entornos que permitan SMTP, usando las variables `SMTP_*`.
+
+Las notificaciones operativas se registran primero en PostgreSQL y se envían en segundo plano con reintentos. Una demora del proveedor no bloquea la confirmación del pedido. Los correos sensibles de cuenta tienen un tiempo máximo estricto y el registro informa si el envío no pudo iniciarse.
+
+La verificación es progresiva: un usuario no verificado puede iniciar sesión y preparar su catálogo, pero no puede habilitar cobros, comprar una suscripción ni invitar colaboradores. El checkout público permanece deshabilitado hasta que un OWNER de la tienda verifique su email.
 
 ## 7. Backups y restauración
 

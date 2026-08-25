@@ -39,6 +39,10 @@ before(async () => {
     database.tenant.findUniqueOrThrow({ where: { slug: ownerSlug } }),
     database.user.findUniqueOrThrow({ where: { email: memberEmail } }),
   ]);
+  await database.user.updateMany({
+    where: { email: { in: [superEmail, ownerEmail, memberEmail] } },
+    data: { emailVerifiedAt: new Date() },
+  });
   await database.user.update({ where: { id: superUser.id }, data: { platformRole: "SUPERADMIN" } });
   ownerTenantId = ownerTenant.id;
   memberUserId = memberUser.id;

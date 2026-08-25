@@ -35,6 +35,9 @@ test("registro emite una verificación hasheada, vencible y de un solo uso", asy
   assert.notEqual(stored.tokenHash, verificationToken);
   assert.equal(stored.tokenHash.length, 64);
   assert.equal((await agent.get("/api/auth/me")).body.user.emailVerified, false);
+  assert.equal((await agent.post("/api/admin/team").send({ email: "blocked@example.com", role: "STAFF" })).status, 403);
+  assert.equal((await agent.post("/api/billing/checkout").send({ planCode: "PRO" })).status, 403);
+  assert.equal((await agent.post("/api/admin/integrations/mercadopago/authorize")).status, 403);
 
   const verification = await request(app).post("/api/auth/verify-email").send({ token: verificationToken });
   assert.equal(verification.status, 200);
