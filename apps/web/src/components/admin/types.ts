@@ -144,6 +144,7 @@ export type CustomerDetail = CustomerSummary & {
     number: number;
     status: string;
     paymentStatus: string;
+    paymentReceipt: { id: string } | null;
     totalInCents: number;
     currency: string;
     createdAt: string;

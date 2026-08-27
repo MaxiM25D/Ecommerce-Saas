@@ -400,6 +400,7 @@ adminRouter.get("/customers/:id", async (request, response) => {
           number: true,
           status: true,
           paymentStatus: true,
+          paymentReceipt: { select: { id: true } },
           totalInCents: true,
           currency: true,
           createdAt: true,
@@ -891,91 +892,94 @@ adminRouter.get("/team", async (request, response) => {
   });
 });
 
-adminRouter.post("/team", canManageTeam, requireVerifiedEmail, async (request, response) => {
-  const { tenant, user: inviter } = getAuthContext(request);
-  const input = addMemberSchema.parse(request.body);
-  const { token, tokenHash } = createAccountToken();
-  const invitation = await database.$transaction(async (transaction) => {
-    await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenant.id} FOR UPDATE`;
-    const subscription = await transaction.subscription.findUnique({
-      where: { tenantId: tenant.id },
-      include: { plan: true },
-    });
-    if (!subscription)
-      throw new HttpError(409, "La tienda no tiene un plan asignado");
-    const memberCount = await transaction.membership.count({
-      where: { tenantId: tenant.id },
-    });
-    const pendingInvitations = await transaction.teamInvitation.count({
-      where: {
-        tenantId: tenant.id,
-        acceptedAt: null,
-        expiresAt: { gt: new Date() },
-        email: { not: input.email },
-      },
-    });
-    if (memberCount + pendingInvitations >= subscription.plan.maxMembers) {
-      throw new HttpError(
-        409,
-        `Alcanzaste el límite de ${subscription.plan.maxMembers} miembros del plan ${subscription.plan.name}`,
-      );
-    }
-    const user = await transaction.user.findUnique({
-      where: { email: input.email },
-    });
-    if (user) {
-      const existing = await transaction.membership.findUnique({
-        where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
+adminRouter.post(
+  "/team",
+  canManageTeam,
+  requireVerifiedEmail,
+  async (request, response) => {
+    const { tenant, user: inviter } = getAuthContext(request);
+    const input = addMemberSchema.parse(request.body);
+    const { token, tokenHash } = createAccountToken();
+    const invitation = await database.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenant.id} FOR UPDATE`;
+      const subscription = await transaction.subscription.findUnique({
+        where: { tenantId: tenant.id },
+        include: { plan: true },
       });
-      if (existing)
-        throw new HttpError(409, "El usuario ya pertenece a esta tienda");
+      if (!subscription)
+        throw new HttpError(409, "La tienda no tiene un plan asignado");
+      const memberCount = await transaction.membership.count({
+        where: { tenantId: tenant.id },
+      });
+      const pendingInvitations = await transaction.teamInvitation.count({
+        where: {
+          tenantId: tenant.id,
+          acceptedAt: null,
+          expiresAt: { gt: new Date() },
+          email: { not: input.email },
+        },
+      });
+      if (memberCount + pendingInvitations >= subscription.plan.maxMembers) {
+        throw new HttpError(
+          409,
+          `Alcanzaste el límite de ${subscription.plan.maxMembers} miembros del plan ${subscription.plan.name}`,
+        );
+      }
+      const user = await transaction.user.findUnique({
+        where: { email: input.email },
+      });
+      if (user) {
+        const existing = await transaction.membership.findUnique({
+          where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
+        });
+        if (existing)
+          throw new HttpError(409, "El usuario ya pertenece a esta tienda");
+      }
+      return transaction.teamInvitation.upsert({
+        where: { tenantId_email: { tenantId: tenant.id, email: input.email } },
+        update: {
+          role: input.role,
+          tokenHash,
+          invitedByUserId: inviter.id,
+          expiresAt: expiresInHours(24 * environment.TEAM_INVITATION_TTL_DAYS),
+          acceptedAt: null,
+        },
+        create: {
+          tenantId: tenant.id,
+          email: input.email,
+          role: input.role,
+          tokenHash,
+          invitedByUserId: inviter.id,
+          expiresAt: expiresInHours(24 * environment.TEAM_INVITATION_TTL_DAYS),
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          expiresAt: true,
+          createdAt: true,
+        },
+      });
+    });
+    let emailSent = true;
+    try {
+      await sendTeamInvitationEmail({
+        email: invitation.email,
+        tenantName: tenant.name,
+        inviterName: `${inviter.firstName} ${inviter.lastName}`,
+        role: invitation.role,
+        token,
+      });
+    } catch {
+      emailSent = false;
     }
-    return transaction.teamInvitation.upsert({
-      where: { tenantId_email: { tenantId: tenant.id, email: input.email } },
-      update: {
-        role: input.role,
-        tokenHash,
-        invitedByUserId: inviter.id,
-        expiresAt: expiresInHours(24 * environment.TEAM_INVITATION_TTL_DAYS),
-        acceptedAt: null,
-      },
-      create: {
-        tenantId: tenant.id,
-        email: input.email,
-        role: input.role,
-        tokenHash,
-        invitedByUserId: inviter.id,
-        expiresAt: expiresInHours(24 * environment.TEAM_INVITATION_TTL_DAYS),
-      },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        expiresAt: true,
-        createdAt: true,
-      },
-    });
-  });
-  let emailSent = true;
-  try {
-    await sendTeamInvitationEmail({
-      email: invitation.email,
-      tenantName: tenant.name,
-      inviterName: `${inviter.firstName} ${inviter.lastName}`,
-      role: invitation.role,
-      token,
-    });
-  } catch {
-    emailSent = false;
-  }
-  response
-    .status(201)
-    .json({
+    response.status(201).json({
       invitation,
       emailSent,
       invitationUrl: developmentUrl("/invitacion", token),
     });
-});
+  },
+);
 
 adminRouter.delete(
   "/team/invitations/:id",

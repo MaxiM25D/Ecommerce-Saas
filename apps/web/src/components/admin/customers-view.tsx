@@ -5,10 +5,14 @@ import { type FormEvent, useEffect, useState } from "react";
 import { ApiError, apiRequest } from "@/lib/api";
 import type { CustomerDetail, CustomerSummary } from "./types";
 
-type Pagination = { page: number; pageSize: number; total: number; pages: number };
+type Pagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  pages: number;
+};
 
-const money = (amount: number, currency = "ARS") =>
-  new Intl.NumberFormat("es-AR", { style: "currency", currency }).format(amount / 100);
+const money = (amount: number, currency = "ARS") => new Intl.NumberFormat("es-AR", { style: "currency", currency }).format(amount / 100);
 
 const orderStatus: Record<string, string> = {
   PENDING: "Pendiente",
@@ -21,7 +25,12 @@ const orderStatus: Record<string, string> = {
 
 export function CustomersView() {
   const [customers, setCustomers] = useState<CustomerSummary[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({ page: 1, pageSize: 20, total: 0, pages: 1 });
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    pages: 1,
+  });
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +42,10 @@ export function CustomersView() {
     try {
       const query = new URLSearchParams({ page: String(page), pageSize: "20" });
       if (term.trim()) query.set("search", term.trim());
-      const response = await apiRequest<{ customers: CustomerSummary[]; pagination: Pagination }>(`/admin/customers?${query}`);
+      const response = await apiRequest<{
+        customers: CustomerSummary[];
+        pagination: Pagination;
+      }>(`/admin/customers?${query}`);
       setCustomers(response.customers);
       setPagination(response.pagination);
     } catch (caught) {
@@ -78,7 +90,9 @@ export function CustomersView() {
         </div>
         <form className="flex w-full max-w-md gap-2" onSubmit={submitSearch}>
           <input aria-label="Buscar clientes" className="control" onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, email o teléfono" value={search} />
-          <button className="rounded-xl bg-stone-950 px-5 text-sm font-semibold text-white" type="submit">Buscar</button>
+          <button className="rounded-xl bg-stone-950 px-5 text-sm font-semibold text-white" type="submit">
+            Buscar
+          </button>
         </form>
       </div>
 
@@ -95,13 +109,26 @@ export function CustomersView() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[48rem] text-left text-sm">
               <thead className="border-b bg-stone-50 text-xs uppercase tracking-wider text-stone-400">
-                <tr><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Contacto</th><th className="px-5 py-3">Pedidos</th><th className="px-5 py-3 text-right">Compras aprobadas</th></tr>
+                <tr>
+                  <th className="px-5 py-3">Cliente</th>
+                  <th className="px-5 py-3">Contacto</th>
+                  <th className="px-5 py-3">Pedidos</th>
+                  <th className="px-5 py-3 text-right">Compras aprobadas</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {customers.map((customer) => (
                   <tr className="cursor-pointer hover:bg-stone-50" key={customer.id} onClick={() => void open(customer.id)}>
-                    <td className="px-5 py-4"><strong>{customer.firstName} {customer.lastName}</strong><p className="text-xs text-stone-400">Desde {new Date(customer.createdAt).toLocaleDateString("es-AR")}</p></td>
-                    <td className="px-5 py-4">{customer.email}<p className="text-xs text-stone-400">{customer.phone ?? "Sin teléfono"}</p></td>
+                    <td className="px-5 py-4">
+                      <strong>
+                        {customer.firstName} {customer.lastName}
+                      </strong>
+                      <p className="text-xs text-stone-400">Desde {new Date(customer.createdAt).toLocaleDateString("es-AR")}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      {customer.email}
+                      <p className="text-xs text-stone-400">{customer.phone ?? "Sin teléfono"}</p>
+                    </td>
                     <td className="px-5 py-4">{customer._count.orders}</td>
                     <td className="px-5 py-4 text-right font-semibold">{money(customer.approvedSpentInCents)}</td>
                   </tr>
@@ -114,11 +141,19 @@ export function CustomersView() {
 
       {pagination.total > 0 && (
         <div className="mt-4 flex items-center justify-between text-sm text-stone-500">
-          <span>{pagination.total} cliente{pagination.total === 1 ? "" : "s"}</span>
+          <span>
+            {pagination.total} cliente{pagination.total === 1 ? "" : "s"}
+          </span>
           <div className="flex items-center gap-2">
-            <button className="rounded-xl border border-stone-200 bg-white px-4 py-2 disabled:opacity-40" disabled={pagination.page <= 1 || loading} onClick={() => void load(pagination.page - 1)} type="button">Anterior</button>
-            <span>Página {pagination.page} de {pagination.pages}</span>
-            <button className="rounded-xl border border-stone-200 bg-white px-4 py-2 disabled:opacity-40" disabled={pagination.page >= pagination.pages || loading} onClick={() => void load(pagination.page + 1)} type="button">Siguiente</button>
+            <button className="rounded-xl border border-stone-200 bg-white px-4 py-2 disabled:opacity-40" disabled={pagination.page <= 1 || loading} onClick={() => void load(pagination.page - 1)} type="button">
+              Anterior
+            </button>
+            <span>
+              Página {pagination.page} de {pagination.pages}
+            </span>
+            <button className="rounded-xl border border-stone-200 bg-white px-4 py-2 disabled:opacity-40" disabled={pagination.page >= pagination.pages || loading} onClick={() => void load(pagination.page + 1)} type="button">
+              Siguiente
+            </button>
           </div>
         </div>
       )}
@@ -134,8 +169,15 @@ function CustomerDrawer({ customer, onClose }: { customer: CustomerDetail; onClo
       <button aria-label="Cerrar detalle" className="absolute inset-0" onClick={onClose} type="button" />
       <aside className="relative h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-2xl sm:p-8">
         <header className="flex items-start justify-between">
-          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Cliente</p><h2 className="mt-1 text-3xl font-semibold">{customer.firstName} {customer.lastName}</h2></div>
-          <button className="grid h-10 w-10 place-items-center rounded-xl bg-stone-100 text-xl" onClick={onClose} type="button">×</button>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Cliente</p>
+            <h2 className="mt-1 text-3xl font-semibold">
+              {customer.firstName} {customer.lastName}
+            </h2>
+          </div>
+          <button className="grid h-10 w-10 place-items-center rounded-xl bg-stone-100 text-xl" onClick={onClose} type="button">
+            ×
+          </button>
         </header>
 
         <section className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -156,12 +198,22 @@ function CustomerDrawer({ customer, onClose }: { customer: CustomerDetail; onClo
 
         <section className="mt-6 rounded-2xl bg-stone-50 p-5">
           <h3 className="mb-4 font-semibold">Historial de pedidos</h3>
-          {customer.orders.length === 0 ? <p className="text-sm text-stone-400">Todavía no tiene pedidos.</p> : (
+          {customer.orders.length === 0 ? (
+            <p className="text-sm text-stone-400">Todavía no tiene pedidos.</p>
+          ) : (
             <div className="divide-y divide-stone-200">
               {customer.orders.map((order) => (
                 <div className="flex items-center justify-between gap-4 py-4" key={order.id}>
-                  <div><strong className="text-sm">Pedido #{order.number}</strong><p className="text-xs text-stone-400">{new Date(order.createdAt).toLocaleDateString("es-AR")} · {order._count.items} productos · {orderStatus[order.status] ?? order.status}</p></div>
-                  <div className="text-right"><strong className="text-sm">{money(order.totalInCents, order.currency)}</strong><p className={`text-xs ${order.paymentStatus === "APPROVED" ? "text-emerald-700" : "text-stone-400"}`}>{order.paymentStatus === "APPROVED" ? "Pago aprobado" : "Pago pendiente"}</p></div>
+                  <div>
+                    <strong className="text-sm">Pedido #{order.number}</strong>
+                    <p className="text-xs text-stone-400">
+                      {new Date(order.createdAt).toLocaleDateString("es-AR")} · {order._count.items} productos · {orderStatus[order.status] ?? order.status}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <strong className="text-sm">{money(order.totalInCents, order.currency)}</strong>
+                    <p className={`text-xs ${order.paymentStatus === "APPROVED" ? "text-emerald-700" : "text-stone-400"}`}>{order.paymentStatus === "APPROVED" ? "Pago aprobado" : order.paymentStatus === "PENDING" && order.paymentReceipt ? "Pago en revisión" : "Pago pendiente"}</p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -173,9 +225,19 @@ function CustomerDrawer({ customer, onClose }: { customer: CustomerDetail; onClo
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl bg-stone-950 p-4 text-white"><p className="text-xs text-stone-400">{label}</p><p className="mt-2 text-lg font-semibold">{value}</p></div>;
+  return (
+    <div className="rounded-2xl bg-stone-950 p-4 text-white">
+      <p className="text-xs text-stone-400">{label}</p>
+      <p className="mt-2 text-lg font-semibold">{value}</p>
+    </div>
+  );
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
-  return <div><dt className="text-xs text-stone-400">{label}</dt><dd className="mt-1 font-medium text-stone-700">{value}</dd></div>;
+  return (
+    <div>
+      <dt className="text-xs text-stone-400">{label}</dt>
+      <dd className="mt-1 font-medium text-stone-700">{value}</dd>
+    </div>
+  );
 }

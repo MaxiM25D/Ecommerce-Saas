@@ -6,6 +6,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { ApiError, apiRequest } from "@/lib/api";
 import { useCart } from "./cart-context";
 import { StorefrontError, StorefrontLoading } from "./catalog-page";
+import { ReceiptUploader } from "./receipt-uploader";
 import { formatMoney, ProductImage, StorefrontShell } from "./storefront-shell";
 import type { CheckoutResult, PublicStore } from "./types";
 
@@ -530,7 +531,7 @@ function OrderConfirmation({
           {payment.holder && <DataRow label="Titular" value={payment.holder} />}
         </dl>
       </section>
-      <ReceiptUpload
+      <ReceiptUploader
         orderId={result.order.id}
         orderToken={result.orderToken}
         slug={store.slug}
@@ -542,69 +543,6 @@ function OrderConfirmation({
         Ver estado del pedido
       </Link>
     </main>
-  );
-}
-
-function ReceiptUpload({
-  slug,
-  orderId,
-  orderToken,
-}: {
-  slug: string;
-  orderId: string;
-  orderToken: string;
-}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  async function upload() {
-    if (!file) return;
-    setBusy(true);
-    setMessage("");
-    const form = new FormData();
-    form.append("receipt", file);
-    try {
-      await apiRequest(`/storefront/${slug}/orders/${orderId}/receipt`, {
-        method: "POST",
-        headers: { "x-order-token": orderToken },
-        body: form,
-      });
-      setMessage(
-        "Comprobante enviado correctamente. La tienda ya puede revisarlo.",
-      );
-      setFile(null);
-    } catch (caught) {
-      setMessage(
-        caught instanceof ApiError
-          ? caught.message
-          : "No pudimos enviar el comprobante",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <section className="mt-6 rounded-3xl border border-stone-200 bg-white p-6 text-left shadow-sm sm:p-8">
-      <h2 className="font-semibold">Adjuntar comprobante</h2>
-      <p className="mt-1 text-sm text-stone-500">
-        PDF, JPG, PNG o WEBP de hasta 8 MB.
-      </p>
-      <input
-        accept="application/pdf,image/jpeg,image/png,image/webp"
-        className="mt-5 block w-full text-sm"
-        onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-        type="file"
-      />
-      {message && <p className="mt-4 text-sm text-stone-600">{message}</p>}
-      <button
-        className="mt-5 w-full rounded-xl bg-stone-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
-        disabled={!file || busy}
-        onClick={() => void upload()}
-        type="button"
-      >
-        {busy ? "Enviando…" : "Enviar comprobante"}
-      </button>
-    </section>
   );
 }
 
