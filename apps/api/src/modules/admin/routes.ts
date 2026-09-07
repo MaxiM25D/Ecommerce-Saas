@@ -5,6 +5,7 @@ import { environment } from "../../config.js";
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { getBillingOverview } from "../../services/saas-billing.js";
+import { dispatchTenantNotification } from "../../services/notifications.js";
 import {
   getAuthContext,
   requireRoles,
@@ -32,6 +33,7 @@ import {
 import {
   getStoredReceiptAccess,
   uploadProductFiles,
+  uploadStoreAssetFiles,
 } from "../../services/storage.js";
 import {
   sendShipmentEmail,
@@ -208,6 +210,35 @@ adminRouter.post(
       throw new HttpError(400, "Seleccioná al menos una imagen");
     const images = await uploadProductFiles(files, tenant.id);
     response.status(201).json({ images });
+  },
+);
+
+adminRouter.post(
+  "/uploads/store-assets",
+  canManage,
+  productImageUpload.fields([
+    { name: "logo", maxCount: 1 },
+    { name: "banner", maxCount: 1 },
+  ]),
+  async (request, response) => {
+    const { tenant } = getAuthContext(request);
+    const files = request.files as
+      | Record<string, Express.Multer.File[]>
+      | undefined;
+    const logo = files?.logo?.[0];
+    const banner = files?.banner?.[0];
+    if (!logo && !banner)
+      throw new HttpError(400, "Seleccioná un logo o una portada");
+
+    const [logoUrl, bannerUrl] = await Promise.all([
+      logo
+        ? uploadStoreAssetFiles([logo], tenant.id).then(([url]) => url)
+        : Promise.resolve(undefined),
+      banner
+        ? uploadStoreAssetFiles([banner], tenant.id).then(([url]) => url)
+        : Promise.resolve(undefined),
+    ]);
+    response.status(201).json({ logoUrl, bannerUrl });
   },
 );
 
@@ -499,6 +530,7 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
   const { tenant } = getAuthContext(request);
   const id = resourceIdSchema.parse(request.params.id);
   const input = updateOrderSchema.parse(request.body);
+  let paymentBecameApproved = false;
 
   const order = await database.$transaction(async (transaction) => {
     await transaction.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} AND "tenantId" = ${tenant.id} FOR UPDATE`;
@@ -510,6 +542,9 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
       },
     });
     if (!current) throw new HttpError(404, "Pedido no encontrado");
+    paymentBecameApproved =
+      input.paymentStatus === "APPROVED" &&
+      current.paymentStatus !== "APPROVED";
 
     if (
       input.status &&
@@ -651,6 +686,15 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
     }
     return updated;
   });
+
+  if (paymentBecameApproved) {
+    await dispatchTenantNotification({
+      tenantId: tenant.id,
+      event: "ORDER_PAID",
+      recipient: order.customerEmail,
+      actionUrl: `/tienda/${tenant.slug}/pedido/${order.id}`,
+    });
+  }
 
   response.json({ order });
 });

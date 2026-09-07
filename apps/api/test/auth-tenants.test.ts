@@ -8,8 +8,10 @@ import { database } from "../src/database.js";
 
 const alphaEmail = "owner.alpha@auth-test.local";
 const betaEmail = "owner.beta@auth-test.local";
+const proEmail = "owner.pro@auth-test.local";
 const alphaSlug = "alpha-auth-test";
 const betaSlug = "beta-auth-test";
+const proSlug = "pro-auth-test";
 const alphaSecondSlug = "alpha-second-store";
 const password = "StrongPass123!";
 
@@ -17,8 +19,12 @@ const alphaAgent = request.agent(app);
 const betaAgent = request.agent(app);
 
 async function cleanup(): Promise<void> {
-  await database.tenant.deleteMany({ where: { slug: { in: [alphaSlug, betaSlug, alphaSecondSlug] } } });
-  await database.user.deleteMany({ where: { email: { in: [alphaEmail, betaEmail] } } });
+  await database.tenant.deleteMany({
+    where: { slug: { in: [alphaSlug, betaSlug, alphaSecondSlug, proSlug] } },
+  });
+  await database.user.deleteMany({
+    where: { email: { in: [alphaEmail, betaEmail, proEmail] } },
+  });
 }
 
 before(cleanup);
@@ -55,7 +61,10 @@ test("el registro crea usuario, tienda, membresía OWNER y sesión", async () =>
   assert.equal(response.status, 201);
   assert.equal(response.body.tenant.slug, alphaSlug);
   assert.equal(response.body.role, "OWNER");
-  assert.match(response.headers["set-cookie"]?.[0] ?? "", /infinityshop_session=.*HttpOnly/);
+  assert.match(
+    response.headers["set-cookie"]?.[0] ?? "",
+    /infinityshop_session=.*HttpOnly/,
+  );
 
   const membership = await database.membership.findFirstOrThrow({
     where: { user: { email: alphaEmail }, tenant: { slug: alphaSlug } },
@@ -84,8 +93,44 @@ test("una segunda tienda mantiene una sesión independiente", async () => {
   assert.equal(response.body.role, "OWNER");
 });
 
+test("el onboarding aplica siete días de prueba al plan elegido", async () => {
+  const invalid = await request(app).post("/api/auth/register").send({
+    email: proEmail,
+    password,
+    firstName: "Pro",
+    lastName: "Owner",
+    storeName: "Tienda Pro",
+    storeSlug: proSlug,
+    planCode: "ENTERPRISE",
+  });
+  assert.equal(invalid.status, 400);
+
+  const response = await request(app).post("/api/auth/register").send({
+    email: proEmail,
+    password,
+    firstName: "Pro",
+    lastName: "Owner",
+    storeName: "Tienda Pro",
+    storeSlug: proSlug,
+    planCode: "PRO",
+  });
+  assert.equal(response.status, 201);
+
+  const tenant = await database.tenant.findUniqueOrThrow({
+    where: { slug: proSlug },
+    include: { subscription: { include: { plan: true } } },
+  });
+  assert.equal(tenant.subscription?.plan.code, "PRO");
+  const trialLength =
+    tenant.subscription!.trialEndsAt!.getTime() -
+    tenant.subscription!.currentPeriodFrom!.getTime();
+  assert.equal(trialLength, 7 * 24 * 60 * 60 * 1000);
+});
+
 test("el contexto ignora tenantId externos y usa el guardado en la sesión", async () => {
-  const beta = await database.tenant.findUniqueOrThrow({ where: { slug: betaSlug } });
+  const beta = await database.tenant.findUniqueOrThrow({
+    where: { slug: betaSlug },
+  });
   const contextResponse = await alphaAgent
     .get("/api/tenants/context")
     .query({ tenantId: beta.id });
@@ -141,33 +186,110 @@ test("logout invalida la sesión y login crea una nueva usando el slug", async (
 });
 
 test("crea, lista y recuerda la última tienda sin aceptar tenantId del frontend", async () => {
-  const unverified = await alphaAgent.post("/api/auth/tenants").send({ name: "Segunda tienda", slug: alphaSecondSlug });
+  const unverified = await alphaAgent
+    .post("/api/auth/tenants")
+    .send({ name: "Segunda tienda", slug: alphaSecondSlug });
   assert.equal(unverified.status, 403);
-  await database.user.update({ where: { email: alphaEmail }, data: { emailVerifiedAt: new Date() } });
+  await database.user.update({
+    where: { email: alphaEmail },
+    data: { emailVerifiedAt: new Date() },
+  });
 
-  const manipulated = await alphaAgent.post("/api/auth/tenants").send({ name: "Segunda tienda", slug: alphaSecondSlug, tenantId: "externo" });
+  const manipulated = await alphaAgent
+    .post("/api/auth/tenants")
+    .send({
+      name: "Segunda tienda",
+      slug: alphaSecondSlug,
+      tenantId: "externo",
+    });
   assert.equal(manipulated.status, 400);
-  const created = await alphaAgent.post("/api/auth/tenants").send({ name: "Segunda tienda", slug: alphaSecondSlug });
+  const created = await alphaAgent
+    .post("/api/auth/tenants")
+    .send({ name: "Segunda tienda", slug: alphaSecondSlug, planCode: "PRO" });
   assert.equal(created.status, 201);
   assert.equal(created.body.role, "OWNER");
+  const createdSubscription = await database.subscription.findUniqueOrThrow({
+    where: {
+      tenantId: (
+        await database.tenant.findUniqueOrThrow({
+          where: { slug: alphaSecondSlug },
+          select: { id: true },
+        })
+      ).id,
+    },
+    include: { plan: true },
+  });
+  assert.equal(createdSubscription.plan.code, "PRO");
 
   const stores = await alphaAgent.get("/api/auth/tenants");
   assert.equal(stores.status, 200);
-  assert.deepEqual(stores.body.tenants.map(({ slug }: { slug: string }) => slug), [alphaSlug, alphaSecondSlug]);
-  assert.equal(stores.body.tenants.find(({ current }: { current: boolean }) => current).slug, alphaSecondSlug);
+  assert.deepEqual(
+    stores.body.tenants.map(({ slug }: { slug: string }) => slug),
+    [alphaSlug, alphaSecondSlug],
+  );
+  assert.equal(
+    stores.body.tenants.find(({ current }: { current: boolean }) => current)
+      .slug,
+    alphaSecondSlug,
+  );
 
-  assert.equal((await alphaAgent.post("/api/auth/select-tenant").send({ tenantSlug: alphaSlug })).status, 200);
+  assert.equal(
+    (
+      await alphaAgent
+        .post("/api/auth/select-tenant")
+        .send({ tenantSlug: alphaSlug })
+    ).status,
+    200,
+  );
   await alphaAgent.post("/api/auth/logout");
-  const rememberedAlpha = await alphaAgent.post("/api/auth/login").send({ email: alphaEmail, password });
+  const rememberedAlpha = await alphaAgent
+    .post("/api/auth/login")
+    .send({ email: alphaEmail, password });
   assert.equal(rememberedAlpha.body.tenant.slug, alphaSlug);
 
-  assert.equal((await alphaAgent.post("/api/auth/select-tenant").send({ tenantSlug: alphaSecondSlug })).status, 200);
+  assert.equal(
+    (
+      await alphaAgent
+        .post("/api/auth/select-tenant")
+        .send({ tenantSlug: alphaSecondSlug })
+    ).status,
+    200,
+  );
   await alphaAgent.post("/api/auth/logout");
-  const rememberedSecond = await alphaAgent.post("/api/auth/login").send({ email: alphaEmail, password });
+  const rememberedSecond = await alphaAgent
+    .post("/api/auth/login")
+    .send({ email: alphaEmail, password });
   assert.equal(rememberedSecond.body.tenant.slug, alphaSecondSlug);
 
-  await database.tenant.update({ where: { slug: alphaSecondSlug }, data: { status: "SUSPENDED" } });
+  await database.tenant.update({
+    where: { slug: alphaSecondSlug },
+    data: { status: "SUSPENDED" },
+  });
   const automaticFallback = await alphaAgent.get("/api/auth/me");
   assert.equal(automaticFallback.status, 200);
   assert.equal(automaticFallback.body.tenant.slug, alphaSlug);
+});
+
+test("permite actualizar el perfil y cambiar la contraseña cerrando otras sesiones", async () => {
+  const profile = await alphaAgent.patch("/api/auth/profile").send({
+    firstName: "Maxi",
+    lastName: "Prueba",
+  });
+  assert.equal(profile.status, 200);
+  assert.equal(profile.body.user.firstName, "Maxi");
+  assert.equal(profile.body.user.email, alphaEmail);
+
+  const secondAgent = request.agent(app);
+  assert.equal((await secondAgent.post("/api/auth/login").send({ email: alphaEmail, password })).status, 200);
+  assert.equal((await alphaAgent.post("/api/auth/change-password").send({ currentPassword: "Incorrecta123!", newPassword: "AnotherPass456!" })).status, 401);
+
+  const changed = await alphaAgent.post("/api/auth/change-password").send({
+    currentPassword: password,
+    newPassword: "AnotherPass456!",
+  });
+  assert.equal(changed.status, 200);
+  assert.equal((await alphaAgent.get("/api/auth/me")).status, 200);
+  assert.equal((await secondAgent.get("/api/auth/me")).status, 401);
+  assert.equal((await request(app).post("/api/auth/login").send({ email: alphaEmail, password })).status, 401);
+  assert.equal((await request(app).post("/api/auth/login").send({ email: alphaEmail, password: "AnotherPass456!" })).status, 200);
 });

@@ -1,5 +1,41 @@
 import { z } from "zod";
 
+export const storefrontProductsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(48).default(24),
+  search: z.string().trim().max(100).optional().default(""),
+  category: z.string().trim().max(100).optional().default(""),
+  brand: z.string().trim().max(100).optional().default(""),
+  tag: z.string().trim().max(100).optional().default(""),
+  minPrice: z.coerce.number().min(0).max(100_000_000).optional(),
+  maxPrice: z.coerce.number().min(0).max(100_000_000).optional(),
+  sort: z
+    .enum(["featured", "recent", "price_asc", "price_desc", "name"])
+    .default("featured"),
+});
+
+export const customerRegisterSchema = z
+  .object({
+    email: z.email().trim().toLowerCase().max(254),
+    password: z.string().min(10).max(72),
+    firstName: z.string().trim().min(2).max(60),
+    lastName: z.string().trim().min(2).max(60),
+    phone: z.string().trim().min(6).max(30).optional(),
+  })
+  .strict();
+
+export const customerLoginSchema = z
+  .object({
+    email: z.email().trim().toLowerCase().max(254),
+    password: z.string().min(10).max(72),
+  })
+  .strict();
+
+export const customerOrdersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(25).default(10),
+});
+
 export const checkoutSchema = z
   .object({
     customer: z

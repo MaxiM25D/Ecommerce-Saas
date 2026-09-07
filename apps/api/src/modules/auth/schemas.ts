@@ -8,7 +8,10 @@ export const tenantSlug = z
   .toLowerCase()
   .min(3)
   .max(48)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Usá letras minúsculas, números y guiones simples");
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    "Usá letras minúsculas, números y guiones simples",
+  );
 
 export const registerSchema = z
   .object({
@@ -18,6 +21,7 @@ export const registerSchema = z
     lastName: z.string().trim().min(2).max(60),
     storeName: z.string().trim().min(2).max(100),
     storeSlug: tenantSlug,
+    planCode: z.enum(["STARTER", "PRO"]).default("STARTER"),
   })
   .strict();
 
@@ -31,18 +35,36 @@ export const loginSchema = z
 
 export const selectTenantSchema = z.object({ tenantSlug }).strict();
 
-export const createTenantSchema = z.object({
-  name: z.string().trim().min(2).max(100),
-  slug: tenantSlug,
-}).strict();
+export const createTenantSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100),
+    slug: tenantSlug,
+    planCode: z.enum(["STARTER", "PRO"]).default("STARTER"),
+  })
+  .strict();
 
 const accountToken = z.string().trim().min(32).max(256);
 
 export const forgotPasswordSchema = z.object({ email }).strict();
 
-export const resetPasswordSchema = z.object({ token: accountToken, password }).strict();
+export const resetPasswordSchema = z
+  .object({ token: accountToken, password })
+  .strict();
 
 export const verifyEmailSchema = z.object({ token: accountToken }).strict();
+
+export const updateProfileSchema = z.object({
+  firstName: z.string().trim().min(2).max(60),
+  lastName: z.string().trim().min(2).max(60),
+}).strict();
+
+export const changePasswordSchema = z.object({
+  currentPassword: password,
+  newPassword: password,
+}).strict().refine(({ currentPassword, newPassword }) => currentPassword !== newPassword, {
+  message: "La nueva contraseña debe ser diferente a la actual",
+  path: ["newPassword"],
+});
 
 export const invitationTokenSchema = z.object({ token: accountToken }).strict();
 

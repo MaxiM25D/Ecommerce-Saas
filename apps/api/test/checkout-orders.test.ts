@@ -170,6 +170,16 @@ test("el panel administra estados y una cancelación repone stock una sola vez",
   assert.equal(confirmed.status, 200);
   assert.equal(confirmed.body.order.status, "CONFIRMED");
   assert.equal(confirmed.body.order.paymentStatus, "APPROVED");
+  assert.equal(
+    await database.notificationLog.count({
+      where: {
+        tenantId: order.tenantId,
+        event: "ORDER_PAID",
+        recipient: "comprador@checkout.test",
+      },
+    }),
+    1,
+  );
 
   const cancellations = await Promise.all([
     ownerAgent.patch(`/api/admin/orders/${orderId}`).send({ status: "CANCELLED" }),

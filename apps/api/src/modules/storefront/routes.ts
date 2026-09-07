@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import bcrypt from "bcryptjs";
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import multer from "multer";
 
 import { database } from "../../database.js";
@@ -11,6 +13,10 @@ import {
   abandonedCartSchema,
   analyticsEventSchema,
   checkoutSchema,
+  customerOrdersQuerySchema,
+  customerLoginSchema,
+  customerRegisterSchema,
+  storefrontProductsQuerySchema,
 } from "./schemas.js";
 import { createCheckoutPreference } from "../../services/mercado-pago.js";
 import {
@@ -23,6 +29,11 @@ import {
 } from "../../services/storage.js";
 import { hashOpaqueToken } from "../../services/secret-vault.js";
 import { dispatchTenantNotification } from "../../services/notifications.js";
+import {
+  createAccountToken,
+  hashAccountToken,
+} from "../../services/account-tokens.js";
+import { requireCustomerSession } from "../../services/customer-auth.js";
 
 export const storefrontRouter = Router();
 
@@ -99,6 +110,20 @@ const receiptUpload = multer({
   },
 });
 
+const customerAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+const checkoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED", message: "Demasiados intentos de compra. Esperá unos minutos y volvé a intentar." },
+});
+
 storefrontRouter.get("/:slug", async (request, response) => {
   const slug = tenantSlug.parse(request.params.slug);
   const store = await database.tenant.findFirst({
@@ -145,6 +170,7 @@ storefrontRouter.get("/:slug", async (request, response) => {
           { featuredOrder: "asc" },
           { createdAt: "desc" },
         ],
+        take: 12,
         select: productSelection,
       },
     },
@@ -174,6 +200,304 @@ storefrontRouter.get("/:slug", async (request, response) => {
       },
     },
   });
+});
+
+storefrontRouter.get("/:slug/products", async (request, response) => {
+  const slug = tenantSlug.parse(request.params.slug);
+  const query = storefrontProductsQuerySchema.parse(request.query);
+  const tenant = await database.tenant.findFirst({
+    where: { slug, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+
+  const priceFilter =
+    query.minPrice !== undefined || query.maxPrice !== undefined
+      ? {
+          ...(query.minPrice !== undefined
+            ? { gte: Math.round(query.minPrice * 100) }
+            : {}),
+          ...(query.maxPrice !== undefined
+            ? { lte: Math.round(query.maxPrice * 100) }
+            : {}),
+        }
+      : undefined;
+  const where = {
+    tenantId: tenant.id,
+    active: true,
+    ...(query.search
+      ? {
+          OR: [
+            { name: { contains: query.search, mode: "insensitive" as const } },
+            { description: { contains: query.search, mode: "insensitive" as const } },
+            { sku: { contains: query.search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+    ...(query.category ? { category: { slug: query.category } } : {}),
+    ...(query.brand
+      ? { brand: { equals: query.brand, mode: "insensitive" as const } }
+      : {}),
+    ...(query.tag ? { tags: { has: query.tag } } : {}),
+    ...(priceFilter ? { priceInCents: priceFilter } : {}),
+  };
+  const orderBy =
+    query.sort === "recent"
+      ? [{ createdAt: "desc" as const }]
+      : query.sort === "price_asc"
+        ? [{ priceInCents: "asc" as const }]
+        : query.sort === "price_desc"
+          ? [{ priceInCents: "desc" as const }]
+          : query.sort === "name"
+            ? [{ name: "asc" as const }]
+            : [
+                { featured: "desc" as const },
+                { featuredOrder: "asc" as const },
+                { createdAt: "desc" as const },
+              ];
+
+  const [products, total, facetProducts] = await Promise.all([
+    database.product.findMany({
+      where,
+      orderBy,
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+      select: productSelection,
+    }),
+    database.product.count({ where }),
+    database.product.findMany({
+      where: { tenantId: tenant.id, active: true },
+      select: { brand: true, tags: true },
+    }),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(total / query.limit));
+  response.json({
+    products,
+    pagination: {
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages,
+    },
+    facets: {
+      brands: [...new Set(facetProducts.map(({ brand }) => brand).filter(Boolean))].sort(),
+      tags: [...new Set(facetProducts.flatMap(({ tags }) => tags))].sort(),
+    },
+  });
+});
+
+storefrontRouter.post(
+  "/:slug/customer-auth/register",
+  customerAuthLimiter,
+  async (request, response) => {
+    const slug = tenantSlug.parse(request.params.slug);
+    const input = customerRegisterSchema.parse(request.body);
+    const tenant = await database.tenant.findFirst({
+      where: { slug, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+
+    const existing = await database.customer.findUnique({
+      where: { tenantId_email: { tenantId: tenant.id, email: input.email } },
+      select: { id: true, passwordHash: true },
+    });
+    if (existing?.passwordHash)
+      throw new HttpError(409, "Ya existe una cuenta con ese email");
+    const passwordHash = await bcrypt.hash(input.password, 12);
+    const session = createAccountToken();
+    const customer = await database.$transaction(async (transaction) => {
+      const storedCustomer = existing
+        ? await transaction.customer.update({
+            where: { id: existing.id },
+            data: {
+              passwordHash,
+              accountCreatedAt: new Date(),
+              firstName: input.firstName,
+              lastName: input.lastName,
+              phone: input.phone,
+            },
+          })
+        : await transaction.customer.create({
+            data: {
+              tenantId: tenant.id,
+              email: input.email,
+              passwordHash,
+              accountCreatedAt: new Date(),
+              firstName: input.firstName,
+              lastName: input.lastName,
+              phone: input.phone,
+            },
+          });
+      await transaction.customerSession.create({
+        data: {
+          tenantId: tenant.id,
+          customerId: storedCustomer.id,
+          tokenHash: session.tokenHash,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+        },
+      });
+      return storedCustomer;
+    });
+    response.status(201).json({
+      sessionToken: session.token,
+      customer: {
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        email: customer.email,
+      },
+    });
+  },
+);
+
+storefrontRouter.post(
+  "/:slug/customer-auth/login",
+  customerAuthLimiter,
+  async (request, response) => {
+    const slug = tenantSlug.parse(request.params.slug);
+    const input = customerLoginSchema.parse(request.body);
+    const tenant = await database.tenant.findFirst({
+      where: { slug, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+    const customer = await database.customer.findUnique({
+      where: { tenantId_email: { tenantId: tenant.id, email: input.email } },
+    });
+    if (
+      !customer?.passwordHash ||
+      !(await bcrypt.compare(input.password, customer.passwordHash))
+    )
+      throw new HttpError(401, "Email o contraseña incorrectos");
+    const session = createAccountToken();
+    await database.customerSession.create({
+      data: {
+        tenantId: tenant.id,
+        customerId: customer.id,
+        tokenHash: session.tokenHash,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+      },
+    });
+    response.json({
+      sessionToken: session.token,
+      customer: {
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        email: customer.email,
+      },
+    });
+  },
+);
+
+storefrontRouter.get("/:slug/customer/orders", async (request, response) => {
+  const slug = tenantSlug.parse(request.params.slug);
+  const query = customerOrdersQuerySchema.parse(request.query);
+  const tenant = await database.tenant.findFirst({
+    where: { slug, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+  const session = await requireCustomerSession(
+    tenant.id,
+    request.get("x-customer-session"),
+  );
+  const where = { tenantId: tenant.id, customerId: session.customerId };
+  const [orders, total] = await Promise.all([
+    database.order.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        paymentStatus: true,
+        paymentMethod: true,
+        totalInCents: true,
+        currency: true,
+        createdAt: true,
+        items: {
+          take: 3,
+          select: {
+            id: true,
+            productName: true,
+            variantName: true,
+            quantity: true,
+            product: { select: { images: true } },
+          },
+        },
+        _count: { select: { items: true } },
+      },
+    }),
+    database.order.count({ where }),
+  ]);
+  response.json({
+    customer: {
+      firstName: session.customer.firstName,
+      lastName: session.customer.lastName,
+      email: session.customer.email,
+    },
+    orders,
+    pagination: {
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    },
+  });
+});
+
+storefrontRouter.get("/:slug/customer-auth/session", async (request, response) => {
+  const slug = tenantSlug.parse(request.params.slug);
+  const tenant = await database.tenant.findFirst({
+    where: { slug, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+  const session = await requireCustomerSession(
+    tenant.id,
+    request.get("x-customer-session"),
+  );
+  response.json({
+    customer: {
+      firstName: session.customer.firstName,
+      lastName: session.customer.lastName,
+      email: session.customer.email,
+    },
+  });
+});
+
+storefrontRouter.delete("/:slug/customer-auth/session", async (request, response) => {
+  const slug = tenantSlug.parse(request.params.slug);
+  const tenant = await database.tenant.findFirst({
+    where: { slug, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+  const token = request.get("x-customer-session");
+  if (token)
+    await database.customerSession.deleteMany({
+      where: { tenantId: tenant.id, tokenHash: hashAccountToken(token) },
+    });
+  response.status(204).send();
+});
+
+storefrontRouter.get("/:slug/products/:productSlug/metadata", async (request, response) => {
+  const slug = tenantSlug.parse(request.params.slug);
+  const productSlug = tenantSlug.parse(request.params.productSlug);
+  const product = await database.product.findFirst({
+    where: { tenant: { slug, status: "ACTIVE" }, slug: productSlug, active: true },
+    select: {
+      name: true,
+      description: true,
+      images: true,
+      tenant: { select: { name: true, slug: true, settings: { select: { description: true, logoUrl: true, bannerUrl: true } } } },
+    },
+  });
+  if (!product) throw new HttpError(404, "Producto no encontrado");
+  response.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+  response.json({ product: { name: product.name, description: product.description, images: product.images }, store: product.tenant });
 });
 
 storefrontRouter.get(
@@ -346,9 +670,28 @@ storefrontRouter.post("/:slug/carts", async (request, response) => {
   response.status(201).json({ cart });
 });
 
-storefrontRouter.post("/:slug/orders", async (request, response) => {
+storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response) => {
   const slug = tenantSlug.parse(request.params.slug);
-  const input = checkoutSchema.parse(request.body);
+  let input = checkoutSchema.parse(request.body);
+  const customerSessionToken = request.get("x-customer-session");
+  if (customerSessionToken) {
+    const tenant = await database.tenant.findFirst({
+      where: { slug, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+    const session = await requireCustomerSession(tenant.id, customerSessionToken);
+    input = {
+      ...input,
+      customer: {
+        ...input.customer,
+        email: session.customer.email,
+        firstName: session.customer.firstName,
+        lastName: session.customer.lastName,
+        phone: input.customer.phone || session.customer.phone || "",
+      },
+    };
+  }
   const publicToken = randomBytes(32).toString("base64url");
 
   const createOrder = () =>
@@ -707,7 +1050,7 @@ storefrontRouter.post("/:slug/orders", async (request, response) => {
     tenantId: result.tenantId,
     event: "ORDER_CREATED",
     recipient: input.customer.email,
-    actionUrl: `/tienda/${slug}/pedido/${result.order.id}`,
+    actionUrl: `/tienda/${slug}/pedido/${result.order.id}?token=${encodeURIComponent(publicToken)}`,
   });
   const mercadoPago =
     result.payment.method === "MERCADO_PAGO"
@@ -733,6 +1076,7 @@ storefrontRouter.get("/:slug/orders/:orderId", async (request, response) => {
     tenant.id,
     String(request.params.orderId),
     request.get("x-order-token"),
+    request.get("x-customer-session"),
   );
   response.json({
     order: {
@@ -742,6 +1086,34 @@ storefrontRouter.get("/:slug/orders/:orderId", async (request, response) => {
       paymentStatus: order.paymentStatus,
       paymentMethod: order.paymentMethod,
       stockExpiresAt: order.stockExpiresAt,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      currency: order.currency,
+      subtotalInCents: order.subtotalInCents,
+      discountInCents: order.discountInCents,
+      shippingInCents: order.shippingInCents,
+      totalInCents: order.totalInCents,
+      shippingAddress: order.shippingAddress,
+      shippingMethod: order.shippingMethod,
+      items: order.items.map((item) => ({
+        id: item.id,
+        productName: item.productName,
+        variantName: item.variantName,
+        quantity: item.quantity,
+        unitPriceInCents: item.unitPriceInCents,
+        subtotalInCents: item.subtotalInCents,
+        image: item.product?.images[0] ?? null,
+        productSlug: item.product?.slug ?? null,
+      })),
+      customer: {
+        email: order.customer?.email ?? order.customerEmail,
+        firstName:
+          order.customer?.firstName ?? order.customerName.split(" ")[0] ?? "",
+        lastName:
+          order.customer?.lastName ??
+          order.customerName.split(" ").slice(1).join(" "),
+        hasAccount: Boolean(order.customer?.passwordHash),
+      },
       receipt: order.paymentReceipt
         ? {
             originalName: order.paymentReceipt.originalName,
@@ -780,6 +1152,7 @@ storefrontRouter.post(
       tenant.id,
       String(request.params.orderId),
       request.get("x-order-token"),
+      request.get("x-customer-session"),
     );
     if (order.paymentMethod !== "MERCADO_PAGO")
       throw new HttpError(400, "El pedido usa otro medio de pago");
@@ -803,6 +1176,7 @@ storefrontRouter.post(
       tenant.id,
       String(request.params.orderId),
       request.get("x-order-token"),
+      request.get("x-customer-session"),
     );
     if (order.paymentMethod !== "BANK_TRANSFER")
       throw new HttpError(400, "El pedido usa otro medio de pago");

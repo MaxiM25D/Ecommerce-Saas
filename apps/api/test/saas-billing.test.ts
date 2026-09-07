@@ -4,6 +4,7 @@ import { after, before, test } from "node:test";
 import request from "supertest";
 
 import { app } from "../src/app.js";
+import { environment } from "../src/config.js";
 import { database } from "../src/database.js";
 
 const agent = request.agent(app);
@@ -12,8 +13,12 @@ const slugs = ["billing-alpha", "billing-beta"];
 const emails = ["owner@billing-alpha.test", "owner@billing-beta.test"];
 let alphaTenantId = "";
 let betaTenantId = "";
+const originalBillingProvider = environment.SAAS_BILLING_PROVIDER;
+const originalBillingAccessToken = environment.SAAS_MP_ACCESS_TOKEN;
 
 before(async () => {
+  environment.SAAS_BILLING_PROVIDER = "disabled";
+  environment.SAAS_MP_ACCESS_TOKEN = undefined;
   await database.tenant.deleteMany({ where: { slug: { in: slugs } } });
   await database.user.deleteMany({ where: { email: { in: emails } } });
   for (const [index, currentAgent] of [agent, betaAgent].entries()) {
@@ -29,6 +34,8 @@ before(async () => {
 });
 
 after(async () => {
+  environment.SAAS_BILLING_PROVIDER = originalBillingProvider;
+  environment.SAAS_MP_ACCESS_TOKEN = originalBillingAccessToken;
   await database.tenant.deleteMany({ where: { slug: { in: slugs } } });
   await database.user.deleteMany({ where: { email: { in: emails } } });
   await database.$disconnect();

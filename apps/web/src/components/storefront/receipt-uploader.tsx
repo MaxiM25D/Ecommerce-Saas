@@ -1,5 +1,6 @@
 "use client";
 
+import { CheckCircle2, FileCheck2, UploadCloud } from "lucide-react";
 import { useState } from "react";
 
 import { FilePicker } from "@/components/file-picker";
@@ -9,7 +10,9 @@ type ReceiptUploaderProps = {
   existingReceiptName?: string;
   onUploaded?: () => void | Promise<void>;
   orderId: string;
-  orderToken: string;
+  orderToken?: string;
+  customerSessionToken?: string;
+  accentColor?: string;
   slug: string;
 };
 
@@ -18,6 +21,8 @@ export function ReceiptUploader({
   onUploaded,
   orderId,
   orderToken,
+  customerSessionToken,
+  accentColor = "#171417",
   slug,
 }: ReceiptUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -36,7 +41,12 @@ export function ReceiptUploader({
     try {
       await apiRequest(`/storefront/${slug}/orders/${orderId}/receipt`, {
         method: "POST",
-        headers: { "x-order-token": orderToken },
+        headers: {
+          ...(orderToken ? { "x-order-token": orderToken } : {}),
+          ...(customerSessionToken
+            ? { "x-customer-session": customerSessionToken }
+            : {}),
+        },
         body: form,
       });
       setMessage(
@@ -58,16 +68,33 @@ export function ReceiptUploader({
   }
 
   return (
-    <section className="mt-6 rounded-3xl border border-stone-200 bg-white p-6 text-left shadow-sm sm:p-8">
-      <h2 className="font-semibold">
-        {existingReceiptName
-          ? "Reemplazar comprobante"
-          : "Adjuntar comprobante"}
-      </h2>
+    <section className="rounded-[1.75rem] border border-black/[0.07] bg-white p-5 text-left shadow-[0_18px_60px_rgba(28,20,30,0.08)] sm:p-7">
+      <div className="flex items-start gap-3">
+        <span
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white"
+          style={{ backgroundColor: accentColor }}
+        >
+          {existingReceiptName ? <FileCheck2 size={19} /> : <UploadCloud size={19} />}
+        </span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">
+            Último paso
+          </p>
+          <h2 className="mt-1 font-semibold tracking-[-0.02em]">
+            {existingReceiptName
+              ? "Reemplazar comprobante"
+              : "Adjuntar comprobante"}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-stone-500">
+            La tienda lo revisará para confirmar el pago.
+          </p>
+        </div>
+      </div>
       {existingReceiptName && (
-        <p className="mt-1 truncate text-sm text-stone-500">
-          Actual: {existingReceiptName}
-        </p>
+        <div className="mt-5 flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <CheckCircle2 className="shrink-0" size={16} />
+          <span className="min-w-0 truncate">Actual: {existingReceiptName}</span>
+        </div>
       )}
       <div className="mt-5">
         <FilePicker
@@ -84,16 +111,19 @@ export function ReceiptUploader({
       {message && (
         <p
           className={`mt-4 rounded-xl px-4 py-3 text-sm ${
-            failed ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"
+          failed
+            ? "border border-red-100 bg-red-50 text-red-700"
+            : "border border-emerald-100 bg-emerald-50 text-emerald-800"
           }`}
         >
           {message}
         </p>
       )}
       <button
-        className="mt-5 w-full rounded-xl bg-stone-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+        className="mt-5 w-full rounded-2xl px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:translate-y-0 disabled:bg-stone-300 disabled:shadow-none"
         disabled={!file || busy}
         onClick={() => void upload()}
+        style={file && !busy ? { backgroundColor: accentColor } : undefined}
         type="button"
       >
         {busy

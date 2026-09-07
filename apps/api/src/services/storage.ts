@@ -56,22 +56,34 @@ function uploadCloudinary(
   });
 }
 
-export async function uploadProductFiles(files: Express.Multer.File[], tenantId: string): Promise<string[]> {
+async function uploadPublicImageFiles(
+  files: Express.Multer.File[],
+  tenantId: string,
+  folder: "products" | "store-assets",
+): Promise<string[]> {
   if (cloudinaryEnabled) {
     const uploads = await Promise.all(files.map((file) => uploadCloudinary(file, {
-      folder: `infinityshop/${tenantId}/products`,
+      folder: `infinityshop/${tenantId}/${folder}`,
       resourceType: "image",
     })));
     return uploads.map(({ secureUrl }) => secureUrl);
   }
 
-  const directory = resolve(publicRoot, "tenants", tenantId, "products");
+  const directory = resolve(publicRoot, "tenants", tenantId, folder);
   await mkdir(directory, { recursive: true });
   return Promise.all(files.map(async (file) => {
     const name = `${randomUUID()}${safeExtension(file)}`;
     await writeFile(resolve(directory, name), file.buffer, { flag: "wx" });
-    return `${environment.API_PUBLIC_URL.replace(/\/$/, "")}/uploads/tenants/${tenantId}/products/${name}`;
+    return `${environment.API_PUBLIC_URL.replace(/\/$/, "")}/uploads/tenants/${tenantId}/${folder}/${name}`;
   }));
+}
+
+export function uploadProductFiles(files: Express.Multer.File[], tenantId: string): Promise<string[]> {
+  return uploadPublicImageFiles(files, tenantId, "products");
+}
+
+export function uploadStoreAssetFiles(files: Express.Multer.File[], tenantId: string): Promise<string[]> {
+  return uploadPublicImageFiles(files, tenantId, "store-assets");
 }
 
 export type StoredReceipt = {

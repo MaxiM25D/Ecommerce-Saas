@@ -70,7 +70,7 @@ export async function processPendingNotifications(batchSize = 20): Promise<{ sen
         message: notification.message,
         actionUrl: notification.actionUrl,
       });
-      await database.notificationLog.update({ where: { id: notification.id }, data: { status: "SENT", sentAt: new Date(), lockedAt: null, error: null } });
+      await database.notificationLog.update({ where: { id: notification.id }, data: { status: "SENT", sentAt: new Date(), lockedAt: null, error: null, actionUrl: "" } });
       sent += 1;
     } catch (error) {
       const delayMinutes = Math.min(60, 2 ** Math.max(0, attempt - 1));

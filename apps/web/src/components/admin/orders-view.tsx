@@ -1,9 +1,11 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { CircleDollarSign, ClipboardList, Search, Truck, X } from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { ApiError, apiAbsoluteUrl, apiRequest } from "@/lib/api";
 import type { OrderDetail, OrderSummary, Role } from "./types";
+import { EmptyState, Field, Tip, panelStyles as styles } from "./guided-panel";
 
 const statusLabels: Record<string, string> = {
   PENDING: "Pendiente",
@@ -37,18 +39,31 @@ export function OrdersView({ role }: { role: Role }) {
   const [selected, setSelected] = useState<OrderDetail | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [paymentFilter, setPaymentFilter] = useState("ALL");
 
   async function load() {
     const response = await apiRequest<{ orders: OrderSummary[] }>("/admin/orders");
     setOrders(response.orders);
   }
   useEffect(() => {
-    void apiRequest<{ orders: OrderSummary[] }>("/admin/orders").then(({ orders }) => setOrders(orders));
+    let active = true;
+    void apiRequest<{ orders: OrderSummary[] }>("/admin/orders").then(({ orders }) => { if (active) setOrders(orders); }).catch((caught) => { if (active) setError(caught instanceof ApiError ? caught.message : "No se pudieron cargar los pedidos"); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
+  useEffect(() => {
+    if (!selected) return;
+    const previous = document.body.style.overflow;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setSelected(null); };
+    document.body.style.overflow = "hidden"; document.addEventListener("keydown", close);
+    return () => { document.body.style.overflow = previous; document.removeEventListener("keydown", close); };
+  }, [selected]);
   async function open(orderId: string) {
     setError("");
-    const response = await apiRequest<{ order: OrderDetail }>(`/admin/orders/${orderId}`);
-    setSelected(response.order);
+    try { const response = await apiRequest<{ order: OrderDetail }>(`/admin/orders/${orderId}`); setSelected(response.order); }
+    catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo abrir el pedido"); }
   }
 
   async function update(body: { status?: string; paymentStatus?: string }) {
@@ -113,24 +128,47 @@ export function OrdersView({ role }: { role: Role }) {
     }
   }
 
+  const filteredOrders = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase("es");
+    return orders.filter((order) => {
+      const matchesTerm = !term || [`#${order.number}`, String(order.number), order.customerName, order.customerEmail].some((value) => value.toLocaleLowerCase("es").includes(term));
+      const matchesStatus = statusFilter === "ALL" || order.status === statusFilter;
+      const paymentGroup = order.paymentStatus === "PENDING" && order.paymentReceipt ? "REVIEW" : order.paymentStatus;
+      return matchesTerm && matchesStatus && (paymentFilter === "ALL" || paymentGroup === paymentFilter);
+    });
+  }, [orders, search, statusFilter, paymentFilter]);
+  const awaitingReview = orders.filter((order) => order.paymentStatus === "PENDING" && order.paymentReceipt).length;
+  const preparing = orders.filter((order) => ["CONFIRMED", "PREPARING"].includes(order.status)).length;
+
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className={`${styles.surface} mx-auto max-w-7xl`}>
       <div className="mb-6">
-        <h2 className="text-xl font-semibold">Pedidos</h2>
-        <p className="mt-1 text-sm text-stone-400">Pagos, comprobantes, preparación, despacho y entrega.</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6E3482]">Pedidos</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight">Del pago a la entrega</h2>
+        <p className="mt-2 text-sm text-[#807384]">Revisá cada compra y avanzala siguiendo las acciones sugeridas.</p>
       </div>
-      {orders.length === 0 ? <Empty /> : <OrderTable orders={orders} onOpen={(id) => void open(id)} />}
+      {error && !selected && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+      <div className="mb-5 grid gap-3 sm:grid-cols-3"><OrderSummaryCard icon={ClipboardList} label="Pedidos totales" value={orders.length} help="Todas las compras creadas." /><OrderSummaryCard icon={CircleDollarSign} label="Pagos para revisar" value={awaitingReview} help="Tienen comprobante adjunto." attention={awaitingReview > 0} /><OrderSummaryCard icon={Truck} label="En preparación" value={preparing} help="Confirmados o preparando." /></div>
+      <Tip title="Flujo recomendado">1. Revisá el pago. 2. Confirmá y prepará el pedido. 3. Cargá los datos de envío. 4. Marcá la entrega. El cliente recibe las actualizaciones correspondientes.</Tip>
+      <section className="my-5 rounded-2xl border border-[#e6dfe8] bg-white p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_13rem_13rem]">
+          <label className="relative"><span className="sr-only">Buscar pedido</span><Search className="absolute left-3.5 top-3.5 h-4 w-4 text-[#918495]" /><input className="control pl-10!" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Número, cliente o email" /></label>
+          <select aria-label="Filtrar por estado del pedido" className="control" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="ALL">Todos los estados</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <select aria-label="Filtrar por estado del pago" className="control" value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}><option value="ALL">Todos los pagos</option><option value="PENDING">Pago pendiente</option><option value="REVIEW">Pago en revisión</option><option value="APPROVED">Pago aprobado</option><option value="REJECTED">Pago rechazado</option><option value="REFUNDED">Reembolsado</option></select>
+        </div><p className="mt-3 text-xs text-[#918495]">Mostrando {filteredOrders.length} de {orders.length} pedidos.</p>
+      </section>
+      {loading ? <div className="h-56 animate-pulse rounded-2xl bg-[#eee9ef]" /> : orders.length === 0 ? <Empty /> : filteredOrders.length === 0 ? <EmptyState title="No encontramos pedidos con esos filtros">Probá otro número, nombre o estado.</EmptyState> : <OrderTable orders={filteredOrders} onOpen={(id) => void open(id)} />}
       {selected && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
           <button aria-label="Cerrar detalle" className="absolute inset-0" onClick={() => setSelected(null)} type="button" />
-          <aside className="relative h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-2xl sm:p-8">
+          <aside aria-label={`Detalle del pedido ${selected.number}`} className="relative h-full w-full max-w-2xl overflow-y-auto bg-[#fbfafc] p-6 shadow-2xl sm:p-8" role="dialog" aria-modal="true">
             <header className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Pedido</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6E3482]">Detalle del pedido</p>
                 <h2 className="mt-1 text-3xl font-semibold">#{selected.number}</h2>
               </div>
-              <button className="grid h-10 w-10 place-items-center rounded-xl bg-stone-100 text-xl" onClick={() => setSelected(null)} type="button">
-                ×
+              <button aria-label="Cerrar detalle" className="grid h-10 w-10 place-items-center rounded-xl bg-[#f5eff8] text-[#6E3482]" onClick={() => setSelected(null)} type="button">
+                <X size={19} />
               </button>
             </header>
             <div className="mt-6 flex flex-wrap gap-2">
@@ -197,12 +235,13 @@ export function OrdersView({ role }: { role: Role }) {
             {error && <p className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
             {canManage && (
               <section className="mt-8 space-y-3 border-t border-stone-200 pt-6">
-                <h3 className="font-semibold">Acciones</h3>
+                <h3 className="font-semibold">Siguiente paso</h3>
+                <p className="text-xs leading-5 text-[#807384]">InfinityShop muestra solo las acciones que corresponden al estado actual.</p>
                 {selected.paymentMethod === "BANK_TRANSFER" && selected.paymentStatus === "PENDING" && (
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <><Tip title={selected.paymentReceipt ? "Comprobante recibido" : "Esperando comprobante"}>{selected.paymentReceipt ? "Abrilo y compará importe, titular y referencia antes de aprobar. Al aprobar, el stock queda confirmado." : "Todavía no podés aprobar la transferencia. El cliente debe adjuntar primero su comprobante."}</Tip><div className="grid gap-2 sm:grid-cols-2">
                     <Action disabled={busy || !selected.paymentReceipt} label="Aprobar transferencia" onClick={() => void update({ paymentStatus: "APPROVED" })} primary />
                     <Action disabled={busy} label="Rechazar comprobante" onClick={() => void update({ paymentStatus: "REJECTED" })} />
-                  </div>
+                  </div></>
                 )}
                 {nextStatus[selected.status] && (
                   <Action
@@ -270,16 +309,13 @@ function OrderTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen: (id: s
 }
 function DispatchForm({ busy, onSubmit }: { busy: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
-    <form className="space-y-3 rounded-2xl bg-stone-50 p-4" onSubmit={onSubmit}>
-      <h4 className="text-sm font-semibold">Preparar envío</h4>
-      <input className="control" name="carrier" placeholder="Transportista" required />
-      <input className="control" name="trackingCode" placeholder="Código de seguimiento" />
-      <input className="control" name="trackingUrl" placeholder="https://seguimiento..." type="url" />
-      <label className="block text-xs text-stone-500">
-        Entrega estimada
-        <input className="control mt-1" name="estimatedDelivery" type="date" />
-      </label>
-      <button className="w-full rounded-xl bg-stone-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-50" disabled={busy} type="submit">
+    <form className="mt-4 space-y-5 rounded-2xl border border-[#e6dfe8] bg-white p-5" onSubmit={onSubmit}>
+      <div><h4 className="text-sm font-semibold">Datos del envío</h4><p className="mt-1 text-xs leading-5 text-[#807384]">Se guardan en el seguimiento del cliente. El transportista es obligatorio; el resto puede completarse si está disponible.</p></div>
+      <Field label="Transportista" help="Empresa o persona responsable de la entrega." example="Ejemplo: Correo Argentino"><input name="carrier" placeholder="Correo Argentino" required /></Field>
+      <Field label="Código de seguimiento (opcional)" help="Identificador entregado por el transportista." example="Ejemplo: CP123456789AR"><input name="trackingCode" placeholder="CP123456789AR" /></Field>
+      <Field label="Enlace de seguimiento (opcional)" help="URL completa donde el cliente puede consultar su envío." example="Ejemplo: https://correo.com/seguimiento"><input name="trackingUrl" placeholder="https://correo.com/seguimiento" type="url" /></Field>
+      <Field label="Entrega estimada (opcional)" help="Fecha orientativa que verá el cliente."><input name="estimatedDelivery" type="date" /></Field>
+      <button className={`${styles.button} w-full`} disabled={busy} type="submit">
         Despachar y notificar
       </button>
     </form>
@@ -287,15 +323,13 @@ function DispatchForm({ busy, onSubmit }: { busy: boolean; onSubmit: (event: For
 }
 function Empty() {
   return (
-    <div className="rounded-2xl border border-dashed border-stone-300 bg-white py-24 text-center">
-      <p className="text-lg font-semibold">Todavía no hay pedidos</p>
-    </div>
+    <EmptyState title="Todavía no hay pedidos">Cuando un cliente finalice el checkout, su compra aparecerá acá para que puedas revisarla.</EmptyState>
   );
 }
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-6 rounded-2xl bg-stone-50 p-5">
-      <h3 className="mb-4 font-semibold">{title}</h3>
+    <section className="mt-6 rounded-2xl border border-[#e6dfe8] bg-white p-5">
+      <h3 className="mb-4 font-semibold text-[#4b3a50]">{title}</h3>
       {children}
     </section>
   );
@@ -309,12 +343,18 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 function Badge({ label }: { label: string }) {
-  return <span className="inline-flex rounded-full bg-stone-100 px-2.5 py-1 text-xs font-semibold text-stone-700">{label}</span>;
+  const approved = label === "Pago aprobado" || label === "Entregado";
+  const review = label === "Pago en revisión" || label === "Pendiente";
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${approved ? "bg-emerald-50 text-emerald-700" : review ? "bg-amber-50 text-amber-800" : "bg-[#f4eff7] text-[#6E3482]"}`}>{label}</span>;
 }
 function Action({ label, onClick, disabled, primary, danger }: { label: string; onClick: () => void; disabled: boolean; primary?: boolean; danger?: boolean }) {
   return (
-    <button className={`mt-2 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-40 ${danger ? "bg-red-50 text-red-700" : primary ? "bg-stone-950 text-white" : "border border-stone-200"}`} disabled={disabled} onClick={onClick} type="button">
+    <button className={`mt-2 w-full rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-40 ${danger ? "bg-red-50 text-red-700" : primary ? "bg-[#49225B] text-white" : "border border-[#e6dfe8] bg-white text-[#4b3a50]"}`} disabled={disabled} onClick={onClick} type="button">
       {label}
     </button>
   );
+}
+
+function OrderSummaryCard({ icon: Icon, label, value, help, attention = false }: { icon: typeof ClipboardList; label: string; value: number; help: string; attention?: boolean }) {
+  return <article className={styles.card}><div className="flex items-start justify-between gap-3"><div><p className="text-xs text-[#807384]">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p><p className="mt-2 text-xs leading-5 text-[#918495]">{help}</p></div><span className={`rounded-lg p-2 ${attention ? "bg-amber-50 text-amber-700" : "bg-[#f5eff8] text-[#6E3482]"}`}><Icon size={17} /></span></div></article>;
 }

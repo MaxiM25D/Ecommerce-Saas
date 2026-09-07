@@ -13,8 +13,8 @@ type CartContextValue = {
     quantity?: number,
     variant?: StorefrontProduct["variants"][number],
   ) => void;
-  removeItem: (productId: string) => void;
-  setQuantity: (productId: string, quantity: number) => void;
+  removeItem: (cartKey: string) => void;
+  setQuantity: (cartKey: string, quantity: number) => void;
   clear: () => void;
 };
 
@@ -37,7 +37,17 @@ export function CartProvider({
       if (!active) return;
       try {
         const stored = window.localStorage.getItem(storageKey);
-        setItems(stored ? (JSON.parse(stored) as CartItem[]) : []);
+        const parsed = stored ? (JSON.parse(stored) as CartItem[]) : [];
+        setItems(
+          parsed.map((item) => ({
+            ...item,
+            cartKey:
+              item.cartKey ??
+              (item.selectedVariant
+                ? `${item.id}:${item.selectedVariant.id}`
+                : item.id),
+          })),
+        );
       } catch {
         setItems([]);
       } finally {
@@ -62,6 +72,7 @@ export function CartProvider({
         0,
       ),
       addItem(product, quantity = 1, variant) {
+        const cartKey = variant ? `${product.id}:${variant.id}` : product.id;
         const purchasable = variant
           ? {
               ...product,
@@ -73,17 +84,18 @@ export function CartProvider({
           : product;
         if (purchasable.stock < 1) return;
         setItems((current) => {
-          const existing = current.find((item) => item.id === product.id);
+          const existing = current.find((item) => item.cartKey === cartKey);
           if (!existing)
             return [
               ...current,
               {
                 ...purchasable,
+                cartKey,
                 quantity: Math.min(quantity, purchasable.stock),
               },
             ];
           return current.map((item) =>
-            item.id === product.id
+            item.cartKey === cartKey
               ? {
                   ...item,
                   ...purchasable,
@@ -96,14 +108,14 @@ export function CartProvider({
           );
         });
       },
-      removeItem(productId) {
-        setItems((current) => current.filter((item) => item.id !== productId));
+      removeItem(cartKey) {
+        setItems((current) => current.filter((item) => item.cartKey !== cartKey));
       },
-      setQuantity(productId, quantity) {
+      setQuantity(cartKey, quantity) {
         setItems((current) =>
           current
             .map((item) =>
-              item.id === productId
+              item.cartKey === cartKey
                 ? {
                     ...item,
                     quantity: Math.min(Math.max(quantity, 0), item.stock),

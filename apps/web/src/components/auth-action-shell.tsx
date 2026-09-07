@@ -1,5 +1,31 @@
-import Link from "next/link";
+import { ShieldCheck } from "lucide-react";
+
+import styles from "./auth-shell.module.css";
+import { AuthCardMotion } from "./auth-motion";
+import { BrandLogo } from "./brand-logo";
 
 export function AuthActionShell({ children }: { children: React.ReactNode }) {
-  return <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[#f5f1eb] px-5 py-12"><div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-amber-200/50 blur-3xl" /><div className="absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-stone-300/60 blur-3xl" /><section className="relative z-10 w-full max-w-md rounded-[2rem] border border-stone-200 bg-white p-7 shadow-[0_30px_80px_-35px_rgba(41,37,36,0.3)] sm:p-9"><Link className="mb-8 inline-flex items-center gap-3 text-sm font-bold text-stone-800" href="/"><span className="grid h-10 w-10 place-items-center rounded-xl bg-stone-950 text-white">∞</span>InfinityShop</Link>{children}</section></main>;
+  return (
+    <main
+      className={`${styles.shell} relative grid min-h-screen place-items-center overflow-hidden px-5 py-12 text-white`}
+    >
+      <div
+        className={`${styles.orb} pointer-events-none absolute -left-32 top-12 h-80 w-80 rounded-full bg-fuchsia-600/20 blur-[90px]`}
+      />
+      <div
+        className={`${styles.orb} pointer-events-none absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-blue-500/15 blur-[90px]`}
+      />
+      <div className="relative z-10 w-full max-w-md">
+        <AuthCardMotion>
+          <section className="rounded-[2rem] border border-white/10 bg-[#0b0d28]/85 p-7 shadow-[0_35px_100px_rgba(0,0,0,.45)] backdrop-blur-xl sm:p-9">
+            <div className="mb-9 flex items-center justify-between">
+              <BrandLogo />
+              <ShieldCheck className="h-5 w-5 text-emerald-300/70" />
+            </div>
+            {children}
+          </section>
+        </AuthCardMotion>
+      </div>
+    </main>
+  );
 }

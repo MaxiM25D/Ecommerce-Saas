@@ -1,6 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import {
+  ArrowLeft,
+  Check,
+  CreditCard,
+  Minus,
+  PackageCheck,
+  Plus,
+  ShieldCheck,
+  ShoppingBag,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
@@ -70,6 +80,7 @@ function ProductDetail({
   );
   const availableStock = selectedVariant?.stock ?? product.stock;
   const currentPrice = selectedVariant?.priceInCents ?? product.priceInCents;
+  const primaryColor = store.settings?.primaryColor ?? "#9A6B43";
 
   function addToCart() {
     addItem(product, quantity, selectedVariant);
@@ -78,27 +89,29 @@ function ProductDetail({
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-8 sm:px-6 sm:py-12 lg:px-8">
+    <main className="mx-auto max-w-7xl px-5 py-7 sm:px-6 sm:py-12 lg:px-8">
       <Link
         className="inline-flex items-center gap-2 text-sm font-medium text-stone-500 hover:text-stone-950"
         href={`/tienda/${store.slug}`}
       >
-        ← Volver al catálogo
+        <ArrowLeft size={16} /> Volver al catálogo
       </Link>
       <div className="mt-8 grid gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-16">
         <section>
           <ProductImage
-            className="aspect-square w-full rounded-3xl sm:rounded-[2.5rem]"
+            className="aspect-square w-full rounded-[var(--store-radius)] border border-stone-200/70 shadow-[0_18px_60px_rgba(28,20,28,0.07)]"
             image={selectedImage}
             name={product.name}
           />
           {product.images.length > 1 && (
             <div className="mt-4 flex gap-3 overflow-x-auto">
-              {product.images.map((image) => (
+              {product.images.map((image, index) => (
                 <button
-                  className={`shrink-0 overflow-hidden rounded-2xl border-2 ${selectedImage === image ? "border-stone-950" : "border-transparent"}`}
+                  aria-label={`Ver imagen ${index + 1} de ${product.name}`}
+                  className="shrink-0 overflow-hidden rounded-[calc(var(--store-radius)*.65)] border-2 transition"
                   key={image}
                   onClick={() => setSelectedImage(image)}
+                  style={{ borderColor: selectedImage === image ? primaryColor : "transparent" }}
                   type="button"
                 >
                   <ProductImage
@@ -114,19 +127,19 @@ function ProductDetail({
 
         <section className="self-center lg:py-8">
           {product.category && (
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">
+            <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: primaryColor }}>
               {product.category.name}
             </p>
           )}
           {product.brand && (
-            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">
               {product.brand}
             </p>
           )}
           <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">
             {product.name}
           </h1>
-          <p className="mt-5 text-2xl font-semibold">
+          <p className="mt-5 text-3xl font-bold tracking-[-0.03em]" style={{ color: primaryColor }}>
             {formatMoney(currentPrice, currency)}
           </p>
           <div className="my-7 h-px bg-stone-200" />
@@ -150,7 +163,7 @@ function ProductDetail({
             <label className="mt-7 block text-sm font-semibold">
               Variante
               <select
-                className="control mt-2"
+                className="mt-2 h-13 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm outline-none focus:ring-4 focus:ring-stone-100"
                 value={variantId}
                 onChange={(event) => {
                   setVariantId(event.target.value);
@@ -184,17 +197,19 @@ function ProductDetail({
 
           {availableStock > 0 && (
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <div className="flex h-13 items-center justify-between rounded-full border border-stone-300 px-2 sm:w-36">
+              <div className="flex h-13 items-center justify-between rounded-full border border-stone-300 bg-white px-2 sm:w-36">
                 <button
+                  aria-label="Reducir cantidad"
                   className="grid h-10 w-10 place-items-center"
                   disabled={quantity <= 1}
                   onClick={() => setQuantity((value) => Math.max(1, value - 1))}
                   type="button"
                 >
-                  −
+                  <Minus className="mx-auto" size={15} />
                 </button>
                 <span className="text-sm font-bold">{quantity}</span>
                 <button
+                  aria-label="Aumentar cantidad"
                   className="grid h-10 w-10 place-items-center disabled:text-stone-300"
                   disabled={quantity >= availableStock}
                   onClick={() =>
@@ -202,27 +217,38 @@ function ProductDetail({
                   }
                   type="button"
                 >
-                  +
+                  <Plus className="mx-auto" size={15} />
                 </button>
               </div>
               <button
-                className="h-13 flex-1 rounded-full bg-stone-950 px-7 text-sm font-bold text-white transition hover:opacity-85"
+                className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full px-7 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:brightness-110"
                 onClick={addToCart}
+                style={{ backgroundColor: primaryColor }}
                 type="button"
               >
-                {added ? "¡Agregado!" : "Agregar al carrito"}
+                {added ? <><Check size={17} /> ¡Agregado!</> : <><ShoppingBag size={17} /> Agregar al carrito</>}
               </button>
             </div>
           )}
 
-          <div className="mt-9 grid gap-3 border-t border-stone-200 pt-7 text-sm text-stone-500 sm:grid-cols-2">
-            <p>✓ Compra protegida</p>
-            <p>✓ Stock actualizado</p>
-            <p>✓ Atención directa</p>
-            <p>SKU: {product.sku}</p>
+          <div className="mt-9 grid gap-3 border-t border-stone-200 pt-7 sm:grid-cols-2">
+            <InfoCard icon={<ShieldCheck size={18} />} title="Compra segura" text="Tus datos están protegidos" />
+            <InfoCard icon={<PackageCheck size={18} />} title="Stock actualizado" text={`${availableStock} disponibles`} />
+            {store.paymentMethods.mercadoPago && <InfoCard icon={<CreditCard size={18} />} title="Mercado Pago" text="Pagá desde su plataforma" />}
+            {store.paymentMethods.bankTransfer && <InfoCard icon={<CreditCard size={18} />} title="Transferencia" text="Comprobante protegido" />}
           </div>
+          <p className="mt-5 text-xs text-stone-400">SKU: {product.sku}</p>
         </section>
       </div>
     </main>
+  );
+}
+
+function InfoCard({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-3.5">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-stone-100 text-stone-700">{icon}</span>
+      <span><strong className="block text-xs text-stone-800">{title}</strong><span className="mt-0.5 block text-[11px] text-stone-400">{text}</span></span>
+    </div>
   );
 }

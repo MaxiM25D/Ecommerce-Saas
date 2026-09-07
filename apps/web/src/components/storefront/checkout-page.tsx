@@ -1,14 +1,23 @@
 "use client";
 
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Clock3,
+  Copy,
+  Landmark,
+  ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
 import { useCart } from "./cart-context";
 import { StorefrontError, StorefrontLoading } from "./catalog-page";
 import { ReceiptUploader } from "./receipt-uploader";
 import { formatMoney, ProductImage, StorefrontShell } from "./storefront-shell";
-import type { CheckoutResult, PublicStore } from "./types";
+import type { CheckoutResult, PublicStore, StorefrontCustomer } from "./types";
 
 export function CheckoutPage({ slug }: { slug: string }) {
   const [store, setStore] = useState<PublicStore | null>(null);
@@ -50,13 +59,36 @@ function Checkout({ store }: { store: PublicStore }) {
   const [couponCode, setCouponCode] = useState("");
   const [discountInCents, setDiscountInCents] = useState(0);
   const [shippingMethodId, setShippingMethodId] = useState("");
+  const [postalCode, setPostalCode] = useState("");
   const [savedCartEmail, setSavedCartEmail] = useState("");
+  const [customer, setCustomer] = useState<StorefrontCustomer | null>(null);
+  const [customerSessionToken, setCustomerSessionToken] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<
     "BANK_TRANSFER" | "MERCADO_PAGO"
   >(store.paymentMethods.mercadoPago ? "MERCADO_PAGO" : "BANK_TRANSFER");
   const currency = store.settings?.currency ?? "ARS";
-  const shippingMethods = store.shippingZones.flatMap((zone) =>
-    zone.methods.map((method) => ({ ...method, zoneName: zone.name })),
+  const shippingMethods = useMemo(
+    () =>
+      store.shippingZones.flatMap((zone) =>
+        zone.methods.map((method) => ({
+          ...method,
+          zoneName: zone.name,
+          postalPrefixes: zone.postalPrefixes,
+        })),
+      ),
+    [store.shippingZones],
+  );
+  const eligibleShippingMethods = useMemo(
+    () =>
+      shippingMethods.filter(
+        (method) =>
+          method.postalPrefixes.length === 0 ||
+          !postalCode.trim() ||
+          method.postalPrefixes.some((prefix) =>
+            postalCode.trim().toUpperCase().startsWith(prefix.toUpperCase()),
+          ),
+      ),
+    [postalCode, shippingMethods],
   );
   const shippingInCents =
     shippingMethods.find(({ id }) => id === shippingMethodId)?.priceInCents ??
@@ -65,6 +97,39 @@ function Checkout({ store }: { store: PublicStore }) {
     0,
     subtotalInCents - discountInCents + shippingInCents,
   );
+
+  useEffect(() => {
+    const storageKey = `infinityshop:customer:${store.slug}`;
+    const token = localStorage.getItem(storageKey) ?? "";
+    if (!token) return;
+    apiRequest<{ customer: StorefrontCustomer }>(
+      `/storefront/${store.slug}/customer-auth/session`,
+      { headers: { "x-customer-session": token } },
+    )
+      .then(({ customer: activeCustomer }) => {
+        setCustomerSessionToken(token);
+        setCustomer(activeCustomer);
+      })
+      .catch(() => {
+        localStorage.removeItem(storageKey);
+        setCustomerSessionToken("");
+      });
+  }, [store.slug]);
+
+  function updatePostalCode(value: string) {
+    setPostalCode(value);
+    const selectedMethod = shippingMethods.find(
+      ({ id }) => id === shippingMethodId,
+    );
+    if (
+      selectedMethod &&
+      selectedMethod.postalPrefixes.length > 0 &&
+      !selectedMethod.postalPrefixes.some((prefix) =>
+        value.trim().toUpperCase().startsWith(prefix.toUpperCase()),
+      )
+    )
+      setShippingMethodId("");
+  }
 
   async function applyCoupon() {
     setError("");
@@ -113,6 +178,9 @@ function Checkout({ store }: { store: PublicStore }) {
         `/storefront/${store.slug}/orders`,
         {
           method: "POST",
+          headers: customerSessionToken
+            ? { "x-customer-session": customerSessionToken }
+            : undefined,
           body: JSON.stringify({
             customer: {
               email: form.get("email"),
@@ -155,7 +223,14 @@ function Checkout({ store }: { store: PublicStore }) {
     }
   }
 
-  if (result) return <OrderConfirmation result={result} store={store} />;
+  if (result)
+    return (
+      <OrderConfirmation
+        customerLoggedIn={Boolean(customerSessionToken)}
+        result={result}
+        store={store}
+      />
+    );
   const hasPaymentMethod =
     store.paymentMethods.bankTransfer || store.paymentMethods.mercadoPago;
 
@@ -178,21 +253,50 @@ function Checkout({ store }: { store: PublicStore }) {
           {items.length === 0 ? (
             <EmptyCart slug={store.slug} />
           ) : (
-            <form className="mt-8 space-y-7" onSubmit={submit}>
-              <FormCard title="Datos de contacto">
+            <form
+              className="mt-8 space-y-5"
+              key={customer?.email ?? "guest-checkout"}
+              onSubmit={submit}
+            >
+              {customer ? (
+                <div className="flex flex-col justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 sm:flex-row sm:items-center">
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-900">
+                      Comprás como {customer.firstName} {customer.lastName}
+                    </p>
+                    <p className="mt-1 text-xs text-emerald-700">
+                      Este pedido aparecerá automáticamente en tu cuenta.
+                    </p>
+                  </div>
+                  <Link className="text-xs font-bold text-emerald-800 underline" href={`/tienda/${store.slug}/mis-pedidos`}>
+                    Ver mi cuenta
+                  </Link>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-4 text-sm text-stone-600">
+                  ¿Ya tenés una cuenta?{" "}
+                  <Link className="font-bold text-stone-950 underline" href={`/tienda/${store.slug}/mis-pedidos`}>
+                    Iniciá sesión
+                  </Link>{" "}
+                  para guardar este pedido en “Mis pedidos”.
+                </div>
+              )}
+              <FormCard description="Datos para identificarte y enviarte las novedades del pedido." step="01" title="Contacto">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <CheckoutField label="Nombre" name="firstName" />
-                  <CheckoutField label="Apellido" name="lastName" />
+                  <CheckoutField defaultValue={customer?.firstName} label="Nombre" name="firstName" readOnly={Boolean(customer)} />
+                  <CheckoutField defaultValue={customer?.lastName} label="Apellido" name="lastName" readOnly={Boolean(customer)} />
                   <CheckoutField
+                    defaultValue={customer?.email}
                     label="Email"
                     name="email"
                     type="email"
                     onBlur={(value) => void saveAbandonedCart(value)}
+                    readOnly={Boolean(customer)}
                   />
                   <CheckoutField label="Teléfono" name="phone" />
                 </div>
               </FormCard>
-              <FormCard title="Entrega">
+              <FormCard description="Indicá dónde querés recibir la compra." step="02" title="Entrega">
                 <div className="space-y-4">
                   <TextArea
                     label="Dirección completa"
@@ -203,6 +307,7 @@ function Checkout({ store }: { store: PublicStore }) {
                   <CheckoutField
                     label="Código postal"
                     name="postalCode"
+                    onChange={updatePostalCode}
                     required={false}
                   />
                   <TextArea
@@ -213,7 +318,7 @@ function Checkout({ store }: { store: PublicStore }) {
                 </div>
               </FormCard>
               {shippingMethods.length > 0 && (
-                <FormCard title="Método de envío">
+                <FormCard description="Mostramos las opciones disponibles para tu código postal." step="03" title="Método de envío">
                   <select
                     className="control"
                     name="shippingMethodId"
@@ -224,7 +329,7 @@ function Checkout({ store }: { store: PublicStore }) {
                     required
                   >
                     <option value="">Seleccioná una opción</option>
-                    {shippingMethods.map((method) => (
+                    {eligibleShippingMethods.map((method) => (
                       <option key={method.id} value={method.id}>
                         {method.zoneName} · {method.name} ·{" "}
                         {formatMoney(method.priceInCents, currency)}
@@ -234,9 +339,18 @@ function Checkout({ store }: { store: PublicStore }) {
                       </option>
                     ))}
                   </select>
+                  {postalCode && eligibleShippingMethods.length === 0 && (
+                    <p className="mt-3 text-sm text-red-700">
+                      No encontramos envíos disponibles para ese código postal.
+                    </p>
+                  )}
                 </FormCard>
               )}
-              <FormCard title="Cupón">
+              <FormCard
+                description="Si tenés un código promocional, aplicalo antes de pagar."
+                step={shippingMethods.length > 0 ? "04" : "03"}
+                title="Descuento"
+              >
                 <div className="flex gap-3">
                   <input
                     className="control"
@@ -260,7 +374,7 @@ function Checkout({ store }: { store: PublicStore }) {
                   </p>
                 )}
               </FormCard>
-              <FormCard title="Forma de pago">
+              <FormCard description="Elegí cómo querés abonar tu compra." step={shippingMethods.length > 0 ? "05" : "04"} title="Pago">
                 <div className="grid gap-3">
                   {store.paymentMethods.mercadoPago && (
                     <PaymentOption
@@ -293,6 +407,7 @@ function Checkout({ store }: { store: PublicStore }) {
               <button
                 className="w-full rounded-full bg-stone-950 px-6 py-4 text-sm font-bold text-white disabled:opacity-50"
                 disabled={busy || !hasPaymentMethod}
+                style={{ backgroundColor: store.settings?.primaryColor ?? "#171417" }}
                 type="submit"
               >
                 {busy
@@ -327,14 +442,30 @@ function EmptyCart({ slug }: { slug: string }) {
 }
 function FormCard({
   title,
+  description,
+  step,
   children,
 }: {
   title: string;
+  description?: string;
+  step?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7">
-      <h2 className="mb-5 font-semibold">{title}</h2>
+      <div className="mb-5 flex gap-4">
+        {step && (
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-stone-100 text-xs font-bold text-stone-600">
+            {step}
+          </span>
+        )}
+        <div>
+          <h2 className="font-semibold">{title}</h2>
+          {description && (
+            <p className="mt-1 text-xs leading-5 text-stone-500">{description}</p>
+          )}
+        </div>
+      </div>
       {children}
     </div>
   );
@@ -368,20 +499,29 @@ function CheckoutField({
   type = "text",
   required = true,
   onBlur,
+  onChange,
+  defaultValue,
+  readOnly = false,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   onBlur?: (value: string) => void;
+  onChange?: (value: string) => void;
+  defaultValue?: string;
+  readOnly?: boolean;
 }) {
   return (
     <label className="block text-sm font-medium text-stone-700">
       <span className="mb-1.5 block">{label}</span>
       <input
         className="control"
+        defaultValue={defaultValue}
         name={name}
+        onChange={(event) => onChange?.(event.target.value)}
         required={required}
+        readOnly={readOnly}
         type={type}
         onBlur={(event) => onBlur?.(event.target.value)}
       />
@@ -436,7 +576,7 @@ function OrderSummary({
       <h2 className="font-semibold">Resumen</h2>
       <div className="mt-5 space-y-4">
         {items.map((item) => (
-          <div className="flex gap-3" key={item.id}>
+          <div className="flex gap-3" key={item.cartKey}>
             <ProductImage
               className="h-16 w-16 shrink-0 rounded-xl"
               image={item.images[0]}
@@ -493,64 +633,171 @@ function OrderSummary({
 function OrderConfirmation({
   result,
   store,
+  customerLoggedIn,
 }: {
   result: CheckoutResult;
   store: PublicStore;
+  customerLoggedIn: boolean;
 }) {
   if (result.payment.method !== "BANK_TRANSFER") return null;
   const payment = result.payment;
+  const accentColor = store.settings?.primaryColor ?? "#6E3482";
   return (
-    <main className="mx-auto max-w-2xl px-5 py-16 text-center sm:py-24">
-      <span className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">
-        ✓
-      </span>
-      <p className="mt-7 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
-        Pedido recibido
-      </p>
-      <h1 className="mt-2 text-4xl font-semibold tracking-tight">
-        Pedido #{result.order.number}
-      </h1>
-      <p className="mx-auto mt-4 max-w-lg leading-7 text-stone-500">
-        Reservamos tus productos durante {payment.reservationHours} horas.
-        Transferí el total exacto y adjuntá el comprobante.
-      </p>
-      <section className="mt-9 rounded-3xl border border-stone-200 bg-white p-6 text-left shadow-sm sm:p-8">
-        <div className="flex justify-between border-b border-stone-100 pb-5">
-          <span className="text-sm text-stone-500">Total</span>
-          <strong className="text-xl">
-            {formatMoney(result.order.totalInCents, result.order.currency)}
-          </strong>
-        </div>
-        <dl className="mt-5 space-y-3 text-sm">
-          {payment.bankName && (
-            <DataRow label="Banco" value={payment.bankName} />
-          )}
-          {payment.alias && <DataRow label="Alias" value={payment.alias} />}
-          {payment.cvu && <DataRow label="CVU" value={payment.cvu} />}
-          {payment.cuit && <DataRow label="CUIT" value={payment.cuit} />}
-          {payment.holder && <DataRow label="Titular" value={payment.holder} />}
-        </dl>
-      </section>
-      <ReceiptUploader
-        orderId={result.order.id}
-        orderToken={result.orderToken}
-        slug={store.slug}
+    <main className="relative overflow-hidden px-5 py-10 sm:px-6 sm:py-16 lg:px-8">
+      <div
+        className="pointer-events-none absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full opacity-[0.08] blur-3xl"
+        style={{ backgroundColor: accentColor }}
       />
-      <Link
-        className="mt-8 inline-block rounded-full bg-stone-950 px-7 py-3.5 text-sm font-bold text-white"
-        href={`/tienda/${store.slug}/pedido/${result.order.id}`}
-      >
-        Ver estado del pedido
-      </Link>
+      <div className="relative mx-auto max-w-6xl">
+        <Link
+          className="inline-flex items-center gap-2 text-xs font-semibold text-stone-500 transition hover:text-stone-950"
+          href={`/tienda/${store.slug}`}
+        >
+          ← Volver a la tienda
+        </Link>
+
+        <header className="mt-7 flex flex-col justify-between gap-7 border-b border-stone-200 pb-9 md:flex-row md:items-end">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+              <CheckCircle2 size={14} /> Pedido recibido
+            </div>
+            <h1 className="mt-5 text-4xl font-semibold tracking-[-0.05em] sm:text-5xl">
+              Pedido #{result.order.number}
+            </h1>
+            <p className="mt-4 max-w-xl text-sm leading-7 text-stone-500 sm:text-base">
+              Tu compra ya está reservada. Completá la transferencia y enviá
+              el comprobante para que la tienda pueda confirmar el pago.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
+            <Clock3 style={{ color: accentColor }} size={19} />
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-stone-400">Reserva activa</p>
+              <p className="mt-0.5 text-sm font-semibold">{payment.reservationHours} horas</p>
+            </div>
+          </div>
+        </header>
+
+        <div className="mt-9 grid gap-7 lg:grid-cols-[1.08fr_0.92fr] lg:items-start">
+          <section className="overflow-hidden rounded-[1.75rem] border border-black/[0.07] bg-white shadow-[0_18px_60px_rgba(28,20,30,0.08)]">
+            <div className="flex items-center justify-between gap-5 border-b border-stone-100 px-6 py-5 sm:px-8">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-2xl bg-stone-100">
+                  <Landmark size={18} />
+                </span>
+                <div>
+                  <p className="font-semibold">Datos de transferencia</p>
+                  <p className="mt-0.5 text-xs text-stone-400">Copiá los datos sin errores</p>
+                </div>
+              </div>
+              <ShieldCheck className="text-emerald-600" size={21} />
+            </div>
+
+            <div className="px-6 py-6 sm:px-8">
+              <div
+                className="rounded-3xl px-5 py-5 text-white sm:px-6"
+                style={{ backgroundColor: accentColor }}
+              >
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/60">Total exacto a transferir</p>
+                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
+                  {formatMoney(result.order.totalInCents, result.order.currency)}
+                </p>
+              </div>
+              <dl className="mt-5 divide-y divide-stone-100">
+                {payment.bankName && <DataRow label="Banco" value={payment.bankName} />}
+                {payment.alias && <DataRow copyable label="Alias" value={payment.alias} />}
+                {payment.cvu && <DataRow copyable label="CVU" value={payment.cvu} />}
+                {payment.cuit && <DataRow copyable label="CUIT" value={payment.cuit} />}
+                {payment.holder && <DataRow label="Titular" value={payment.holder} />}
+              </dl>
+            </div>
+          </section>
+
+          <div className="space-y-5 lg:sticky lg:top-28">
+            <section className="rounded-[1.75rem] border border-black/[0.07] bg-[#f7f5f7] p-5 sm:p-6">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">Cómo continuar</p>
+              <ol className="mt-5 space-y-4">
+                <ConfirmationStep number="1" text="Transferí el total exacto a la cuenta indicada." />
+                <ConfirmationStep number="2" text="Adjuntá una imagen o PDF del comprobante." />
+                <ConfirmationStep number="3" text="La tienda revisará el pago y actualizará tu pedido." />
+              </ol>
+            </section>
+            <ReceiptUploader
+              accentColor={accentColor}
+              orderId={result.order.id}
+              orderToken={result.orderToken}
+              slug={store.slug}
+            />
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-3 border-t border-stone-200 pt-7 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-stone-400">Guardá el número #{result.order.number} para identificar tu compra.</p>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            {customerLoggedIn && (
+              <Link
+                className="inline-flex items-center justify-center rounded-full border border-stone-200 bg-white px-6 py-3 text-sm font-bold text-stone-800 transition hover:border-stone-400"
+                href={`/tienda/${store.slug}/mis-pedidos`}
+              >
+                Ir a Mis pedidos
+              </Link>
+            )}
+            <Link
+              className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-lg"
+              href={`/tienda/${store.slug}/pedido/${result.order.id}`}
+              style={{ backgroundColor: accentColor }}
+            >
+              Ver estado del pedido <ArrowRight size={15} />
+            </Link>
+          </div>
+        </div>
+      </div>
     </main>
   );
 }
 
-function DataRow({ label, value }: { label: string; value: string }) {
+function ConfirmationStep({ number, text }: { number: string; text: string }) {
   return (
-    <div className="flex justify-between gap-6">
-      <dt className="text-stone-400">{label}</dt>
-      <dd className="text-right font-semibold">{value}</dd>
+    <li className="flex gap-3">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-[11px] font-bold shadow-sm">{number}</span>
+      <p className="pt-1 text-sm leading-5 text-stone-600">{text}</p>
+    </li>
+  );
+}
+
+function DataRow({
+  label,
+  value,
+  copyable = false,
+}: {
+  label: string;
+  value: string;
+  copyable?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyValue() {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-5 py-3.5">
+      <dt className="text-xs font-medium text-stone-400">{label}</dt>
+      <dd className="flex min-w-0 items-center gap-2 text-right text-sm font-semibold">
+        <span className="break-all">{value}</span>
+        {copyable && (
+          <button
+            aria-label={`Copiar ${label}`}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-stone-100 text-stone-500 transition hover:bg-stone-200 hover:text-stone-950"
+            onClick={() => void copyValue()}
+            type="button"
+          >
+            {copied ? <Check className="text-emerald-600" size={14} /> : <Copy size={14} />}
+          </button>
+        )}
+      </dd>
     </div>
   );
 }

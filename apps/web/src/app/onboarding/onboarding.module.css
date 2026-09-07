@@ -1,0 +1,29 @@
+.page {
+  --violet-100: #f3edf5;
+  --violet-300: #a56abd;
+  --violet-600: #6e3482;
+  --violet-800: #49225b;
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(110, 52, 130, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(110, 52, 130, 0.025) 1px, transparent 1px),
+    #f8f7f9;
+  background-size: 40px 40px;
+}
+
+.shell {
+  box-shadow: 0 24px 70px rgba(52, 31, 59, 0.08);
+}
+
+.preview {
+  background:
+    radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--preview-color) 20%, transparent), transparent 34%),
+    linear-gradient(145deg, #ffffff, #f7f4f8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

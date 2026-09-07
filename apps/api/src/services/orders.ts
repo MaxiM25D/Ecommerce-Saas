@@ -1,6 +1,7 @@
 import { database } from "../database.js";
 import { HttpError } from "../errors.js";
 import { hashOpaqueToken } from "./secret-vault.js";
+import { requireCustomerSession } from "./customer-auth.js";
 
 export function orderTokenMatches(
   token: string | undefined,
@@ -15,16 +16,41 @@ export async function requirePublicOrder(
   tenantId: string,
   orderId: string,
   token: string | undefined,
+  customerSessionToken?: string,
 ) {
   const order = await database.order.findFirst({
     where: { id: orderId, tenantId },
     include: {
+      customer: {
+        select: {
+          email: true,
+          firstName: true,
+          lastName: true,
+          passwordHash: true,
+        },
+      },
       paymentReceipt: true,
       shipment: true,
+      items: {
+        orderBy: { createdAt: "asc" },
+        include: { product: { select: { images: true, slug: true } } },
+      },
       statusHistory: { orderBy: { createdAt: "asc" } },
     },
   });
-  if (!order || !orderTokenMatches(token, order.publicTokenHash)) {
+  let customerSessionMatches = false;
+  if (order && customerSessionToken && order.customerId) {
+    const session = await requireCustomerSession(
+      tenantId,
+      customerSessionToken,
+    );
+    customerSessionMatches = session.customerId === order.customerId;
+  }
+  if (
+    !order ||
+    (!orderTokenMatches(token, order.publicTokenHash) &&
+      !customerSessionMatches)
+  ) {
     throw new HttpError(404, "Pedido no encontrado");
   }
   return order;

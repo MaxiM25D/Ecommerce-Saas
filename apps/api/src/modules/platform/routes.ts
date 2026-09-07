@@ -37,6 +37,9 @@ function requirePlatformAdmin(
 platformRouter.use(requireSession, requirePlatformAdmin);
 
 platformRouter.get("/overview", async (_request, response) => {
+  const now = new Date();
+  const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const [
     tenants,
     activeTenants,
@@ -47,6 +50,11 @@ platformRouter.get("/overview", async (_request, response) => {
     approvedGmv,
     storefrontViews,
     abandonedCarts,
+    notifications,
+    invoices,
+    domains,
+    trialsEndingSoon,
+    newTenantsLast30Days,
   ] = await Promise.all([
     database.tenant.count(),
     database.tenant.count({ where: { status: "ACTIVE" } }),
@@ -63,6 +71,11 @@ platformRouter.get("/overview", async (_request, response) => {
     }),
     database.analyticsEvent.count({ where: { type: "STOREFRONT_VIEW" } }),
     database.cart.count({ where: { status: "ABANDONED" } }),
+    database.notificationLog.groupBy({ by: ["status"], _count: true }),
+    database.billingInvoice.groupBy({ by: ["status"], _count: true }),
+    database.customDomain.groupBy({ by: ["status"], _count: true }),
+    database.subscription.count({ where: { status: "TRIALING", trialEndsAt: { gte: now, lte: inSevenDays } } }),
+    database.tenant.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
   ]);
   const estimatedMonthlyRevenueInCents = billableSubscriptions.reduce(
     (total, subscription) => total + subscription.plan.priceInCents,
@@ -78,6 +91,11 @@ platformRouter.get("/overview", async (_request, response) => {
     approvedGmvInCents: approvedGmv._sum.totalInCents ?? 0,
     storefrontViews,
     abandonedCarts,
+    notifications,
+    invoices,
+    domains,
+    trialsEndingSoon,
+    newTenantsLast30Days,
   });
 });
 

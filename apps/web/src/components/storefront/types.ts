@@ -65,8 +65,15 @@ export type PublicStore = {
 };
 
 export type CartItem = StorefrontProduct & {
+  cartKey: string;
   quantity: number;
   selectedVariant?: StorefrontProduct["variants"][number];
+};
+
+export type StorefrontCustomer = {
+  firstName: string;
+  lastName: string;
+  email: string;
 };
 
 export type CheckoutResult = {

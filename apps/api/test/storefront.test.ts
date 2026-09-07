@@ -50,6 +50,20 @@ before(async () => {
         name: "Campera pública",
         priceInCents: 125000,
         stock: 4,
+        brand: "Norte",
+        tags: ["invierno"],
+        active: true,
+      },
+      {
+        tenantId: alpha.id,
+        categoryId: alpha.categories[0]!.id,
+        sku: "ALPHA-PUBLIC-2",
+        slug: "remera-publica",
+        name: "Remera pública",
+        priceInCents: 65000,
+        stock: 8,
+        brand: "Sur",
+        tags: ["verano"],
         active: true,
       },
       {
@@ -74,6 +88,25 @@ before(async () => {
       },
     ],
   });
+  const customer = await database.customer.create({
+    data: {
+      tenantId: alpha.id,
+      email: "comprador@alpha.test",
+      firstName: "Ana",
+      lastName: "Compradora",
+    },
+  });
+  await database.order.create({
+    data: {
+      tenantId: alpha.id,
+      customerId: customer.id,
+      number: 1,
+      customerEmail: customer.email,
+      customerName: `${customer.firstName} ${customer.lastName}`,
+      subtotalInCents: 125000,
+      totalInCents: 125000,
+    },
+  });
 });
 
 after(async () => {
@@ -87,10 +120,33 @@ test("el catálogo público solo expone productos activos de su tienda", async (
   assert.equal(response.status, 200);
   assert.equal(response.body.store.slug, alphaSlug);
   assert.deepEqual(
-    response.body.store.products.map(({ slug }: { slug: string }) => slug),
-    ["campera-publica"],
+    response.body.store.products
+      .map(({ slug }: { slug: string }) => slug)
+      .sort(),
+    ["campera-publica", "remera-publica"],
   );
-  assert.equal(response.body.store.categories[0]._count.products, 1);
+  assert.equal(response.body.store.categories[0]._count.products, 2);
+});
+
+test("el catálogo completo pagina y filtra los productos desde el servidor", async () => {
+  const firstPage = await request(app).get(
+    `/api/storefront/${alphaSlug}/products?category=ropa&tag=invierno&limit=1&page=1`,
+  );
+
+  assert.equal(firstPage.status, 200);
+  assert.equal(firstPage.body.pagination.total, 1);
+  assert.equal(firstPage.body.pagination.totalPages, 1);
+  assert.equal(firstPage.body.products[0].slug, "campera-publica");
+  assert.deepEqual(firstPage.body.facets.brands, ["Norte", "Sur"]);
+
+  const search = await request(app).get(
+    `/api/storefront/${alphaSlug}/products?search=remera`,
+  );
+  assert.equal(search.status, 200);
+  assert.deepEqual(
+    search.body.products.map(({ slug }: { slug: string }) => slug),
+    ["remera-publica"],
+  );
 });
 
 test("el detalle no permite consultar productos ocultos ni de otra tienda", async () => {
@@ -106,6 +162,57 @@ test("el detalle no permite consultar productos ocultos ni de otra tienda", asyn
     (await request(app).get(`/api/storefront/${alphaSlug}/products/lampara-publica`)).status,
     404,
   );
+});
+
+test("el comprador inicia sesión y solo ve pedidos de esa tienda", async () => {
+  const registered = await request(app)
+    .post(`/api/storefront/${alphaSlug}/customer-auth/register`)
+    .send({
+      email: "comprador@alpha.test",
+      password: "clave-segura-123",
+      firstName: "Ana",
+      lastName: "Compradora",
+    });
+  assert.equal(registered.status, 201);
+  assert.ok(registered.body.sessionToken);
+
+  const activeSession = await request(app)
+    .get(`/api/storefront/${alphaSlug}/customer-auth/session`)
+    .set("x-customer-session", registered.body.sessionToken);
+  assert.equal(activeSession.status, 200);
+  assert.equal(activeSession.body.customer.email, "comprador@alpha.test");
+
+  const orders = await request(app)
+    .get(`/api/storefront/${alphaSlug}/customer/orders`)
+    .set("x-customer-session", registered.body.sessionToken);
+  assert.equal(orders.status, 200);
+  assert.equal(orders.body.customer.email, "comprador@alpha.test");
+  assert.equal(orders.body.orders.length, 1);
+  assert.equal(orders.body.orders[0].number, 1);
+  assert.equal(
+    (
+      await request(app)
+        .get(
+          `/api/storefront/${alphaSlug}/orders/${orders.body.orders[0].id}`,
+        )
+        .set("x-customer-session", registered.body.sessionToken)
+    ).status,
+    200,
+  );
+
+  assert.equal(
+    (
+      await request(app)
+        .get(`/api/storefront/${betaSlug}/customer/orders`)
+        .set("x-customer-session", registered.body.sessionToken)
+    ).status,
+    401,
+  );
+  const loggedIn = await request(app)
+    .post(`/api/storefront/${alphaSlug}/customer-auth/login`)
+    .send({ email: "comprador@alpha.test", password: "clave-segura-123" });
+  assert.equal(loggedIn.status, 200);
+  assert.ok(loggedIn.body.sessionToken);
 });
 
 test("las tiendas suspendidas no tienen storefront público", async () => {

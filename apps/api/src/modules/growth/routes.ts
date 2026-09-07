@@ -198,14 +198,19 @@ growthRouter.get("/overview", async (request, response) => {
       orderBy: { name: "asc" },
     }),
   ]);
+  const features = subscription?.plan.features ?? [];
   response.json({
-    features: subscription?.plan.features ?? [],
-    domains,
-    coupons,
-    variants,
+    features,
+    domains: features.includes("CUSTOM_DOMAIN") ? domains : [],
+    coupons: features.includes("COUPONS_PROMOTIONS") ? coupons : [],
+    variants: features.includes("PRODUCT_VARIANTS") ? variants : [],
     shippingZones,
-    notificationRules,
-    abandonedCarts,
+    notificationRules: features.includes("AUTOMATIONS")
+      ? notificationRules
+      : [],
+    abandonedCarts: features.includes("ABANDONED_CART_RECOVERY")
+      ? abandonedCarts
+      : [],
     products,
     analytics: {
       periodDays: 30,
@@ -214,7 +219,7 @@ growthRouter.get("/overview", async (request, response) => {
       ),
       orders,
       revenueInCents: revenue._sum.totalInCents ?? 0,
-      topProducts,
+      topProducts: features.includes("ADVANCED_ANALYTICS") ? topProducts : [],
     },
   });
 });

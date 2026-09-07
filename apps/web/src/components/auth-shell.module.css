@@ -1,0 +1,49 @@
+.shell {
+  background:
+    radial-gradient(
+      circle at 18% 20%,
+      rgba(163, 52, 210, 0.2),
+      transparent 27rem
+    ),
+    radial-gradient(
+      circle at 85% 82%,
+      rgba(70, 165, 247, 0.14),
+      transparent 28rem
+    ),
+    #05082d;
+}
+
+.shell::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, black, transparent 85%);
+}
+
+.orb {
+  animation: auth-breathe 6s ease-in-out infinite;
+}
+
+@keyframes auth-breathe {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb {
+    animation: none;
+  }
+}

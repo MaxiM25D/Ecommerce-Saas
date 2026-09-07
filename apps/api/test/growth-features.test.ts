@@ -216,6 +216,34 @@ test("checkout usa snapshots de variante, cupón y envío y descuenta stock", as
   );
 });
 
+test("analytics avanzados no se filtran por API a un plan STARTER", async () => {
+  await database.order.updateMany({
+    where: { tenantId },
+    data: { paymentStatus: "APPROVED" },
+  });
+  const proOverview = await agent.get("/api/admin/growth/overview");
+  assert.equal(proOverview.status, 200);
+  assert.ok(proOverview.body.analytics.topProducts.length > 0);
+
+  await database.subscription.update({
+    where: { tenantId },
+    data: { planId: "plan_starter", status: "ACTIVE" },
+  });
+  const starterOverview = await agent.get("/api/admin/growth/overview");
+  assert.equal(starterOverview.status, 200);
+  assert.deepEqual(starterOverview.body.analytics.topProducts, []);
+  assert.deepEqual(starterOverview.body.domains, []);
+  assert.deepEqual(starterOverview.body.coupons, []);
+  assert.deepEqual(starterOverview.body.variants, []);
+  assert.deepEqual(starterOverview.body.notificationRules, []);
+  assert.deepEqual(starterOverview.body.abandonedCarts, []);
+
+  await database.subscription.update({
+    where: { tenantId },
+    data: { planId: "plan_pro", status: "ACTIVE" },
+  });
+});
+
 test("dominios verificados resuelven el tenant y analytics quedan aislados", async () => {
   const domain = await agent
     .post("/api/admin/growth/domains")
