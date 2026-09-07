@@ -12,7 +12,7 @@
     ]
   },
   "deploy": {
-    "preDeployCommand": ["npm run db:deploy"],
+    "preDeployCommand": ["npm run db:deploy && npm run db:demo:prod"],
     "healthcheckPath": "/api/ready",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",

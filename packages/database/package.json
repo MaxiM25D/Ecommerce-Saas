@@ -17,6 +17,7 @@
     "db:seed": "prisma db seed",
     "db:superadmin": "tsx prisma/create-superadmin.ts",
     "db:demo": "tsx prisma/sync-demo-store.ts",
+    "db:demo:prod": "node dist/prisma/sync-demo-store.js",
     "db:studio": "prisma studio",
     "test:isolation": "tsx --test test/tenant-isolation.test.ts"
   },
