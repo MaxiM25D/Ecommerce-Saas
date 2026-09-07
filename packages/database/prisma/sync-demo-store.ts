@@ -13,11 +13,14 @@ async function run(): Promise<void> {
       create: { slug: storeSlug, name: "Nébula Living", status: "ACTIVE" },
     });
 
-    await transaction.subscription.upsert({
-      where: { tenantId: tenant.id },
-      update: { planId: "plan_pro", status: "ACTIVE" },
-      create: { tenantId: tenant.id, planId: "plan_pro", status: "ACTIVE", currentPeriodFrom: new Date() },
-    });
+    const proPlan = await transaction.plan.findUnique({ where: { id: "plan_pro" } });
+    if (proPlan) {
+      await transaction.subscription.upsert({
+        where: { tenantId: tenant.id },
+        update: { planId: proPlan.id, status: "ACTIVE" },
+        create: { tenantId: tenant.id, planId: proPlan.id, status: "ACTIVE", currentPeriodFrom: new Date() },
+      });
+    }
 
     const ownerEmail = process.env.SUPERADMIN_EMAIL?.trim().toLowerCase();
     if (ownerEmail) {
