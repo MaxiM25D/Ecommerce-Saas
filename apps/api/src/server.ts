@@ -6,6 +6,7 @@ import { log } from "./services/logger.js";
 import { processPendingNotifications } from "./services/notifications.js";
 import { processDueBillingCancellations, processExpiredTrials } from "./services/saas-billing.js";
 
+// The container provisions the public demo before starting this server.
 const port = environment.PORT ?? environment.API_PORT;
 const server = app.listen(port, "0.0.0.0", () => {
   log("info", "server_started", { port, environment: environment.NODE_ENV });
