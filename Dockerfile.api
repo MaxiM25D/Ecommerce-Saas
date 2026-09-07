@@ -19,6 +19,7 @@ RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npm run db:genera
 FROM node:22-alpine AS runner
 
 ENV NODE_ENV=production
+ENV DEMO_STORE_SLUG=infinityshop-demo
 WORKDIR /app
 
 RUN addgroup -S infinityshop && adduser -S infinityshop -G infinityshop
