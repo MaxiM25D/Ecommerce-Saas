@@ -20,6 +20,7 @@
     "db:studio": "prisma studio --config packages/database/prisma.config.ts",
     "db:test:isolation": "npm run test:isolation --workspace @infinityshop/database",
     "db:superadmin": "npm run db:superadmin --workspace @infinityshop/database",
+    "db:demo": "npm run db:demo --workspace @infinityshop/database",
     "test:api": "npm run build --workspace @infinityshop/database && npm run test --workspace @infinityshop/api",
     "check": "npm run typecheck && npm run lint && npm run build && npm run test:api && npm run db:test:isolation",
     "db:up": "docker compose up -d postgres",

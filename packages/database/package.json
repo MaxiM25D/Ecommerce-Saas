@@ -16,6 +16,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:superadmin": "tsx prisma/create-superadmin.ts",
+    "db:demo": "tsx prisma/sync-demo-store.ts",
     "db:studio": "prisma studio",
     "test:isolation": "tsx --test test/tenant-isolation.test.ts"
   },
