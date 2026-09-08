@@ -36,4 +36,4 @@ RUN mkdir -p storage/public storage/private && chown -R infinityshop:infinitysho
 USER infinityshop
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
-CMD ["sh", "-c", "npm run db:demo:prod && exec node apps/api/dist/server.js"]
+CMD ["node", "apps/api/dist/server.js"]

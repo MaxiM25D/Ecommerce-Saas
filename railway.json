@@ -8,11 +8,12 @@
       "packages/database/**",
       "package.json",
       "package-lock.json",
-      "Dockerfile.api"
+      "Dockerfile.api",
+      "railway.json"
     ]
   },
   "deploy": {
-    "preDeployCommand": ["npm run db:deploy", "npm run db:demo:prod"],
+    "preDeployCommand": ["npm run db:prepare:prod"],
     "healthcheckPath": "/api/ready",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
