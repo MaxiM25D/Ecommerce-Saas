@@ -1,10 +1,11 @@
 "use client";
 
 import { CheckCircle2, FileCheck2, UploadCloud } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { FilePicker } from "@/components/file-picker";
 import { ApiError, apiRequest } from "@/lib/api";
+import { beginOperation } from "@/lib/pending-operation";
 
 type ReceiptUploaderProps = {
   existingReceiptName?: string;
@@ -26,13 +27,16 @@ export function ReceiptUploader({
   slug,
 }: ReceiptUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
+  const uploading = useRef(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
   const [inputVersion, setInputVersion] = useState(0);
 
   async function upload() {
-    if (!file) return;
+    if (!file || uploading.current) return;
+    uploading.current = true;
+    const release = beginOperation();
     setBusy(true);
     setMessage("");
     setFailed(false);
@@ -54,7 +58,11 @@ export function ReceiptUploader({
       );
       setFile(null);
       setInputVersion((value) => value + 1);
-      await onUploaded?.();
+      try {
+        await onUploaded?.();
+      } catch {
+        setMessage("Comprobante guardado. No pudimos actualizar la vista; consultá el estado del pedido antes de volver a enviarlo.");
+      }
     } catch (caught) {
       setFailed(true);
       setMessage(
@@ -63,6 +71,8 @@ export function ReceiptUploader({
           : "No pudimos enviar el comprobante",
       );
     } finally {
+      uploading.current = false;
+      release();
       setBusy(false);
     }
   }
@@ -98,6 +108,7 @@ export function ReceiptUploader({
       )}
       <div className="mt-5">
         <FilePicker
+          disabled={busy}
           accept="application/pdf,image/jpeg,image/png,image/webp"
           buttonLabel="Elegir comprobante"
           description="PDF, JPG, PNG o WEBP de hasta 8 MB"

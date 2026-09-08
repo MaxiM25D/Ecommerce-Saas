@@ -3,7 +3,10 @@
   --brand-purple: #a334d2;
   --brand-blue: #46a5f7;
   min-height: 100vh;
-  overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: clip;
+  position: relative;
   color: #f8f7ff;
   background:
     radial-gradient(circle at 76% 24%, rgba(113, 39, 184, 0.22), transparent 29rem),

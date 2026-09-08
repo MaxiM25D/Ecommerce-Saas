@@ -1,6 +1,7 @@
 "use client";
 
 type FilePickerProps = {
+  disabled?: boolean;
   accept: string;
   buttonLabel: string;
   description: string;
@@ -13,6 +14,7 @@ type FilePickerProps = {
 };
 
 export function FilePicker({
+  disabled = false,
   accept,
   buttonLabel,
   description,
@@ -31,6 +33,7 @@ export function FilePicker({
         htmlFor={id}
       >
         <input
+          disabled={disabled}
           accept={accept}
           className="sr-only"
           id={id}

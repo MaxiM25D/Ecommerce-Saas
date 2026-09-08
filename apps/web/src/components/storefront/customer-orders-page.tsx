@@ -67,6 +67,7 @@ export function CustomerOrdersPage({
   const [sessionToken, setSessionToken] = useState("");
   const [orders, setOrders] = useState<OrdersResponse | null>(null);
   const [page, setPage] = useState(1);
+  const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">(initialMode);
@@ -75,7 +76,8 @@ export function CustomerOrdersPage({
 
   useEffect(() => {
     let active = true;
-    apiRequest<{ store: PublicStore }>(`/storefront/${slug}`)
+    const controller = new AbortController();
+    apiRequest<{ store: PublicStore }>(`/storefront/${slug}`, { signal: controller.signal })
       .then(({ store: responseStore }) => {
         if (active) setStore(responseStore);
       })
@@ -92,17 +94,20 @@ export function CustomerOrdersPage({
     });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [slug, storageKey]);
 
   useEffect(() => {
     if (!sessionToken) return;
     let active = true;
+    const controller = new AbortController();
     queueMicrotask(() => {
       if (active) setBusy(true);
     });
     apiRequest<OrdersResponse>(`/storefront/${slug}/customer/orders?page=${page}&limit=10`, {
       headers: { "x-customer-session": sessionToken },
+      signal: controller.signal,
     })
       .then((response) => {
         if (active) {
@@ -112,9 +117,11 @@ export function CustomerOrdersPage({
       })
       .catch((caught) => {
         if (!active) return;
-        localStorage.removeItem(storageKey);
-        setSessionToken("");
-        setOrders(null);
+        if (caught instanceof ApiError && [401, 403].includes(caught.status)) {
+          localStorage.removeItem(storageKey);
+          setSessionToken("");
+          setOrders(null);
+        }
         setError(caught instanceof ApiError ? caught.message : "No pudimos cargar tus pedidos");
       })
       .finally(() => {
@@ -122,8 +129,9 @@ export function CustomerOrdersPage({
       });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [page, sessionToken, slug, storageKey]);
+  }, [page, sessionToken, slug, storageKey, retry]);
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -184,7 +192,7 @@ export function CustomerOrdersPage({
             <button className="inline-flex items-center gap-2 self-start rounded-full border border-stone-200 bg-white px-4 py-2.5 text-xs font-bold" onClick={logout} type="button"><LogOut size={15} /> Cerrar acceso</button>
           </div>
 
-          {error && <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+          {error && <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p>{error}</p><button type="button" disabled={busy} className="mt-2 font-semibold underline disabled:opacity-50" onClick={() => setRetry((value) => value + 1)}>Volver a intentar</button></div>}
           {busy && !orders ? <OrdersSkeleton /> : orders?.orders.length === 0 ? (
             <div className="mt-8 rounded-[var(--store-radius)] border border-dashed border-stone-300 py-20 text-center">
               <ShoppingBag className="mx-auto text-stone-300" size={38} />

@@ -273,9 +273,10 @@ export function StorefrontError({ message }: { message: string }) {
       <div>
         <div className="flex justify-center"><BrandLogo tone="light" /></div>
         <h1 className="mt-6 text-3xl font-semibold">
-          No encontramos la tienda
+          No pudimos cargar esta página
         </h1>
         <p className="mt-3 text-stone-500">{message}</p>
+        <button type="button" className="mt-5 block w-full text-sm font-semibold underline" onClick={() => window.location.reload()}>Volver a intentar</button>
         <Link
           className="mt-7 inline-block rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold text-white"
           href="/"
