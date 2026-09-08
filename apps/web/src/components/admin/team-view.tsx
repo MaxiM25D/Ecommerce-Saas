@@ -4,6 +4,7 @@ import { CheckCircle2, Clock3, MailPlus, ShieldCheck, UserRound, UsersRound, XCi
 import { type FormEvent, useEffect, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
+import { confirmAction } from "@/lib/confirm-action";
 import { EmptyState, Field, GuideLink, Tip, panelStyles as styles } from "./guided-panel";
 import type { Role } from "./types";
 
@@ -54,21 +55,22 @@ export function TeamView({ onOpenPlan, role }: { onOpenPlan: () => void; role: R
   }
 
   async function update(userId: string, nextRole: string) {
-    if (!confirm(`¿Cambiar el rol a ${roleCopy[nextRole as Role]?.label ?? nextRole}?`)) return;
+    const roleName = roleCopy[nextRole as Role]?.label ?? nextRole;
+    if (!(await confirmAction({ title: `¿Cambiar el rol a ${roleName}?`, description: "Los nuevos permisos se aplicarán en la próxima acción de esta persona.", confirmLabel: "Cambiar rol" }))) return;
     setBusy(true); setError("");
     try { await apiRequest(`/admin/team/${userId}`, { method: "PATCH", body: JSON.stringify({ role: nextRole }) }); await load(); setNotice("Rol actualizado."); }
     catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo cambiar el rol"); }
     finally { setBusy(false); }
   }
   async function remove(userId: string) {
-    if (!confirm("¿Quitar este miembro? Perderá el acceso a la tienda, pero su cuenta no se elimina.")) return;
+    if (!(await confirmAction({ title: "¿Quitar a este miembro?", description: "Perderá el acceso a la tienda, pero su cuenta personal no se eliminará.", confirmLabel: "Quitar miembro", tone: "danger" }))) return;
     setBusy(true); setError("");
     try { await apiRequest(`/admin/team/${userId}`, { method: "DELETE" }); await load(); setNotice("Miembro quitado del equipo."); }
     catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo quitar el miembro"); }
     finally { setBusy(false); }
   }
   async function revoke(invitationId: string) {
-    if (!confirm("¿Cancelar esta invitación? El enlace dejará de funcionar.")) return;
+    if (!(await confirmAction({ title: "¿Cancelar esta invitación?", description: "El enlace de acceso dejará de funcionar inmediatamente.", confirmLabel: "Cancelar invitación", tone: "danger" }))) return;
     setBusy(true); setError("");
     try { await apiRequest(`/admin/team/invitations/${invitationId}`, { method: "DELETE" }); await load(); setNotice("Invitación cancelada."); }
     catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo cancelar la invitación"); }

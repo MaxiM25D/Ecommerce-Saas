@@ -6,6 +6,7 @@ import Image from "next/image";
 
 import { FilePicker } from "@/components/file-picker";
 import { ApiError, apiRequest } from "@/lib/api";
+import { confirmAction } from "@/lib/confirm-action";
 import type { Category, Product, Role } from "./types";
 import { EmptyState, Field as GuidedField, GuideLink, Tip, panelStyles as styles } from "./guided-panel";
 
@@ -116,7 +117,7 @@ export function ProductsView({ onOpenCategories, role }: { onOpenCategories: () 
   }
 
   async function remove(product: Product) {
-    if (!confirm(`¿Eliminar “${product.name}”?`)) return;
+    if (!(await confirmAction({ title: `¿Eliminar “${product.name}”?`, description: "El producto desaparecerá del catálogo y esta acción no se puede deshacer.", confirmLabel: "Eliminar producto", tone: "danger" }))) return;
     try {
       await apiRequest(`/admin/products/${product.id}`, { method: "DELETE" });
       await load();

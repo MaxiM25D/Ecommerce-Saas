@@ -4,6 +4,7 @@ import { FolderOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
+import { confirmAction } from "@/lib/confirm-action";
 import type { Category, Role } from "./types";
 import { EmptyState, Field, GuideLink, Tip, panelStyles as styles } from "./guided-panel";
 
@@ -54,7 +55,7 @@ export function CategoriesView({ onOpenProducts, role }: { onOpenProducts: () =>
   }
 
   async function remove(category: Category) {
-    if (!confirm(`¿Eliminar la categoría “${category.name}”?`)) return;
+    if (!(await confirmAction({ title: `¿Eliminar “${category.name}”?`, description: "Los productos conservarán sus datos, pero esta categoría dejará de estar disponible.", confirmLabel: "Eliminar categoría", tone: "danger" }))) return;
     setError("");
     try {
       await apiRequest(`/admin/categories/${category.id}`, { method: "DELETE" });

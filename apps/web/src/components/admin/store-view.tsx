@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { StoreAssetPicker } from "@/components/store-asset-picker";
 import { ApiError, apiRequest } from "@/lib/api";
+import { confirmAction } from "@/lib/confirm-action";
 import { GuideLink } from "./guided-panel";
 import type { Role, Store } from "./types";
 
@@ -100,7 +101,7 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
     } catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo iniciar la conexión"); setBusy(false); }
   }
   async function disconnectMercadoPago() {
-    if (!confirm("¿Desconectar Mercado Pago de esta tienda?")) return;
+    if (!(await confirmAction({ title: "¿Desconectar Mercado Pago?", description: "La tienda dejará de recibir pagos por este medio hasta que vuelvas a conectarlo.", confirmLabel: "Desconectar", tone: "danger" }))) return;
     setBusy(true); setError("");
     try { await apiRequest("/admin/integrations/mercadopago", { method: "DELETE" }); setMercadoPago(await apiRequest<MercadoPagoIntegration>("/admin/integrations/mercadopago")); }
     catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo desconectar Mercado Pago"); }

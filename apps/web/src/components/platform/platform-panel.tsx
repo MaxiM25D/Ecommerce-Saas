@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BrandLogo } from "@/components/brand-logo";
 import { EmptyState, Tip, panelStyles as styles } from "@/components/admin/guided-panel";
 import { ApiError, apiRequest } from "@/lib/api";
+import { confirmAction } from "@/lib/confirm-action";
 
 type Overview = {
   tenants: number; activeTenants: number; users: number;
@@ -78,10 +79,13 @@ export function PlatformPanel({ initialSection = "overview" }: { initialSection?
 
   async function updateTenant(tenant: Tenant) {
     const nextStatus = tenant.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
-    const question = nextStatus === "SUSPENDED"
-      ? `¿Suspender ${tenant.name}? Sus clientes no podrán comprar y su equipo perderá el acceso hasta reactivarla.`
-      : `¿Reactivar ${tenant.name}? La tienda y su panel volverán a estar disponibles.`;
-    if (!confirm(question)) return;
+    const suspending = nextStatus === "SUSPENDED";
+    if (!(await confirmAction({
+      title: suspending ? `¿Suspender ${tenant.name}?` : `¿Reactivar ${tenant.name}?`,
+      description: suspending ? "Sus clientes no podrán comprar y su equipo perderá el acceso hasta reactivarla." : "La tienda y su panel volverán a estar disponibles.",
+      confirmLabel: suspending ? "Suspender tienda" : "Reactivar tienda",
+      tone: suspending ? "danger" : "primary",
+    }))) return;
     setBusy(true); setError(""); setNotice("");
     try { await apiRequest(`/platform/tenants/${tenant.id}`, { method: "PATCH", body: JSON.stringify({ status: nextStatus }) }); await load(); setNotice(nextStatus === "ACTIVE" ? "Tienda reactivada." : "Tienda suspendida."); }
     catch (caught) { handleError(caught); }
@@ -92,7 +96,7 @@ export function PlatformPanel({ initialSection = "overview" }: { initialSection?
     const description = body.planCode
       ? `cambiar el plan de ${tenant.name} a ${plans.find((plan) => plan.code === body.planCode)?.name ?? body.planCode}`
       : `cambiar la suscripción de ${tenant.name} a ${subscriptionLabels[body.status ?? ""] ?? body.status}`;
-    if (!confirm(`¿Confirmás ${description}? Este cambio administrativo se aplica directamente y no inicia un cobro en Mercado Pago.`)) return;
+    if (!(await confirmAction({ title: `¿Confirmás ${description}?`, description: "Este cambio administrativo se aplica directamente y no inicia un cobro en Mercado Pago.", confirmLabel: "Aplicar cambio" }))) return;
     setBusy(true); setError(""); setNotice("");
     try { await apiRequest(`/platform/tenants/${tenant.id}/subscription`, { method: "PATCH", body: JSON.stringify(body) }); await load(); setNotice("Suscripción actualizada."); }
     catch (caught) { handleError(caught); }
