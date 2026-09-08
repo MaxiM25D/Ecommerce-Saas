@@ -26,6 +26,10 @@ async function run(): Promise<void> {
     if (ownerEmail) {
       const owner = await transaction.user.findUnique({ where: { email: ownerEmail } });
       if (owner) {
+        await transaction.user.update({
+          where: { id: owner.id },
+          data: { platformRole: "SUPERADMIN", emailVerifiedAt: owner.emailVerifiedAt ?? new Date() },
+        });
         await transaction.membership.upsert({
           where: { tenantId_userId: { tenantId: tenant.id, userId: owner.id } },
           update: { role: "OWNER" },
