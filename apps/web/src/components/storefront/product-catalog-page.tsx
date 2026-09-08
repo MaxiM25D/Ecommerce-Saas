@@ -34,7 +34,6 @@ export function ProductCatalogPage({
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(categorySlug);
   const [brand, setBrand] = useState("");
-  const [tag, setTag] = useState("");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [sort, setSort] = useState("featured");
@@ -72,7 +71,6 @@ export function ProductCatalogPage({
       if (search.trim()) query.set("search", search.trim());
       if (category) query.set("category", category);
       if (brand) query.set("brand", brand);
-      if (tag) query.set("tag", tag);
       if (minPrice) query.set("minPrice", minPrice);
       if (maxPrice) query.set("maxPrice", maxPrice);
       setCatalogLoading(true);
@@ -96,14 +94,14 @@ export function ProductCatalogPage({
       active = false;
       window.clearTimeout(timeout);
     };
-  }, [brand, category, maxPrice, minPrice, page, search, slug, sort, tag]);
+  }, [brand, category, maxPrice, minPrice, page, search, slug, sort]);
 
   const activeCategory = useMemo(
     () => store?.categories?.find((item) => item.slug === categorySlug),
     [categorySlug, store?.categories],
   );
   const title = activeCategory?.name ?? "Todos los productos";
-  const hasFilters = Boolean(search || category || brand || tag || minPrice || maxPrice);
+  const hasFilters = Boolean(search || category || brand || minPrice || maxPrice);
   const primaryColor = store?.settings?.primaryColor ?? "#9A6B43";
 
   function resetPageAnd(action: () => void) {
@@ -115,7 +113,6 @@ export function ProductCatalogPage({
     setSearch("");
     if (!categorySlug) setCategory("");
     setBrand("");
-    setTag("");
     setMinPrice("");
     setMaxPrice("");
     setPage(1);
@@ -151,7 +148,7 @@ export function ProductCatalogPage({
           </label>
         </div>
 
-        <CatalogFilters categories={store.categories ?? []} category={category} fixedCategory={Boolean(categorySlug)} brand={brand} tag={tag} brands={catalog.facets.brands} tags={catalog.facets.tags} minPrice={minPrice} maxPrice={maxPrice} search={search} color={primaryColor} onClear={clearFilters} onChange={(key, value) => resetPageAnd(() => ({ category: setCategory, brand: setBrand, tag: setTag, minPrice: setMinPrice, maxPrice: setMaxPrice, search: setSearch })[key](value))} />
+        <CatalogFilters categories={store.categories ?? []} category={category} fixedCategory={Boolean(categorySlug)} brand={brand} brands={catalog.facets.brands} minPrice={minPrice} maxPrice={maxPrice} search={search} color={primaryColor} onClear={clearFilters} onChange={(key, value) => resetPageAnd(() => ({ category: setCategory, brand: setBrand, minPrice: setMinPrice, maxPrice: setMaxPrice, search: setSearch })[key](value))} />
         <div className="mt-6 flex items-center justify-between gap-4">
           <p role="status" className="text-sm text-stone-500">{catalogLoading ? "Actualizando resultados…" : `${catalog.pagination.total} ${catalog.pagination.total === 1 ? "producto encontrado" : "productos encontrados"}`}</p>
           <div className="w-44 shrink-0"><FilterSelect label="Ordenar por" onChange={(value) => resetPageAnd(() => setSort(value))} value={sort}>

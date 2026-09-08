@@ -5,18 +5,17 @@ import { useState } from "react";
 
 const pill = "inline-flex min-h-10 items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2";
 
-export function CatalogFilters({ categories, category, fixedCategory, brand, tag, brands, tags, minPrice, maxPrice, search, color, onChange, onClear }: {
+export function CatalogFilters({ categories, category, fixedCategory, brand, brands, minPrice, maxPrice, search, color, onChange, onClear }: {
   categories: { id: string; slug: string; name: string }[];
-  category: string; fixedCategory: boolean; brand: string; tag: string;
-  brands: string[]; tags: string[]; minPrice: string; maxPrice: string; search: string; color: string;
-  onChange: (key: "category" | "brand" | "tag" | "minPrice" | "maxPrice" | "search", value: string) => void;
+  category: string; fixedCategory: boolean; brand: string;
+  brands: string[]; minPrice: string; maxPrice: string; search: string; color: string;
+  onChange: (key: "category" | "brand" | "minPrice" | "maxPrice" | "search", value: string) => void;
   onClear: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const active = [
     ...(!fixedCategory && category ? [{ key: "category" as const, label: categories.find((item) => item.slug === category)?.name ?? category }] : []),
     ...(brand ? [{ key: "brand" as const, label: `Marca: ${brand}` }] : []),
-    ...(tag ? [{ key: "tag" as const, label: tag }] : []),
     ...(minPrice ? [{ key: "minPrice" as const, label: `Desde ${Number(minPrice).toLocaleString("es-AR")}` }] : []),
     ...(maxPrice ? [{ key: "maxPrice" as const, label: `Hasta ${Number(maxPrice).toLocaleString("es-AR")}` }] : []),
     ...(search.trim() ? [{ key: "search" as const, label: `“${search.trim()}”` }] : []),
@@ -31,9 +30,8 @@ export function CatalogFilters({ categories, category, fixedCategory, brand, tag
         <span className="text-xs text-stone-500">{expanded ? "Los resultados se actualizan al elegir." : "Encontrá lo que buscás, a tu manera."}</span>
         {active.length > 0 && <button type="button" onClick={onClear} className="ml-auto rounded-lg px-2 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100">Limpiar todo</button>}
       </div>
-      {expanded && <div id="catalog-extra-filters" className="mt-4 grid gap-6 border-t border-stone-100 pt-5 md:grid-cols-3">
+      {expanded && <div id="catalog-extra-filters" className="mt-4 grid gap-6 border-t border-stone-100 pt-5 md:grid-cols-2">
         {brands.length > 0 && <Options title="Marca" options={brands} value={brand} color={color} onChange={(value) => onChange("brand", value)} />}
-        {tags.length > 0 && <Options title="Características" options={tags} value={tag} color={color} onChange={(value) => onChange("tag", value)} />}
         <fieldset><legend className="mb-3 text-sm font-semibold">Tu presupuesto</legend><div className="flex gap-2">
           {([['minPrice', 'Desde', minPrice], ['maxPrice', 'Hasta', maxPrice]] as const).map(([key, label, value]) => <label key={key} className="min-w-0 flex-1 text-xs text-stone-500">{label}<input aria-label={`Precio ${label.toLowerCase()}`} className="mt-1.5 h-11 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm text-stone-900 focus:outline-2" type="number" min="0" inputMode="decimal" placeholder={key === 'minPrice' ? '0' : 'Sin límite'} value={value} onChange={(event) => onChange(key, event.target.value)} /></label>)}
         </div><p className="mt-2 text-xs text-stone-400">Completá uno o ambos importes.</p></fieldset>

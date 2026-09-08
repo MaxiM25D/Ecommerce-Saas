@@ -1,4 +1,5 @@
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+// Requests go through the web domain so authentication cookies remain first-party.
+const apiUrl = "/api";
 
 export function apiAbsoluteUrl(path: string): string {
   return `${apiUrl}${path}`;

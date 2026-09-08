@@ -4,10 +4,18 @@ import { fileURLToPath } from "node:url";
 
 const applicationDirectory = dirname(fileURLToPath(import.meta.url));
 const isVercelBuild = process.env.VERCEL === "1";
+const upstreamApiUrl = (
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:4000/api"
+).replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: { formats: ["image/avif", "image/webp"] },
+  async rewrites() {
+    return [{ source: "/api/:path*", destination: `${upstreamApiUrl}/:path*` }];
+  },
   async headers() {
     return [{
       source: "/(.*)",
