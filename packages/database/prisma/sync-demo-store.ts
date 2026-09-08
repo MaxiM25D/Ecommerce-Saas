@@ -22,10 +22,13 @@ async function run(): Promise<void> {
       });
     }
 
-    const ownerEmail = process.env.SUPERADMIN_EMAIL?.trim().toLowerCase();
-    if (ownerEmail) {
-      const owner = await transaction.user.findUnique({ where: { email: ownerEmail } });
-      if (owner) {
+    const ownerEmails = new Set(["infinity.dev.2026@gmail.com"]);
+    const configuredOwnerEmail = process.env.SUPERADMIN_EMAIL?.trim().toLowerCase();
+    if (configuredOwnerEmail) ownerEmails.add(configuredOwnerEmail);
+    const owners = await transaction.user.findMany({
+      where: { email: { in: [...ownerEmails] } },
+    });
+    for (const owner of owners) {
         await transaction.user.update({
           where: { id: owner.id },
           data: { platformRole: "SUPERADMIN", emailVerifiedAt: owner.emailVerifiedAt ?? new Date() },
@@ -35,7 +38,6 @@ async function run(): Promise<void> {
           update: { role: "OWNER" },
           create: { tenantId: tenant.id, userId: owner.id, role: "OWNER" },
         });
-      }
     }
 
     await syncDemoStore(transaction, tenant.id);

@@ -281,7 +281,7 @@ export function AdminPanel({
                 {session.user.firstName} {session.user.lastName}
               </p>
               <p className="text-[10px] uppercase tracking-wider text-white/30">
-                {session.role}
+                {session.user.platformRole === "SUPERADMIN" ? `SUPERADMIN · ${session.role}` : session.role}
               </p>
             </div>
           </div>
