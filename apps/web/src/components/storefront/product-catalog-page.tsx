@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
+import { CatalogFilters } from "./catalog-filters";
 import { ProductCard, StorefrontError, StorefrontLoading } from "./catalog-page";
 import { StorefrontShell } from "./storefront-shell";
 import type { PublicStore, StorefrontProduct } from "./types";
@@ -77,7 +78,7 @@ export function ProductCatalogPage({
       setCatalogLoading(true);
       apiRequest<CatalogResponse>(`/storefront/${slug}/products?${query}`)
         .then((response) => {
-          if (active) setCatalog(response);
+          if (active) { setCatalog(response); setError(""); }
         })
         .catch((caught) => {
           if (active)
@@ -150,37 +151,17 @@ export function ProductCatalogPage({
           </label>
         </div>
 
-        <section className="mt-8 rounded-[var(--store-radius)] border border-stone-200 bg-white p-4 sm:p-5" aria-label="Filtros del catálogo">
-          <div className="mb-4 flex items-center justify-between">
-            <p className="flex items-center gap-2 text-sm font-bold"><SlidersHorizontal size={16} /> Filtrar y ordenar</p>
-            {hasFilters && <button className="text-xs font-semibold text-stone-500 underline underline-offset-4" onClick={clearFilters} type="button">Limpiar filtros</button>}
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            {!categorySlug && (
-              <FilterSelect label="Categoría" onChange={(value) => resetPageAnd(() => setCategory(value))} value={category}>
-                <option value="">Todas</option>
-                {(store.categories ?? []).map((item) => <option key={item.id} value={item.slug}>{item.name}</option>)}
-              </FilterSelect>
-            )}
-            <FilterSelect label="Marca" onChange={(value) => resetPageAnd(() => setBrand(value))} value={brand}>
-              <option value="">Todas</option>
-              {catalog.facets.brands.map((item) => <option key={item} value={item}>{item}</option>)}
-            </FilterSelect>
-            <FilterSelect label="Etiqueta" onChange={(value) => resetPageAnd(() => setTag(value))} value={tag}>
-              <option value="">Todas</option>
-              {catalog.facets.tags.map((item) => <option key={item} value={item}>{item}</option>)}
-            </FilterSelect>
-            <FilterInput label="Precio mínimo" onChange={(value) => resetPageAnd(() => setMinPrice(value))} value={minPrice} />
-            <FilterInput label="Precio máximo" onChange={(value) => resetPageAnd(() => setMaxPrice(value))} value={maxPrice} />
-            <FilterSelect label="Ordenar" onChange={(value) => resetPageAnd(() => setSort(value))} value={sort}>
+        <CatalogFilters categories={store.categories ?? []} category={category} fixedCategory={Boolean(categorySlug)} brand={brand} tag={tag} brands={catalog.facets.brands} tags={catalog.facets.tags} minPrice={minPrice} maxPrice={maxPrice} search={search} color={primaryColor} onClear={clearFilters} onChange={(key, value) => resetPageAnd(() => ({ category: setCategory, brand: setBrand, tag: setTag, minPrice: setMinPrice, maxPrice: setMaxPrice, search: setSearch })[key](value))} />
+        <div className="mt-6 flex items-center justify-between gap-4">
+          <p role="status" className="text-sm text-stone-500">{catalogLoading ? "Actualizando resultados…" : `${catalog.pagination.total} ${catalog.pagination.total === 1 ? "producto encontrado" : "productos encontrados"}`}</p>
+          <div className="w-44 shrink-0"><FilterSelect label="Ordenar por" onChange={(value) => resetPageAnd(() => setSort(value))} value={sort}>
               <option value="featured">Destacados</option>
               <option value="recent">Más recientes</option>
               <option value="price_asc">Menor precio</option>
               <option value="price_desc">Mayor precio</option>
               <option value="name">Nombre A–Z</option>
-            </FilterSelect>
-          </div>
-        </section>
+            </FilterSelect></div>
+        </div>
 
         {error && <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
 
@@ -214,10 +195,6 @@ export function ProductCatalogPage({
 
 function FilterSelect({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }) {
   return <label className="text-[11px] font-semibold text-stone-500"><span className="mb-1.5 block">{label}</span><select className="h-11 w-full rounded-xl border border-stone-200 bg-[#fcfbfa] px-3 text-xs text-stone-800 outline-none focus:border-stone-400" onChange={(event) => onChange(event.target.value)} value={value}>{children}</select></label>;
-}
-
-function FilterInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="text-[11px] font-semibold text-stone-500"><span className="mb-1.5 block">{label}</span><input className="h-11 w-full rounded-xl border border-stone-200 bg-[#fcfbfa] px-3 text-xs text-stone-800 outline-none focus:border-stone-400" inputMode="numeric" min="0" onChange={(event) => onChange(event.target.value)} placeholder="$ 0" type="number" value={value} /></label>;
 }
 
 function CatalogSkeleton() {
