@@ -21,6 +21,16 @@ export const customerListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+export const productListQuerySchema = z.object({
+  search: z.string().trim().max(100).default(""),
+  category: z.string().trim().max(64).default("ALL"),
+  visibility: z.enum(["ALL", "ACTIVE", "HIDDEN"]).default("ALL"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+export const productImportModeSchema = z.enum(["CREATE_ONLY", "UPSERT"]).default("CREATE_ONLY");
+
 export const createCategorySchema = z
   .object({
     name: z.string().trim().min(2).max(80),

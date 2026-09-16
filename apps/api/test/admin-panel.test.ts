@@ -143,6 +143,54 @@ test("productos controlan precio, stock, imágenes, categoría y estado", async 
   assert.equal(crossTenantUpdate.status, 404);
 });
 
+test("el catálogo pagina, busca y filtra los productos en el servidor", async () => {
+  const response = await ownerAgent
+    .get("/api/admin/products")
+    .query({ search: "campera", visibility: "HIDDEN", page: 1, pageSize: 1 });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.products.length, 1);
+  assert.equal(response.body.products[0].sku, "ALPHA-001");
+  assert.deepEqual(response.body.pagination, { page: 1, pageSize: 1, total: 1, totalPages: 1 });
+  assert.equal(response.body.summary.total, 1);
+  assert.equal(response.body.summary.active, 0);
+  assert.equal(typeof response.body.summary.limit, "number");
+});
+
+test("la importación CSV valida primero y luego crea productos y categorías", async () => {
+  const csv = [
+    "SKU;Nombre;Precio;Stock;Categoría;Marca;Etiquetas;Activo",
+    "ALPHA-CSV;Producto desde Excel;25.500,50;12;Importados;InfinityDev;hogar|nuevo;Sí",
+  ].join("\r\n");
+
+  const preview = await ownerAgent
+    .post("/api/admin/products/import/preview")
+    .field("mode", "CREATE_ONLY")
+    .attach("file", Buffer.from(csv, "utf8"), { filename: "productos.csv", contentType: "text/csv" });
+
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.valid, true);
+  assert.equal(preview.body.creates, 1);
+  assert.equal(preview.body.updates, 0);
+  assert.deepEqual(preview.body.categoriesToCreate, ["Importados"]);
+  assert.equal(preview.body.sample[0].priceInCents, 2550050);
+
+  const imported = await ownerAgent
+    .post("/api/admin/products/import")
+    .field("mode", "CREATE_ONLY")
+    .attach("file", Buffer.from(csv, "utf8"), { filename: "productos.csv", contentType: "text/csv" });
+
+  assert.equal(imported.status, 201);
+  assert.deepEqual(imported.body, { created: 1, updated: 0, categoriesCreated: 1, total: 1 });
+
+  const product = await database.product.findFirstOrThrow({ where: { sku: "ALPHA-CSV" }, include: { category: true } });
+  assert.equal(product.tenantId, (await database.tenant.findUniqueOrThrow({ where: { slug: ownerSlug } })).id);
+  assert.equal(product.priceInCents, 2550050);
+  assert.equal(product.category?.name, "Importados");
+  await database.product.delete({ where: { id: product.id } });
+  await database.category.delete({ where: { id: product.categoryId! } });
+});
+
 test("configuración y dashboard pertenecen a la tienda de la sesión", async () => {
   const settings = await ownerAgent.patch("/api/admin/store").send({
     name: "Alpha renovada",

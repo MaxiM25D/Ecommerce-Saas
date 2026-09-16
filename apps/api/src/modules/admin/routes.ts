@@ -23,6 +23,8 @@ import {
   createProductSchema,
   customerListQuerySchema,
   dispatchOrderSchema,
+  productImportModeSchema,
+  productListQuerySchema,
   resourceIdSchema,
   updateCategorySchema,
   updateProductSchema,
@@ -44,6 +46,7 @@ import {
   developmentUrl,
   expiresInHours,
 } from "../../services/account-tokens.js";
+import { importProducts, previewProductImport } from "../../services/product-import.js";
 
 export const adminRouter = Router();
 const canManage = requireRoles("OWNER", "ADMIN");
@@ -55,6 +58,15 @@ const productImageUpload = multer({
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/avif"];
     if (!allowed.includes(file.mimetype))
       return callback(new HttpError(400, "Usá imágenes JPG, PNG, WEBP o AVIF"));
+    callback(null, true);
+  },
+});
+const productImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 2, parts: 3 },
+  fileFilter: (_request, file, callback) => {
+    const lowerName = file.originalname.toLowerCase();
+    if (!lowerName.endsWith(".csv") && !lowerName.endsWith(".xlsx")) return callback(new HttpError(400, "Usá un archivo CSV o XLSX"));
     callback(null, true);
   },
 });
@@ -191,12 +203,44 @@ adminRouter.delete("/categories/:id", canManage, async (request, response) => {
 
 adminRouter.get("/products", async (request, response) => {
   const { tenant } = getAuthContext(request);
-  const products = await database.product.findMany({
-    where: { tenantId: tenant.id },
-    orderBy: { createdAt: "desc" },
-    include: { category: { select: { id: true, name: true, slug: true } } },
+  const query = productListQuerySchema.parse(request.query);
+  const where = {
+    tenantId: tenant.id,
+    ...(query.search ? { OR: [
+      { name: { contains: query.search, mode: "insensitive" as const } },
+      { sku: { contains: query.search, mode: "insensitive" as const } },
+      { brand: { contains: query.search, mode: "insensitive" as const } },
+    ] } : {}),
+    ...(query.category === "NONE" ? { categoryId: null } : query.category !== "ALL" ? { categoryId: query.category } : {}),
+    ...(query.visibility === "ACTIVE" ? { active: true } : query.visibility === "HIDDEN" ? { active: false } : {}),
+  };
+  const [products, total, all, active, lowStock, subscription] = await Promise.all([
+    database.product.findMany({ where, orderBy: { createdAt: "desc" }, skip: (query.page - 1) * query.pageSize, take: query.pageSize, include: { category: { select: { id: true, name: true, slug: true } } } }),
+    database.product.count({ where }),
+    database.product.count({ where: { tenantId: tenant.id } }),
+    database.product.count({ where: { tenantId: tenant.id, active: true } }),
+    database.product.count({ where: { tenantId: tenant.id, stock: { lt: 5 } } }),
+    database.subscription.findUnique({ where: { tenantId: tenant.id }, include: { plan: { select: { maxProducts: true } } } }),
+  ]);
+  response.json({
+    products,
+    pagination: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) },
+    summary: { total: all, active, lowStock, limit: subscription?.plan.maxProducts ?? 0 },
   });
-  response.json({ products });
+});
+
+adminRouter.post("/products/import/preview", canManage, productImportUpload.single("file"), async (request, response) => {
+  const file = request.file;
+  if (!file) throw new HttpError(400, "Seleccioná un archivo CSV o XLSX");
+  const mode = productImportModeSchema.parse(request.body.mode);
+  response.json(await previewProductImport(getAuthContext(request).tenant.id, file, mode));
+});
+
+adminRouter.post("/products/import", canManage, productImportUpload.single("file"), async (request, response) => {
+  const file = request.file;
+  if (!file) throw new HttpError(400, "Seleccioná un archivo CSV o XLSX");
+  const mode = productImportModeSchema.parse(request.body.mode);
+  response.status(201).json(await importProducts(getAuthContext(request).tenant.id, file, mode));
 });
 
 adminRouter.post(
