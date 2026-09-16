@@ -7,6 +7,7 @@ import { validateMercadoPagoSignature } from "../../services/mercado-pago.js";
 import {
   cancelBillingSubscription,
   getBillingOverview,
+  getBillingPaymentProfile,
   startBillingCheckout,
   syncBillingSubscription,
   syncProviderInvoice,
@@ -54,6 +55,10 @@ billingRouter.use(requireSession);
 
 billingRouter.get("/overview", async (request, response) => {
   response.json(await getBillingOverview(getAuthContext(request).tenant.id));
+});
+
+billingRouter.get("/payment-profile", async (request, response) => {
+  response.json(await getBillingPaymentProfile(getAuthContext(request).tenant.id));
 });
 
 billingRouter.post("/checkout", requireRoles("OWNER"), requireVerifiedEmail, async (request, response) => {

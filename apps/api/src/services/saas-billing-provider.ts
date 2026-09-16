@@ -6,9 +6,14 @@ const mercadoPagoApi = "https://api.mercadopago.com";
 export type ProviderSubscription = {
   id: string;
   status: string;
+  application_id?: number;
+  collector_id?: number;
   external_reference?: string;
   init_point?: string;
+  payer_id?: number;
   payer_email?: string;
+  card_id?: number | string;
+  payment_method_id?: string;
   next_payment_date?: string;
   auto_recurring?: { transaction_amount?: number; currency_id?: string; start_date?: string };
 };

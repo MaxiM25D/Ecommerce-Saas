@@ -49,6 +49,11 @@ test("onboarding inicia una prueba STARTER y expone solo los dos planes", async 
   assert.ok(new Date(overview.body.subscription.trialEndsAt) > new Date());
   assert.deepEqual(overview.body.plans.map(({ code }: { code: string }) => code), ["STARTER", "PRO"]);
   assert.equal(overview.body.billingConfigured, false);
+
+  const paymentProfile = await agent.get("/api/billing/payment-profile");
+  assert.equal(paymentProfile.status, 200);
+  assert.equal(paymentProfile.body.linked, false);
+  assert.equal(paymentProfile.body.paymentMethodId, null);
 });
 
 test("el historial de facturas permanece aislado por tenant", async () => {

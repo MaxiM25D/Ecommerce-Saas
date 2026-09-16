@@ -1,5 +1,6 @@
 import { database } from "../database.js";
 import { HttpError } from "../errors.js";
+import { billingPaymentStatus } from "./payment-validation.js";
 import {
   billingProviderConfigured,
   cancelProviderSubscription,
@@ -24,6 +25,38 @@ export async function getBillingOverview(tenantId: string) {
   ]);
   if (!subscription) throw new HttpError(409, "La tienda todavía no tiene un plan asignado");
   return { subscription, plans, usage: { products, members, monthlyOrders }, invoices, billingConfigured: billingProviderConfigured() };
+}
+
+export async function getBillingPaymentProfile(tenantId: string) {
+  const subscription = await database.subscription.findUnique({ where: { tenantId } });
+  if (!subscription) throw new HttpError(404, "Suscripción no encontrada");
+  if (!subscription.providerSubscriptionId) {
+    return {
+      linked: false,
+      provider: subscription.billingProvider,
+      status: subscription.providerStatus,
+      payerEmail: subscription.payerEmail,
+      payerId: null,
+      paymentMethodId: null,
+      nextPaymentDate: null,
+      collectorId: null,
+    };
+  }
+
+  const provider = await getProviderSubscription(subscription.providerSubscriptionId);
+  if (provider.external_reference && provider.external_reference !== tenantId) {
+    throw new HttpError(409, "La referencia del proveedor no coincide con la tienda");
+  }
+  return {
+    linked: true,
+    provider: "MERCADO_PAGO" as const,
+    status: provider.status,
+    payerEmail: provider.payer_email ?? subscription.payerEmail,
+    payerId: provider.payer_id ? String(provider.payer_id) : null,
+    paymentMethodId: provider.payment_method_id ?? null,
+    nextPaymentDate: provider.next_payment_date ?? null,
+    collectorId: provider.collector_id ? String(provider.collector_id) : null,
+  };
 }
 
 async function requireAvailablePlan(planCode: "STARTER" | "PRO") {
@@ -130,14 +163,6 @@ export async function syncBillingSubscription(tenantId: string) {
   return syncProviderSubscription(await getProviderSubscription(subscription.providerSubscriptionId));
 }
 
-function invoiceStatus(status: string | undefined): "PENDING" | "PAID" | "FAILED" | "CANCELED" | "REFUNDED" {
-  if (["approved", "authorized", "processed"].includes(status ?? "")) return "PAID";
-  if (["rejected", "failed"].includes(status ?? "")) return "FAILED";
-  if (["cancelled", "canceled"].includes(status ?? "")) return "CANCELED";
-  if (["refunded", "charged_back"].includes(status ?? "")) return "REFUNDED";
-  return "PENDING";
-}
-
 export async function syncProviderInvoice(providerInvoiceId: string) {
   const invoice = await getProviderInvoice(providerInvoiceId);
   if (!invoice.preapproval_id) throw new HttpError(400, "La factura no informa su suscripción");
@@ -148,7 +173,7 @@ export async function syncProviderInvoice(providerInvoiceId: string) {
   if (!subscription) throw new HttpError(404, "Suscripción de la factura no encontrada");
   const plan = subscription.pendingPlan ?? subscription.plan;
   const rawStatus = invoice.payment?.status ?? invoice.status ?? "pending";
-  const status = invoiceStatus(rawStatus);
+  const status = billingPaymentStatus(invoice.payment?.status);
   const periodFrom = invoice.debit_date ? new Date(invoice.debit_date) : invoice.date_created ? new Date(invoice.date_created) : new Date();
   const periodTo = new Date(periodFrom);
   periodTo.setUTCMonth(periodTo.getUTCMonth() + 1);

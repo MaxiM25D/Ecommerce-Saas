@@ -19,12 +19,17 @@ type Invoice = {
 type Data = {
   subscription: {
     status: string; cancelAtPeriodEnd: boolean; trialEndsAt: string | null; currentPeriodTo: string | null;
-    providerStatus: string | null; providerCheckoutUrl: string | null; plan: Plan; pendingPlan: Plan | null;
+    billingProvider: string | null; providerSubscriptionId: string | null; payerEmail: string | null;
+    providerStatus: string | null; providerCheckoutUrl: string | null; lastPaymentAt: string | null; plan: Plan; pendingPlan: Plan | null;
   };
   usage: { products: number; members: number; monthlyOrders: number };
   plans: Plan[];
   invoices: Invoice[];
   billingConfigured: boolean;
+};
+type PaymentProfile = {
+  linked: boolean; provider: string | null; status: string | null; payerEmail: string | null;
+  payerId: string | null; paymentMethodId: string | null; nextPaymentDate: string | null; collectorId: string | null;
 };
 
 const featureLabels: Record<string, string> = {
@@ -43,12 +48,16 @@ const money = (amount: number, currency: string) => new Intl.NumberFormat("es-AR
 const date = (value: string | null) => value ? new Date(value).toLocaleDateString("es-AR") : "—";
 const statusLabels: Record<string, string> = { TRIALING: "Prueba gratuita", ACTIVE: "Activa", PAST_DUE: "Pago pendiente", CANCELED: "Cancelada" };
 const invoiceLabels: Record<string, string> = { PAID: "Pagada", FAILED: "Fallida", PENDING: "Pendiente", OPEN: "Pendiente", REFUNDED: "Reembolsada" };
+const providerStatusLabels: Record<string, string> = { authorized: "Activa", pending: "Pendiente de completar", paused: "Pausada", canceled: "Cancelada" };
+const paymentMethodLabels: Record<string, string> = { account_money: "Dinero disponible en Mercado Pago", master: "Mastercard", visa: "Visa", amex: "American Express", debmaster: "Mastercard débito", debvisa: "Visa débito" };
 
 export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (section: "identity" | "payments") => void }) {
   const [data, setData] = useState<Data | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [paymentProfile, setPaymentProfile] = useState<PaymentProfile | null>(null);
+  const [paymentProfileError, setPaymentProfileError] = useState(false);
   const load = useCallback(async () => setData(await apiRequest<Data>("/billing/overview")), []);
 
   useEffect(() => {
@@ -58,6 +67,16 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
       .catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : "No se pudo cargar la facturación"); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!data?.subscription.providerSubscriptionId) { setPaymentProfile(null); return; }
+    let active = true;
+    setPaymentProfileError(false);
+    void apiRequest<PaymentProfile>("/billing/payment-profile")
+      .then((value) => { if (active) setPaymentProfile(value); })
+      .catch(() => { if (active) setPaymentProfileError(true); });
+    return () => { active = false; };
+  }, [data?.subscription.providerSubscriptionId, data?.subscription.providerStatus]);
 
   async function action(path: string, body?: object, success = "Suscripción actualizada.") {
     setBusy(true); setError(""); setNotice("");
@@ -81,6 +100,13 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
   const { subscription, usage } = data;
   const canManage = role === "OWNER";
   const renewalDate = subscription.status === "TRIALING" ? subscription.trialEndsAt : subscription.currentPeriodTo;
+  const hasProviderSubscription = Boolean(subscription.providerSubscriptionId);
+  const payerEmail = paymentProfile?.payerEmail ?? subscription.payerEmail;
+  const providerStatus = paymentProfile?.status ?? subscription.providerStatus;
+  const automaticBillingActive = providerStatus === "authorized";
+  const paymentMethod = paymentProfile?.paymentMethodId
+    ? (paymentMethodLabels[paymentProfile.paymentMethodId] ?? paymentProfile.paymentMethodId)
+    : !hasProviderSubscription || providerStatus === "pending" ? "Se elige al completar la suscripción" : "No informado por Mercado Pago";
 
   return <div className={`${styles.surface} mx-auto max-w-7xl space-y-7`}>
     <header><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6E3482]">Plan y uso</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Tu suscripción, explicada con claridad</h2><p className="mt-2 text-sm text-[#807384]">Revisá qué incluye tu plan, cuánto usaste y qué ocurre antes de cambiarlo.</p></header>
@@ -91,6 +117,18 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
         <div className="lg:text-right"><p className="text-3xl font-semibold">{money(subscription.plan.priceInCents, subscription.plan.currency)}</p><p className="mt-1 text-xs text-white/55">por mes</p></div>
       </div>
       {subscription.cancelAtPeriodEnd && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-amber-400/10 px-6 py-4 text-sm text-amber-100 sm:px-8"><span>La suscripción terminará al finalizar el período actual. Hasta entonces podés seguir usando el plan.</span>{canManage && <button disabled={busy} onClick={() => void action("/billing/resume", undefined, "La suscripción continuará activa.")} className="font-semibold underline" type="button">Mantener suscripción</button>}</div>}
+    </section>
+
+    <section className="rounded-[1.5rem] border border-[#e6dfe8] bg-white p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Facturación de tu plan</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Este cobro es independiente de las ventas realizadas en tu tienda.</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${automaticBillingActive ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>{automaticBillingActive ? "Suscripción automática activa" : hasProviderSubscription ? "Suscripción pendiente" : "Sin suscripción automática"}</span></div>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <BillingDatum label="Proveedor" value={hasProviderSubscription ? "Mercado Pago" : "Todavía no vinculado"} detail={providerStatus ? `Estado: ${providerStatusLabels[providerStatus] ?? providerStatus}` : undefined} />
+        <BillingDatum label="Cuenta pagadora" value={payerEmail ?? "Se confirmará al contratar"} detail={paymentProfile?.payerId ? `Usuario MP ${paymentProfile.payerId}` : undefined} />
+        <BillingDatum label="Medio de pago" value={paymentMethod} />
+        <BillingDatum label="Próximo cobro" value={automaticBillingActive ? date(paymentProfile?.nextPaymentDate ?? subscription.currentPeriodTo) : "Sin fecha confirmada"} />
+      </div>
+      <div className="mt-4 rounded-xl bg-[#fbfafc] px-4 py-3 text-xs leading-5 text-[#66586a]"><strong>Cuenta receptora:</strong> InfinityShop by InfinityDev{paymentProfile?.collectorId ? ` · Usuario MP ${paymentProfile.collectorId}` : ""}. {paymentProfileError && "Mercado Pago no respondió al consultar el detalle; podés volver a intentar con Actualizar estado."}</div>
+      {!automaticBillingActive && <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900"><strong>Tu plan está habilitado, pero el cobro recurrente no está activo.</strong> Completá la suscripción para elegir la cuenta y el medio de pago.</div>}
     </section>
 
     {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
@@ -104,18 +142,18 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
         const current = plan.id === subscription.plan.id;
         const isUpgrade = plan.priceInCents > subscription.plan.priceInCents;
         return <article className={`flex flex-col rounded-[1.5rem] border bg-white p-6 ${current ? "border-[#a56abd] ring-2 ring-[#eaddef]" : "border-[#e6dfe8]"}`} key={plan.id}>
-          <div className="flex justify-between gap-4"><div><h4 className="text-xl font-semibold">{plan.name}</h4><p className="mt-2 text-sm leading-6 text-[#807384]">{plan.description}</p></div>{current && <span className="h-fit rounded-full bg-[#f4eff7] px-2.5 py-1 text-xs font-semibold text-[#6E3482]">Plan actual</span>}</div>
+          <div className="flex justify-between gap-4"><div><h4 className="text-xl font-semibold">{plan.name}</h4><p className="mt-2 text-sm leading-6 text-[#807384]">{plan.description}</p></div>{current && <span className="h-fit rounded-full bg-[#f4eff7] px-2.5 py-1 text-xs font-semibold text-[#6E3482]">Plan habilitado</span>}</div>
           <p className="mt-5 text-3xl font-semibold">{money(plan.priceInCents, plan.currency)}<span className="text-sm font-normal text-[#918495]"> / mes</span></p>
           <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-[#fbfafc] p-4 text-sm"><div><p className="text-xs text-[#918495]">Productos</p><p className="mt-1 font-semibold">Hasta {plan.maxProducts}</p></div><div><p className="text-xs text-[#918495]">Colaboradores</p><p className="mt-1 font-semibold">{Math.max(0, plan.maxMembers - 1)} + propietario</p></div></div>
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#6E3482]">Incluye</p><ul className="mt-3 grid gap-2 text-sm text-[#66586a] sm:grid-cols-2">{visibleFeatures(plan.features).map((feature) => <li className="flex gap-2" key={feature}><Check className="mt-0.5 shrink-0 text-[#6E3482]" size={15} /><span>{featureLabels[feature]}</span></li>)}</ul>
-          {canManage && !current && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const confirmed = await confirmAction({ title: `¿Cambiar al plan ${plan.name}?`, description: isUpgrade ? "Mercado Pago puede pedirte confirmar el pago." : "El cambio puede aplicarse según el período de facturación actual.", confirmLabel: `Cambiar a ${plan.name}` }); if (confirmed) void choosePlan(plan.code); }} type="button">{isUpgrade ? "Mejorar a" : "Cambiar a"} {plan.name} <ArrowRight size={15} /></button></div>}
+          {canManage && (!current || !automaticBillingActive) && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const activateCurrent = current && !automaticBillingActive; const confirmed = await confirmAction({ title: activateCurrent ? `¿Activar la suscripción ${plan.name}?` : `¿Cambiar al plan ${plan.name}?`, description: activateCurrent ? "Vas a continuar en Mercado Pago para elegir la cuenta y el medio de pago del cobro mensual." : isUpgrade ? "Mercado Pago puede pedirte confirmar el pago." : "El cambio puede aplicarse según el período de facturación actual.", confirmLabel: activateCurrent ? "Continuar con Mercado Pago" : `Cambiar a ${plan.name}` }); if (confirmed) void choosePlan(plan.code); }} type="button">{current ? "Activar suscripción con Mercado Pago" : `${isUpgrade ? "Mejorar a" : "Cambiar a"} ${plan.name}`} <ArrowRight size={15} /></button></div>}
         </article>;
       })}</div>
       {!data.billingConfigured && <Tip title="Cobro automático pendiente">Los planes se pueden consultar, pero InfinityShop todavía no tiene configuradas sus credenciales de cobro SaaS en Mercado Pago. Por eso el cambio de plan está deshabilitado.</Tip>}
     </section>
 
     <section className="overflow-hidden rounded-[1.5rem] border border-[#e6dfe8] bg-white">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#eee9ef] px-6 py-5"><div><h3 className="font-semibold">Facturas de InfinityShop</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Son los cobros de tu plan SaaS; no son ventas realizadas en tu tienda.</p></div><div className="flex items-center gap-3">{canManage && subscription.providerStatus && <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#6E3482]" disabled={busy} onClick={() => void action("/billing/sync", undefined, "Estado sincronizado con Mercado Pago.")} type="button"><RefreshCw size={14} /> Actualizar estado</button>}{canManage && !subscription.cancelAtPeriodEnd && subscription.status !== "CANCELED" && <button className="text-xs font-semibold text-red-600 disabled:opacity-50" disabled={busy} onClick={async () => { const confirmed = await confirmAction({ title: "¿Cancelar la suscripción?", description: "Podrás usar el plan hasta que termine el período actual.", confirmLabel: "Programar cancelación", tone: "danger" }); if (confirmed) void action("/billing/cancel", { immediately: false }, "La cancelación quedó programada."); }} type="button">Cancelar suscripción</button>}</div></div>
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#eee9ef] px-6 py-5"><div><h3 className="font-semibold">Facturas de InfinityShop</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Son los cobros de tu plan SaaS; no son ventas realizadas en tu tienda.</p></div><div className="flex items-center gap-3">{canManage && subscription.providerStatus && <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#6E3482]" disabled={busy} onClick={() => void action("/billing/sync", undefined, "Estado sincronizado con Mercado Pago.")} type="button"><RefreshCw size={14} /> Actualizar estado</button>}{canManage && hasProviderSubscription && !subscription.cancelAtPeriodEnd && subscription.status !== "CANCELED" && <button className="text-xs font-semibold text-red-600 disabled:opacity-50" disabled={busy} onClick={async () => { const confirmed = await confirmAction({ title: "¿Cancelar la suscripción?", description: "Podrás usar el plan hasta que termine el período actual.", confirmLabel: "Programar cancelación", tone: "danger" }); if (confirmed) void action("/billing/cancel", { immediately: false }, "La cancelación quedó programada."); }} type="button">Cancelar suscripción</button>}</div></div>
       {data.invoices.length === 0 ? <div className="p-6"><EmptyState title="Todavía no hay facturas">Cuando se procese un cobro de InfinityShop, aparecerá acá con su fecha, estado e importe.</EmptyState></div> : <div className="overflow-x-auto"><table className="w-full min-w-[42rem] text-left text-sm"><caption className="sr-only">Historial de facturas de InfinityShop</caption><thead className="bg-[#fbfafc] text-xs uppercase tracking-wider text-[#918495]"><tr><th scope="col" className="px-5 py-3">Fecha</th><th scope="col" className="px-5 py-3">Plan</th><th scope="col" className="px-5 py-3">Estado</th><th scope="col" className="px-5 py-3 text-right">Importe</th></tr></thead><tbody className="divide-y divide-[#eee9ef]">{data.invoices.map((invoice) => <tr key={invoice.id}><td className="px-5 py-4">{date(invoice.periodFrom ?? invoice.createdAt)}</td><td className="px-5 py-4">{invoice.planName}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${invoice.status === "PAID" ? "bg-emerald-50 text-emerald-700" : invoice.status === "FAILED" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800"}`}>{invoiceLabels[invoice.status] ?? "En revisión"}</span>{invoice.failureReason && <p className="mt-1 max-w-md text-xs text-red-600">{invoice.failureReason}</p>}</td><td className="px-5 py-4 text-right font-semibold">{money(invoice.amountInCents, invoice.currency)}</td></tr>)}</tbody></table></div>}
     </section>
     <Tip title="Configuración de cobros de tu tienda"><CreditCard className="mr-1 inline h-4 w-4" /> Mercado Pago y las transferencias de tus clientes se configuran en <button className="font-semibold underline" onClick={() => onOpenStore("identity")} type="button">Mi tienda</button>, dentro de <button className="font-semibold underline" onClick={() => onOpenStore("payments")} type="button">Cobros</button>. Esta sección administra únicamente el plan de InfinityShop.</Tip>
@@ -125,4 +163,8 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
 function Usage({ icon: Icon, label, value, limit, help }: { icon: typeof Boxes; label: string; value: number; limit: number; help: string }) {
   const percentage = limit > 0 ? Math.min(100, Math.round((value / limit) * 100)) : 100;
   return <article className={styles.card}><div className="flex items-start justify-between gap-3"><div className="flex-1"><div className="flex justify-between gap-3"><p className="text-sm font-medium text-[#807384]">{label}</p><p className="text-sm font-semibold">{value} / {limit}</p></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-[#eee9ef]"><div className={`h-full rounded-full ${percentage >= 90 ? "bg-red-500" : "bg-[#6E3482]"}`} style={{ width: `${percentage}%` }} /></div><p className="mt-2 text-xs text-[#918495]">{percentage}% utilizado · {help}</p></div><span className="rounded-lg bg-[#f5eff8] p-2 text-[#6E3482]"><Icon size={17} /></span></div></article>;
+}
+
+function BillingDatum({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return <div className="rounded-xl border border-[#eee9ef] p-4"><p className="text-xs text-[#918495]">{label}</p><p className="mt-1 break-words text-sm font-semibold text-[#302433]">{value}</p>{detail && <p className="mt-1 text-xs text-[#918495]">{detail}</p>}</div>;
 }

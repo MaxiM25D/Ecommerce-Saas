@@ -16,6 +16,7 @@ import {
 } from "./secret-vault.js";
 import { releaseReservedOrder } from "./orders.js";
 import { dispatchTenantNotification } from "./notifications.js";
+import { assertPaymentRecipient } from "./payment-validation.js";
 
 const authorizationEndpoint = "https://auth.mercadopago.com/authorization";
 const apiEndpoint = "https://api.mercadopago.com";
@@ -30,6 +31,7 @@ type OAuthTokenResponse = {
 
 type MercadoPagoPayment = {
   id: number;
+  collector_id: number;
   status: string;
   status_detail?: string;
   external_reference?: string;
@@ -370,6 +372,8 @@ export async function processMercadoPagoWebhook(
   );
   if (!payment.external_reference)
     throw new HttpError(400, "El pago no tiene una referencia válida");
+
+  assertPaymentRecipient(payment.collector_id, connection.mercadoPagoUserId);
 
   const attempt = await database.paymentAttempt.findFirst({
     where: { id: payment.external_reference, tenantId: connection.tenantId },
