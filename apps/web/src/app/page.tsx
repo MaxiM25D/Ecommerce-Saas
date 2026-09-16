@@ -165,16 +165,16 @@ export default function HomePage() {
       >
         <div className="mb-12 text-center">
           <p className="text-xs font-bold uppercase tracking-[.22em] text-blue-300">
-            Planes simples y transparentes
+            Un plan simple y transparente
           </p>
           <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-semibold tracking-tight sm:text-5xl">
-            Elegí cómo querés crecer.
+            Todo InfinityShop, sin funciones escondidas.
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/50 sm:text-base">
-            Los dos planes incluyen 7 días gratis, sin cobros durante la prueba.
+            Precio de lanzamiento: 7 días gratis y luego $50.000 ARS por mes. Cancelá cuando quieras.
           </p>
         </div>
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="mx-auto grid max-w-3xl gap-5">
           {marketingPlans.map((plan) => (
             <article
               className={`relative rounded-[2rem] border p-7 sm:p-9 ${plan.featured ? "border-fuchsia-400/40 bg-gradient-to-br from-fuchsia-500/15 to-blue-500/[.06] shadow-[0_25px_80px_rgba(100,35,170,.15)]" : "border-white/10 bg-white/[.035]"}`}
@@ -182,7 +182,7 @@ export default function HomePage() {
             >
               {plan.featured && (
                 <span className="absolute right-6 top-6 rounded-full bg-fuchsia-400/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-fuchsia-200">
-                  Más elegido
+                  Precio de lanzamiento
                 </span>
               )}
               <h3 className="text-2xl font-semibold">{plan.name}</h3>
@@ -213,7 +213,7 @@ export default function HomePage() {
                 className={`mt-9 flex w-full items-center justify-center rounded-xl px-6 py-4 text-sm font-bold transition hover:-translate-y-0.5 ${plan.featured ? "bg-gradient-to-r from-[#a334d2] to-[#397eea] text-white" : "bg-white text-[#080a2d]"}`}
                 href={`/login?mode=register&plan=${plan.code}`}
               >
-                Probar {plan.name} gratis →
+                Activar InfinityShop Pro →
               </Link>
             </article>
           ))}

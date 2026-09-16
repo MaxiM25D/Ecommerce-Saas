@@ -69,24 +69,7 @@ after(async () => {
   await database.$disconnect();
 });
 
-test("STARTER no puede crear herramientas reservadas para PRO", async () => {
-  const response = await agent
-    .post("/api/admin/growth/coupons")
-    .send({
-      code: "NO",
-      name: "No permitido",
-      type: "PERCENTAGE",
-      value: 10,
-      active: true,
-    });
-  assert.equal(response.status, 403);
-});
-
 test("PRO administra variantes, cupones y envíos sin aceptar tenantId", async () => {
-  await database.subscription.update({
-    where: { tenantId },
-    data: { planId: "plan_pro", status: "ACTIVE" },
-  });
   await agent
     .patch("/api/admin/store")
     .send({
@@ -216,7 +199,7 @@ test("checkout usa snapshots de variante, cupón y envío y descuenta stock", as
   );
 });
 
-test("analytics avanzados no se filtran por API a un plan STARTER", async () => {
+test("el plan único expone analytics y herramientas avanzadas", async () => {
   await database.order.updateMany({
     where: { tenantId },
     data: { paymentStatus: "APPROVED" },
@@ -225,23 +208,8 @@ test("analytics avanzados no se filtran por API a un plan STARTER", async () => 
   assert.equal(proOverview.status, 200);
   assert.ok(proOverview.body.analytics.topProducts.length > 0);
 
-  await database.subscription.update({
-    where: { tenantId },
-    data: { planId: "plan_starter", status: "ACTIVE" },
-  });
-  const starterOverview = await agent.get("/api/admin/growth/overview");
-  assert.equal(starterOverview.status, 200);
-  assert.deepEqual(starterOverview.body.analytics.topProducts, []);
-  assert.deepEqual(starterOverview.body.domains, []);
-  assert.deepEqual(starterOverview.body.coupons, []);
-  assert.deepEqual(starterOverview.body.variants, []);
-  assert.deepEqual(starterOverview.body.notificationRules, []);
-  assert.deepEqual(starterOverview.body.abandonedCarts, []);
-
-  await database.subscription.update({
-    where: { tenantId },
-    data: { planId: "plan_pro", status: "ACTIVE" },
-  });
+  assert.ok(proOverview.body.coupons.length > 0);
+  assert.ok(proOverview.body.variants.length > 0);
 });
 
 test("dominios verificados resuelven el tenant y analytics quedan aislados", async () => {

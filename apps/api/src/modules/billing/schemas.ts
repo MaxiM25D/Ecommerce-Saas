@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const selectBillingPlanSchema = z.object({ planCode: z.enum(["STARTER", "PRO"]) }).strict();
+export const selectBillingPlanSchema = z.object({ planCode: z.literal("PRO") }).strict();
 export const cancelBillingSchema = z.object({ immediately: z.boolean().default(false) }).strict();
 
 export const billingWebhookSchema = z.object({

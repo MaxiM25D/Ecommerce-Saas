@@ -12,7 +12,7 @@ export default async function LoginPage({
 }) {
   const query = await searchParams;
   const initialMode = query.mode === "register" ? "register" : "login";
-  const initialPlan = query.plan === "PRO" ? "PRO" : "STARTER";
+  const initialPlan = "PRO" as const;
   return (
     <main
       className={`${styles.shell} relative min-h-screen overflow-hidden px-5 py-7 text-white sm:px-8 lg:py-10`}
@@ -44,7 +44,7 @@ export default async function LoginPage({
             Ingresá para gestionar ventas, productos y clientes, o creá tu
             tienda y empezá a vender en minutos.
           </p>
-          <div className="mt-9 grid max-w-2xl gap-3 sm:grid-cols-2">
+          <div className="mt-9 grid max-w-2xl gap-3">
             {marketingPlans.map((plan) => (
               <article
                 className={`rounded-2xl border p-5 ${plan.featured ? "border-fuchsia-400/35 bg-fuchsia-400/[.07]" : "border-white/10 bg-white/[.035]"}`}
@@ -59,7 +59,7 @@ export default async function LoginPage({
                   </div>
                   {plan.featured && (
                     <span className="rounded-full bg-fuchsia-400/15 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-fuchsia-200">
-                      Más completo
+                      Plan único
                     </span>
                   )}
                 </div>

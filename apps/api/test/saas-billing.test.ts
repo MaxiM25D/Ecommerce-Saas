@@ -41,13 +41,16 @@ after(async () => {
   await database.$disconnect();
 });
 
-test("onboarding inicia una prueba STARTER y expone solo los dos planes", async () => {
+test("onboarding inicia una prueba PRO y expone el único plan comercial", async () => {
   const overview = await agent.get("/api/billing/overview");
   assert.equal(overview.status, 200);
-  assert.equal(overview.body.subscription.plan.code, "STARTER");
+  assert.equal(overview.body.subscription.plan.code, "PRO");
   assert.equal(overview.body.subscription.status, "TRIALING");
   assert.ok(new Date(overview.body.subscription.trialEndsAt) > new Date());
-  assert.deepEqual(overview.body.plans.map(({ code }: { code: string }) => code), ["STARTER", "PRO"]);
+  assert.deepEqual(overview.body.plans.map(({ code }: { code: string }) => code), ["PRO"]);
+  assert.equal(overview.body.plans[0].priceInCents, 5_000_000);
+  assert.equal(overview.body.plans[0].maxProducts, 1_000);
+  assert.equal(overview.body.plans[0].maxMembers, 6);
   assert.equal(overview.body.billingConfigured, false);
 
   const paymentProfile = await agent.get("/api/billing/payment-profile");
@@ -57,7 +60,7 @@ test("onboarding inicia una prueba STARTER y expone solo los dos planes", async 
 });
 
 test("el historial de facturas permanece aislado por tenant", async () => {
-  const plan = await database.plan.findUniqueOrThrow({ where: { code: "STARTER" } });
+  const plan = await database.plan.findUniqueOrThrow({ where: { code: "PRO" } });
   for (const [tenantId, providerInvoiceId] of [[alphaTenantId, "invoice-alpha"], [betaTenantId, "invoice-beta"]]) {
     await database.billingInvoice.create({ data: { tenantId, provider: "MERCADO_PAGO", providerInvoiceId, status: "PAID", planCode: plan.code, planName: plan.name, amountInCents: plan.priceInCents, currency: plan.currency, paidAt: new Date() } });
   }

@@ -59,7 +59,7 @@ export async function getBillingPaymentProfile(tenantId: string) {
   };
 }
 
-async function requireAvailablePlan(planCode: "STARTER" | "PRO") {
+async function requireAvailablePlan(planCode: "PRO") {
   const plan = await database.plan.findUnique({ where: { code: planCode } });
   if (!plan?.active) throw new HttpError(404, "Plan no disponible");
   return plan;
@@ -79,7 +79,7 @@ export async function startBillingCheckout(input: {
   tenantId: string;
   tenantName: string;
   payerEmail: string;
-  planCode: "STARTER" | "PRO";
+  planCode: "PRO";
 }) {
   const [plan, subscription] = await Promise.all([
     requireAvailablePlan(input.planCode),

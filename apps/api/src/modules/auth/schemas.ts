@@ -21,7 +21,7 @@ export const registerSchema = z
     lastName: z.string().trim().min(2).max(60),
     storeName: z.string().trim().min(2).max(100),
     storeSlug: tenantSlug,
-    planCode: z.enum(["STARTER", "PRO"]).default("STARTER"),
+    planCode: z.literal("PRO").default("PRO"),
   })
   .strict();
 
@@ -39,7 +39,7 @@ export const createTenantSchema = z
   .object({
     name: z.string().trim().min(2).max(100),
     slug: tenantSlug,
-    planCode: z.enum(["STARTER", "PRO"]).default("STARTER"),
+    planCode: z.literal("PRO").default("PRO"),
   })
   .strict();
 

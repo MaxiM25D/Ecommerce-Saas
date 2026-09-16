@@ -6,6 +6,7 @@ const mercadoPagoApi = "https://api.mercadopago.com";
 export type ProviderSubscription = {
   id: string;
   status: string;
+  reason?: string;
   application_id?: number;
   collector_id?: number;
   external_reference?: string;

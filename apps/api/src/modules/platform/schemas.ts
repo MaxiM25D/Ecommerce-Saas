@@ -8,7 +8,7 @@ export const updateTenantSchema = z.object({
 
 export const updateSubscriptionSchema = z
   .object({
-    planCode: z.enum(["STARTER", "PRO"]).optional(),
+    planCode: z.literal("PRO").optional(),
     status: z.enum(["TRIALING", "ACTIVE", "PAST_DUE", "CANCELED"]).optional(),
     cancelAtPeriodEnd: z.boolean().optional(),
   })

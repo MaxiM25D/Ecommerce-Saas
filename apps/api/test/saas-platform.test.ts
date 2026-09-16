@@ -50,32 +50,30 @@ before(async () => {
 
 after(async () => { await cleanup(); await database.$disconnect(); });
 
-test("solo SUPERADMIN accede al panel global y existen STARTER y PRO", async () => {
+test("solo SUPERADMIN accede al panel global y Starter queda archivado", async () => {
   assert.equal((await ownerAgent.get("/api/platform/overview")).status, 403);
   assert.equal((await superAgent.get("/api/platform/overview")).status, 200);
   const plans = await superAgent.get("/api/platform/plans");
   assert.deepEqual(plans.body.plans.map(({ code }: { code: string }) => code), ["STARTER", "PRO"]);
-  assert.deepEqual(plans.body.plans.map(({ priceInCents }: { priceInCents: number }) => priceInCents), [5_000_000, 7_000_000]);
+  assert.deepEqual(plans.body.plans.map(({ priceInCents }: { priceInCents: number }) => priceInCents), [5_000_000, 5_000_000]);
+  assert.deepEqual(plans.body.plans.map(({ active }: { active: boolean }) => active), [false, true]);
 });
 
-test("STARTER limita 150 productos y un colaborador; PRO amplía capacidad", async () => {
+test("PRO admite 1000 productos y cinco colaboradores", async () => {
   const invitation = await ownerAgent.post("/api/admin/team").send({ email: memberEmail, role: "STAFF" });
   assert.equal(invitation.status, 201);
   const invitationToken = new URL(invitation.body.invitationUrl).searchParams.get("token");
   assert.ok(invitationToken);
   assert.equal((await memberAgent.post("/api/auth/invitations/accept").send({ token: invitationToken, password })).status, 200);
-  assert.equal((await ownerAgent.post("/api/admin/team").send({ email: "second-collaborator@example.com", role: "STAFF" })).status, 409);
+  for (const index of [2, 3, 4, 5]) {
+    assert.equal((await ownerAgent.post("/api/admin/team").send({ email: `collaborator-${index}@example.com`, role: "STAFF" })).status, 201);
+  }
+  assert.equal((await ownerAgent.post("/api/admin/team").send({ email: "collaborator-6@example.com", role: "STAFF" })).status, 409);
 
   await database.product.createMany({
-    data: Array.from({ length: 150 }, (_, index) => ({ tenantId: ownerTenantId, sku: `LIMIT-${index}`, slug: `limit-${index}`, name: `Producto límite ${index}`, priceInCents: 1000, stock: 1 })),
+    data: Array.from({ length: 1000 }, (_, index) => ({ tenantId: ownerTenantId, sku: `LIMIT-${index}`, slug: `limit-${index}`, name: `Producto límite ${index}`, priceInCents: 1000, stock: 1 })),
   });
   assert.equal((await ownerAgent.post("/api/admin/products").send({ sku: "LIMIT-EXTRA", slug: "limit-extra", name: "Producto extra", priceInCents: 1000, stock: 1 })).status, 409);
-
-  const upgrade = await superAgent.patch(`/api/platform/tenants/${ownerTenantId}/subscription`).send({ planCode: "PRO" });
-  assert.equal(upgrade.status, 200);
-  assert.equal(upgrade.body.subscription.plan.code, "PRO");
-  assert.equal((await ownerAgent.post("/api/admin/products").send({ sku: "LIMIT-EXTRA", slug: "limit-extra", name: "Producto extra", priceInCents: 1000, stock: 1 })).status, 201);
-  assert.equal((await ownerAgent.post("/api/admin/team").send({ email: "second-collaborator@example.com", role: "STAFF" })).status, 201);
 });
 
 test("OWNER administra roles y STAFF conserva solo lectura", async () => {

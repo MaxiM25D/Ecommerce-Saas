@@ -101,7 +101,7 @@ platformRouter.get("/overview", async (_request, response) => {
 
 platformRouter.get("/plans", async (_request, response) => {
   const plans = await database.plan.findMany({
-    orderBy: { priceInCents: "asc" },
+    orderBy: { code: "asc" },
     include: { _count: { select: { subscriptions: true } } },
   });
   response.json({ plans });
@@ -157,7 +157,7 @@ platformRouter.patch("/tenants/:id/subscription", async (request, response) => {
     },
     create: {
       tenantId,
-      planId: plan?.id ?? "plan_starter",
+      planId: plan?.id ?? "plan_pro",
       status: input.status ?? "ACTIVE",
       cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
       currentPeriodFrom: new Date(),

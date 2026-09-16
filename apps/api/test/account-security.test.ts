@@ -66,8 +66,8 @@ test("recuperación no revela cuentas y revoca todas las sesiones al cambiar la 
 
 test("una invitación crea y verifica una cuenta nueva sin exponer el tenantId", async () => {
   const tenant = await database.tenant.findUniqueOrThrow({ where: { slug } });
-  const starter = await database.plan.findUniqueOrThrow({ where: { code: "STARTER" } });
-  await database.subscription.update({ where: { tenantId: tenant.id }, data: { planId: starter.id } });
+  const pro = await database.plan.findUniqueOrThrow({ where: { code: "PRO" } });
+  await database.subscription.update({ where: { tenantId: tenant.id }, data: { planId: pro.id } });
 
   const invitation = await renewedAgent.post("/api/admin/team").send({ email: invitedEmail, role: "STAFF", tenantId: "manipulado" });
   assert.equal(invitation.status, 400);

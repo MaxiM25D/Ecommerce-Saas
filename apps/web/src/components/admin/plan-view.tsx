@@ -69,13 +69,18 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
   }, []);
 
   useEffect(() => {
-    if (!data?.subscription.providerSubscriptionId) { setPaymentProfile(null); return; }
     let active = true;
-    setPaymentProfileError(false);
-    void apiRequest<PaymentProfile>("/billing/payment-profile")
-      .then((value) => { if (active) setPaymentProfile(value); })
-      .catch(() => { if (active) setPaymentProfileError(true); });
-    return () => { active = false; };
+    const timeout = window.setTimeout(() => {
+      if (!data?.subscription.providerSubscriptionId) {
+        setPaymentProfile(null);
+        return;
+      }
+      setPaymentProfileError(false);
+      void apiRequest<PaymentProfile>("/billing/payment-profile")
+        .then((value) => { if (active) setPaymentProfile(value); })
+        .catch(() => { if (active) setPaymentProfileError(true); });
+    }, 0);
+    return () => { active = false; window.clearTimeout(timeout); };
   }, [data?.subscription.providerSubscriptionId, data?.subscription.providerStatus]);
 
   async function action(path: string, body?: object, success = "Suscripción actualizada.") {
@@ -109,7 +114,7 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
     : !hasProviderSubscription || providerStatus === "pending" ? "Se elige al completar la suscripción" : "No informado por Mercado Pago";
 
   return <div className={`${styles.surface} mx-auto max-w-7xl space-y-7`}>
-    <header><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6E3482]">Plan y uso</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Tu suscripción, explicada con claridad</h2><p className="mt-2 text-sm text-[#807384]">Revisá qué incluye tu plan, cuánto usaste y qué ocurre antes de cambiarlo.</p></header>
+    <header><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6E3482]">Plan y uso</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Tu suscripción, explicada con claridad</h2><p className="mt-2 text-sm text-[#807384]">Un único plan con todas las herramientas, límites claros y facturación transparente.</p></header>
 
     <section className="overflow-hidden rounded-[1.75rem] bg-[#241329] text-white shadow-[0_24px_70px_rgba(52,31,59,.16)]">
       <div className="grid gap-7 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -137,16 +142,15 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
 
     <section><div><h3 className="text-lg font-semibold">Uso del plan actual</h3><p className="mt-1 text-sm text-[#807384]">Los límites se aplican a productos y personas del equipo. Los pedidos no tienen límite mensual.</p></div><div className="mt-4 grid gap-4 md:grid-cols-3"><Usage icon={Boxes} label="Productos" value={usage.products} limit={subscription.plan.maxProducts} help="Productos cargados, visibles u ocultos." /><Usage icon={UsersRound} label="Miembros" value={usage.members} limit={subscription.plan.maxMembers} help="Incluye al Propietario. Las invitaciones pendientes también reservan lugar." /><article className={styles.card}><div className="flex items-start justify-between"><div><p className="text-sm font-medium text-[#807384]">Pedidos este mes</p><p className="mt-3 text-3xl font-semibold">{usage.monthlyOrders}</p><p className="mt-2 text-xs leading-5 text-emerald-700">Sin límite por plan.</p></div><span className="rounded-lg bg-[#f5eff8] p-2 text-[#6E3482]"><CircleDollarSign size={18} /></span></div></article></div></section>
 
-    <section><div><h3 className="text-lg font-semibold">Comparar planes</h3><p className="mt-1 text-sm text-[#807384]">Revisá capacidad y funciones antes de elegir. El precio mostrado es mensual.</p></div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">{data.plans.map((plan) => {
+    <section><div><h3 className="text-lg font-semibold">InfinityShop Pro</h3><p className="mt-1 text-sm text-[#807384]">Todas las funciones están incluidas por $50.000 ARS mensuales, sin comisión de InfinityShop por venta.</p></div>
+      <div className="mt-5 grid gap-5">{data.plans.map((plan) => {
         const current = plan.id === subscription.plan.id;
-        const isUpgrade = plan.priceInCents > subscription.plan.priceInCents;
         return <article className={`flex flex-col rounded-[1.5rem] border bg-white p-6 ${current ? "border-[#a56abd] ring-2 ring-[#eaddef]" : "border-[#e6dfe8]"}`} key={plan.id}>
-          <div className="flex justify-between gap-4"><div><h4 className="text-xl font-semibold">{plan.name}</h4><p className="mt-2 text-sm leading-6 text-[#807384]">{plan.description}</p></div>{current && <span className="h-fit rounded-full bg-[#f4eff7] px-2.5 py-1 text-xs font-semibold text-[#6E3482]">Plan habilitado</span>}</div>
+          <div className="flex justify-between gap-4"><div><h4 className="text-xl font-semibold">{plan.name}</h4><p className="mt-2 text-sm leading-6 text-[#807384]">{plan.description}</p></div><span className="h-fit rounded-full bg-[#f4eff7] px-2.5 py-1 text-xs font-semibold text-[#6E3482]">{current ? "Plan habilitado" : "Precio de lanzamiento"}</span></div>
           <p className="mt-5 text-3xl font-semibold">{money(plan.priceInCents, plan.currency)}<span className="text-sm font-normal text-[#918495]"> / mes</span></p>
           <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-[#fbfafc] p-4 text-sm"><div><p className="text-xs text-[#918495]">Productos</p><p className="mt-1 font-semibold">Hasta {plan.maxProducts}</p></div><div><p className="text-xs text-[#918495]">Colaboradores</p><p className="mt-1 font-semibold">{Math.max(0, plan.maxMembers - 1)} + propietario</p></div></div>
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#6E3482]">Incluye</p><ul className="mt-3 grid gap-2 text-sm text-[#66586a] sm:grid-cols-2">{visibleFeatures(plan.features).map((feature) => <li className="flex gap-2" key={feature}><Check className="mt-0.5 shrink-0 text-[#6E3482]" size={15} /><span>{featureLabels[feature]}</span></li>)}</ul>
-          {canManage && (!current || !automaticBillingActive) && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const activateCurrent = current && !automaticBillingActive; const confirmed = await confirmAction({ title: activateCurrent ? `¿Activar la suscripción ${plan.name}?` : `¿Cambiar al plan ${plan.name}?`, description: activateCurrent ? "Vas a continuar en Mercado Pago para elegir la cuenta y el medio de pago del cobro mensual." : isUpgrade ? "Mercado Pago puede pedirte confirmar el pago." : "El cambio puede aplicarse según el período de facturación actual.", confirmLabel: activateCurrent ? "Continuar con Mercado Pago" : `Cambiar a ${plan.name}` }); if (confirmed) void choosePlan(plan.code); }} type="button">{current ? "Activar suscripción con Mercado Pago" : `${isUpgrade ? "Mejorar a" : "Cambiar a"} ${plan.name}`} <ArrowRight size={15} /></button></div>}
+          {canManage && (!current || !automaticBillingActive) && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const confirmed = await confirmAction({ title: "¿Activar InfinityShop Pro?", description: "Vas a continuar en Mercado Pago para elegir la cuenta y el medio de pago del cobro mensual de $50.000 ARS.", confirmLabel: "Continuar con Mercado Pago" }); if (confirmed) void choosePlan(plan.code); }} type="button">Activar InfinityShop Pro <ArrowRight size={15} /></button></div>}
         </article>;
       })}</div>
       {!data.billingConfigured && <Tip title="Cobro automático pendiente">Los planes se pueden consultar, pero InfinityShop todavía no tiene configuradas sus credenciales de cobro SaaS en Mercado Pago. Por eso el cambio de plan está deshabilitado.</Tip>}

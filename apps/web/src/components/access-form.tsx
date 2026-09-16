@@ -25,7 +25,7 @@ type Mode = "login" | "register";
 
 export function AccessForm({
   initialMode = "login",
-  initialPlan = "STARTER",
+  initialPlan = "PRO",
 }: {
   initialMode?: Mode;
   initialPlan?: MarketingPlanCode;
@@ -38,7 +38,7 @@ export function AccessForm({
   const [storeName, setStoreName] = useState("");
   const [storeSlug, setStoreSlug] = useState("");
   const [customSlug, setCustomSlug] = useState(false);
-  const [planCode, setPlanCode] = useState<MarketingPlanCode>(initialPlan);
+  const planCode: MarketingPlanCode = initialPlan;
 
   function changeMode(nextMode: Mode) {
     setMode(nextMode);
@@ -237,38 +237,25 @@ export function AccessForm({
                 />
                 <div>
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-white/70">
-                      Elegí tu plan
-                    </span>
+                    <span className="text-sm font-medium text-white/70">InfinityShop Pro</span>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">
                       7 días gratis
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3">
                     {marketingPlans.map((plan) => {
-                      const selected = planCode === plan.code;
                       return (
-                        <label
-                          className={`relative cursor-pointer rounded-xl border p-3 transition ${selected ? "border-fuchsia-400/70 bg-fuchsia-400/10 ring-2 ring-fuchsia-400/10" : "border-white/10 bg-white/[.035] hover:border-white/20"}`}
+                        <div
+                          className="relative rounded-xl border border-fuchsia-400/70 bg-fuchsia-400/10 p-3 ring-2 ring-fuchsia-400/10"
                           key={plan.code}
                         >
-                          <input
-                            checked={selected}
-                            className="sr-only"
-                            name="planCode"
-                            onChange={() => setPlanCode(plan.code)}
-                            type="radio"
-                            value={plan.code}
-                          />
                           <span className="flex items-start justify-between gap-2">
                             <strong className="text-sm text-white">
                               {plan.name}
                             </strong>
-                            {selected && (
-                              <span className="grid h-5 w-5 place-items-center rounded-full bg-fuchsia-400 text-[#080a2d]">
-                                <Check className="h-3 w-3" strokeWidth={3} />
-                              </span>
-                            )}
+                            <span className="grid h-5 w-5 place-items-center rounded-full bg-fuchsia-400 text-[#080a2d]">
+                              <Check className="h-3 w-3" strokeWidth={3} />
+                            </span>
                           </span>
                           <span className="mt-2 block text-base font-bold text-white">
                             {plan.price}
@@ -279,7 +266,7 @@ export function AccessForm({
                           <span className="mt-1 block text-[10px] leading-4 text-white/35">
                             {plan.capacity}
                           </span>
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
