@@ -109,6 +109,9 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
   const payerEmail = paymentProfile?.payerEmail ?? subscription.payerEmail;
   const providerStatus = paymentProfile?.status ?? subscription.providerStatus;
   const automaticBillingActive = providerStatus === "authorized";
+  const trialIsActive = subscription.status === "TRIALING" && Boolean(subscription.trialEndsAt);
+  const expectedFirstCharge = paymentProfile?.nextPaymentDate
+    ?? (trialIsActive ? subscription.trialEndsAt : subscription.currentPeriodTo);
   const paymentMethod = paymentProfile?.paymentMethodId
     ? (paymentMethodLabels[paymentProfile.paymentMethodId] ?? paymentProfile.paymentMethodId)
     : !hasProviderSubscription || providerStatus === "pending" ? "Se elige al completar la suscripción" : "No informado por Mercado Pago";
@@ -130,11 +133,20 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
         <BillingDatum label="Proveedor" value={hasProviderSubscription ? "Mercado Pago" : "Todavía no vinculado"} detail={providerStatus ? `Estado: ${providerStatusLabels[providerStatus] ?? providerStatus}` : undefined} />
         <BillingDatum label="Cuenta pagadora" value={payerEmail ?? "Se confirmará al contratar"} detail={paymentProfile?.payerId ? `Usuario MP ${paymentProfile.payerId}` : undefined} />
         <BillingDatum label="Medio de pago" value={paymentMethod} />
-        <BillingDatum label="Próximo cobro" value={automaticBillingActive ? date(paymentProfile?.nextPaymentDate ?? subscription.currentPeriodTo) : "Sin fecha confirmada"} />
+        <BillingDatum label={automaticBillingActive ? "Próximo cobro" : "Primer cobro estimado"} value={expectedFirstCharge ? date(expectedFirstCharge) : "Al confirmar en Mercado Pago"} detail={!automaticBillingActive ? "Se confirma al autorizar el medio de pago" : undefined} />
       </div>
       <div className="mt-4 rounded-xl bg-[#fbfafc] px-4 py-3 text-xs leading-5 text-[#66586a]"><strong>Cuenta receptora:</strong> InfinityShop by InfinityDev{paymentProfile?.collectorId ? ` · Usuario MP ${paymentProfile.collectorId}` : ""}. {paymentProfileError && "Mercado Pago no respondió al consultar el detalle; podés volver a intentar con Actualizar estado."}</div>
-      {!automaticBillingActive && <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900"><strong>Tu plan está habilitado, pero el cobro recurrente no está activo.</strong> Completá la suscripción para elegir la cuenta y el medio de pago.</div>}
+      {!automaticBillingActive && <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900"><strong>Tu plan está habilitado, pero el cobro recurrente no está activo.</strong> {trialIsActive ? `Si lo vinculás ahora, hoy pagás $0 y el primer cobro será el ${date(subscription.trialEndsAt)}.` : "La prueba ya terminó; Mercado Pago puede realizar el primer cobro cuando confirmes."} Antes de aceptar vas a ver la cuenta y el medio de pago elegidos.</div>}
     </section>
+
+    {!automaticBillingActive && <section className="rounded-[1.5rem] border border-[#dfd2e4] bg-[#fbf7fc] p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6E3482]">Activación transparente</p><h3 className="mt-2 text-lg font-semibold">Probá primero. Pagá recién cuando corresponda.</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-[#66586a]">Autorizar Mercado Pago no significa que ya ingresó dinero. El alta confirma quién paga y con qué medio; el cobro real recién queda acreditado cuando aparece una factura pagada.</p></div><span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#6E3482] shadow-sm">Sin comisión por venta</span></div>
+      <ol className="mt-5 grid gap-3 md:grid-cols-3">
+        <ActivationStep number="1" title="Hoy" detail={trialIsActive ? "Vinculás Mercado Pago y pagás $0." : "Elegís tu cuenta y medio de pago."} />
+        <ActivationStep number="2" title={expectedFirstCharge ? date(expectedFirstCharge) : "Al confirmar"} detail="Mercado Pago intenta el primer cobro de $50.000 ARS." />
+        <ActivationStep number="3" title="Acreditación" detail="La factura pagada confirma que InfinityShop recibió el dinero." />
+      </ol>
+    </section>}
 
     {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p>}
@@ -150,7 +162,7 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
           <p className="mt-5 text-3xl font-semibold">{money(plan.priceInCents, plan.currency)}<span className="text-sm font-normal text-[#918495]"> / mes</span></p>
           <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-[#fbfafc] p-4 text-sm"><div><p className="text-xs text-[#918495]">Productos</p><p className="mt-1 font-semibold">Hasta {plan.maxProducts}</p></div><div><p className="text-xs text-[#918495]">Colaboradores</p><p className="mt-1 font-semibold">{Math.max(0, plan.maxMembers - 1)} + propietario</p></div></div>
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#6E3482]">Incluye</p><ul className="mt-3 grid gap-2 text-sm text-[#66586a] sm:grid-cols-2">{visibleFeatures(plan.features).map((feature) => <li className="flex gap-2" key={feature}><Check className="mt-0.5 shrink-0 text-[#6E3482]" size={15} /><span>{featureLabels[feature]}</span></li>)}</ul>
-          {canManage && (!current || !automaticBillingActive) && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const confirmed = await confirmAction({ title: "¿Activar InfinityShop Pro?", description: "Vas a continuar en Mercado Pago para elegir la cuenta y el medio de pago del cobro mensual de $50.000 ARS.", confirmLabel: "Continuar con Mercado Pago" }); if (confirmed) void choosePlan(plan.code); }} type="button">Activar InfinityShop Pro <ArrowRight size={15} /></button></div>}
+          {canManage && (!current || !automaticBillingActive) && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const confirmed = await confirmAction({ title: "¿Vincular Mercado Pago?", description: trialIsActive ? `Hoy pagás $0. Vas a elegir la cuenta y el medio de pago para autorizar el cobro mensual de $50.000 ARS desde el ${date(subscription.trialEndsAt)}. Podés cancelar antes de esa fecha.` : "La prueba gratuita ya terminó. Vas a elegir la cuenta y el medio de pago; Mercado Pago puede cobrar $50.000 ARS al confirmar y luego cada mes.", confirmLabel: "Continuar de forma segura" }); if (confirmed) void choosePlan(plan.code); }} type="button">Vincular Mercado Pago <ArrowRight size={15} /></button><p className="mt-3 text-center text-xs leading-5 text-[#807384]">{trialIsActive ? `Hoy $0 · primer cobro el ${date(subscription.trialEndsAt)}` : "$50.000 ARS por mes · cancelá cuando quieras"}</p></div>}
         </article>;
       })}</div>
       {!data.billingConfigured && <Tip title="Cobro automático pendiente">Los planes se pueden consultar, pero InfinityShop todavía no tiene configuradas sus credenciales de cobro SaaS en Mercado Pago. Por eso el cambio de plan está deshabilitado.</Tip>}
@@ -171,4 +183,8 @@ function Usage({ icon: Icon, label, value, limit, help }: { icon: typeof Boxes; 
 
 function BillingDatum({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return <div className="rounded-xl border border-[#eee9ef] p-4"><p className="text-xs text-[#918495]">{label}</p><p className="mt-1 break-words text-sm font-semibold text-[#302433]">{value}</p>{detail && <p className="mt-1 text-xs text-[#918495]">{detail}</p>}</div>;
+}
+
+function ActivationStep({ number, title, detail }: { number: string; title: string; detail: string }) {
+  return <li className="flex gap-3 rounded-xl bg-white p-4 shadow-[0_8px_24px_rgba(73,34,91,.06)]"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#6E3482] text-xs font-bold text-white">{number}</span><div><p className="text-sm font-semibold text-[#302433]">{title}</p><p className="mt-1 text-xs leading-5 text-[#807384]">{detail}</p></div></li>;
 }

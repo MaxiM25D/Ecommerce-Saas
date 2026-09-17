@@ -96,6 +96,7 @@ export default function HomePage() {
           </div>
           <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-white/40">
             <span>✓ 7 días gratis</span>
+            <span>✓ Sin tarjeta para crear tu tienda</span>
             <span>✓ Sin costo de instalación</span>
             <span>✓ Cancelá cuando quieras</span>
           </div>
@@ -171,7 +172,7 @@ export default function HomePage() {
             Todo InfinityShop, sin funciones escondidas.
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/50 sm:text-base">
-            Precio de lanzamiento: 7 días gratis y luego $50.000 ARS por mes. Cancelá cuando quieras.
+            Creá tu tienda sin tarjeta. Tenés 7 días gratis y, si decidís continuar, vinculás Mercado Pago para pagar $50.000 ARS por mes. Cancelá cuando quieras.
           </p>
         </div>
         <div className="mx-auto grid max-w-3xl gap-5">
