@@ -26,6 +26,7 @@ RUN addgroup -S infinityshop && adduser -S infinityshop -G infinityshop
 COPY --from=builder --chown=infinityshop:infinityshop /app/package.json /app/package-lock.json ./
 COPY --from=builder --chown=infinityshop:infinityshop /app/node_modules ./node_modules
 COPY --from=builder --chown=infinityshop:infinityshop /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder --chown=infinityshop:infinityshop /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder --chown=infinityshop:infinityshop /app/apps/api/dist ./apps/api/dist
 COPY --from=builder --chown=infinityshop:infinityshop /app/packages/database/package.json ./packages/database/package.json
 COPY --from=builder --chown=infinityshop:infinityshop /app/packages/database/dist ./packages/database/dist
