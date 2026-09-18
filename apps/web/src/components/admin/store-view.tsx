@@ -18,7 +18,8 @@ export type StoreSection = "identity" | "appearance" | "payments";
 type Section = StoreSection;
 type Draft = {
   name: string; description: string; contactEmail: string; emailFromName: string; whatsapp: string; currency: string;
-  logoUrl: string; bannerUrl: string; primaryColor: string; secondaryColor: string; fontFamily: string; borderRadius: string; announcement: string; showPoweredBy: boolean;
+  instagramUrl: string; facebookUrl: string; tiktokUrl: string; xUrl: string; youtubeUrl: string;
+  logoUrl: string; bannerUrl: string; primaryColor: string; secondaryColor: string; fontFamily: string; borderRadius: string; announcement: string;
   bankTransferEnabled: boolean; bankName: string; bankAlias: string; bankHolder: string; bankCvu: string; bankCuit: string; bankReservationHours: string;
 };
 type UpdateDraft = <Key extends keyof Draft>(key: Key, value: Draft[Key]) => void;
@@ -73,7 +74,19 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
     try {
       let body: Record<string, string | number | boolean | null>;
       if (section === "identity") {
-        body = { name: draft.name, description: draft.description || null, contactEmail: draft.contactEmail || null, emailFromName: draft.emailFromName || null, whatsapp: draft.whatsapp || null, currency: draft.currency };
+        body = {
+          name: draft.name,
+          description: draft.description || null,
+          contactEmail: draft.contactEmail || null,
+          emailFromName: draft.emailFromName || null,
+          whatsapp: draft.whatsapp || null,
+          instagramUrl: draft.instagramUrl || null,
+          facebookUrl: draft.facebookUrl || null,
+          tiktokUrl: draft.tiktokUrl || null,
+          xUrl: draft.xUrl || null,
+          youtubeUrl: draft.youtubeUrl || null,
+          currency: draft.currency,
+        };
       } else if (section === "appearance") {
         let logoUrl = draft.logoUrl || null; let bannerUrl = draft.bannerUrl || null;
         if (logoFile || bannerFile) {
@@ -82,7 +95,7 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
           logoUrl = uploaded.logoUrl ?? logoUrl; bannerUrl = uploaded.bannerUrl ?? bannerUrl;
         }
         body = { logoUrl, bannerUrl, primaryColor: draft.primaryColor };
-        if (canAdvanced) body = { ...body, secondaryColor: draft.secondaryColor, fontFamily: draft.fontFamily, borderRadius: draft.borderRadius, announcement: draft.announcement || null, showPoweredBy: draft.showPoweredBy };
+        if (canAdvanced) body = { ...body, secondaryColor: draft.secondaryColor, fontFamily: draft.fontFamily, borderRadius: draft.borderRadius, announcement: draft.announcement || null };
       } else {
         body = { bankTransferEnabled: draft.bankTransferEnabled, bankName: draft.bankName || null, bankAlias: draft.bankAlias || null, bankHolder: draft.bankHolder || null, bankCvu: draft.bankCvu || null, bankCuit: draft.bankCuit || null, bankReservationHours: Number(draft.bankReservationHours) };
       }
@@ -158,6 +171,12 @@ function IdentitySection({ draft, onUpdate }: { draft: Draft; onUpdate: UpdateDr
     <Field label="Email de contacto" help="Tus clientes pueden usarlo para consultas sobre compras." example="Ejemplo: ventas@mitienda.com"><span className="relative block"><Mail className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-[#a093a3]" /><input className="pl-10!" type="email" value={draft.contactEmail} onChange={(event) => onUpdate("contactEmail", event.target.value)} /></span></Field>
     <Field label="WhatsApp" help="Usá código de país y área, sin espacios ni símbolos." example="Ejemplo: 5491112345678"><span className="relative block"><MessageCircle className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-[#a093a3]" /><input className="pl-10!" inputMode="tel" value={draft.whatsapp} onChange={(event) => onUpdate("whatsapp", event.target.value)} /></span></Field>
     <Field className="sm:col-span-2" label="Nombre del remitente en emails" help="Es el nombre que verá el cliente cuando reciba confirmaciones. No es una dirección de correo." example="Ejemplo: Fumiland Shop, en lugar de InfinityShop"><input placeholder={draft.name || "Nombre de tu tienda"} value={draft.emailFromName} onChange={(event) => onUpdate("emailFromName", event.target.value)} /></Field>
+    <div className="sm:col-span-2 mt-2 border-t border-[#eee9ef] pt-6"><h4 className="text-sm font-semibold text-[#382d3b]">Redes sociales</h4><p className="mt-1 text-xs leading-5 text-[#918495]">Pegá los enlaces completos. Solo las redes configuradas aparecerán en el pie de la tienda.</p></div>
+    <Field label="Instagram (opcional)" help="Perfil público de la marca." example="https://instagram.com/mitienda"><input type="url" value={draft.instagramUrl} onChange={(event) => onUpdate("instagramUrl", event.target.value)} /></Field>
+    <Field label="Facebook (opcional)" help="Página oficial del negocio." example="https://facebook.com/mitienda"><input type="url" value={draft.facebookUrl} onChange={(event) => onUpdate("facebookUrl", event.target.value)} /></Field>
+    <Field label="TikTok (opcional)" help="Perfil público de TikTok." example="https://tiktok.com/@mitienda"><input type="url" value={draft.tiktokUrl} onChange={(event) => onUpdate("tiktokUrl", event.target.value)} /></Field>
+    <Field label="X / Twitter (opcional)" help="Perfil público en X." example="https://x.com/mitienda"><input type="url" value={draft.xUrl} onChange={(event) => onUpdate("xUrl", event.target.value)} /></Field>
+    <Field className="sm:col-span-2" label="YouTube (opcional)" help="Canal oficial de la tienda." example="https://youtube.com/@mitienda"><input type="url" value={draft.youtubeUrl} onChange={(event) => onUpdate("youtubeUrl", event.target.value)} /></Field>
   </div></div>;
 }
 
@@ -171,7 +190,6 @@ function AppearanceSection({ canAdvanced, draft, logoPreview, bannerPreview, onL
         <Field label="Tipografía" help="Cambia el estilo general de los textos." example="Sistema es la opción más limpia y rápida."><select disabled={!canAdvanced} value={draft.fontFamily} onChange={(event) => onUpdate("fontFamily", event.target.value)}><option value="SYSTEM">Sistema</option><option value="SERIF">Editorial</option><option value="MODERN">Moderna</option></select></Field>
         <Field label="Estilo de bordes" help="Define qué tan redondeadas se ven tarjetas y botones." example="Suaves da una apariencia más amigable."><select disabled={!canAdvanced} value={draft.borderRadius} onChange={(event) => onUpdate("borderRadius", event.target.value)}><option value="SQUARE">Rectos</option><option value="MEDIUM">Medios</option><option value="SOFT">Suaves</option></select></Field>
         <Field label="Anuncio superior" help="Mensaje corto arriba del catálogo." example="Ejemplo: Envíos gratis desde $80.000"><input disabled={!canAdvanced} maxLength={180} value={draft.announcement} onChange={(event) => onUpdate("announcement", event.target.value)} /></Field>
-        <label className="flex items-start gap-3 sm:col-span-2"><input checked={draft.showPoweredBy} className="mt-1 accent-[#6E3482]" disabled={!canAdvanced} onChange={(event) => onUpdate("showPoweredBy", event.target.checked)} type="checkbox" /><span><span className="block text-sm font-medium text-[#3c303f]">Mostrar “Creada con InfinityShop”</span><span className="mt-1 block text-xs text-[#918495]">Agrega una referencia pequeña al pie de la tienda.</span></span></label>
       </div>
     </div>
   </div>;
@@ -203,5 +221,5 @@ function Field({ label, help, example, className = "", children }: { label: stri
 }
 function createDraft(store: Store): Draft {
   const settings = store.settings;
-  return { name: store.name, description: settings?.description ?? "", contactEmail: settings?.contactEmail ?? "", emailFromName: settings?.emailFromName ?? "", whatsapp: settings?.whatsapp ?? "", currency: settings?.currency ?? "ARS", logoUrl: settings?.logoUrl ?? "", bannerUrl: settings?.bannerUrl ?? "", primaryColor: settings?.primaryColor ?? "#6E3482", secondaryColor: settings?.secondaryColor ?? "#49225B", fontFamily: settings?.fontFamily ?? "SYSTEM", borderRadius: settings?.borderRadius ?? "MEDIUM", announcement: settings?.announcement ?? "", showPoweredBy: settings?.showPoweredBy ?? true, bankTransferEnabled: settings?.bankTransferEnabled ?? false, bankName: settings?.bankName ?? "", bankAlias: settings?.bankAlias ?? "", bankHolder: settings?.bankHolder ?? "", bankCvu: settings?.bankCvu ?? "", bankCuit: settings?.bankCuit ?? "", bankReservationHours: String(settings?.bankReservationHours ?? 24) };
+  return { name: store.name, description: settings?.description ?? "", contactEmail: settings?.contactEmail ?? "", emailFromName: settings?.emailFromName ?? "", whatsapp: settings?.whatsapp ?? "", instagramUrl: settings?.instagramUrl ?? "", facebookUrl: settings?.facebookUrl ?? "", tiktokUrl: settings?.tiktokUrl ?? "", xUrl: settings?.xUrl ?? "", youtubeUrl: settings?.youtubeUrl ?? "", currency: settings?.currency ?? "ARS", logoUrl: settings?.logoUrl ?? "", bannerUrl: settings?.bannerUrl ?? "", primaryColor: settings?.primaryColor ?? "#6E3482", secondaryColor: settings?.secondaryColor ?? "#49225B", fontFamily: settings?.fontFamily ?? "SYSTEM", borderRadius: settings?.borderRadius ?? "MEDIUM", announcement: settings?.announcement ?? "", bankTransferEnabled: settings?.bankTransferEnabled ?? false, bankName: settings?.bankName ?? "", bankAlias: settings?.bankAlias ?? "", bankHolder: settings?.bankHolder ?? "", bankCvu: settings?.bankCvu ?? "", bankCuit: settings?.bankCuit ?? "", bankReservationHours: String(settings?.bankReservationHours ?? 24) };
 }

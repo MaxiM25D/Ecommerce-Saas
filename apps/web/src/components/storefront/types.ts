@@ -40,9 +40,13 @@ export type PublicStore = {
     fontFamily: string;
     borderRadius: string;
     announcement: string | null;
-    showPoweredBy: boolean;
     contactEmail: string | null;
     whatsapp: string | null;
+    instagramUrl: string | null;
+    facebookUrl: string | null;
+    tiktokUrl: string | null;
+    xUrl: string | null;
+    youtubeUrl: string | null;
     currency: string;
     shippingPolicy: string | null;
     returnPolicy: string | null;

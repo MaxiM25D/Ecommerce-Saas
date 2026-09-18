@@ -41,6 +41,11 @@ export type Store = {
     showPoweredBy: boolean;
     contactEmail: string | null;
     whatsapp: string | null;
+    instagramUrl: string | null;
+    facebookUrl: string | null;
+    tiktokUrl: string | null;
+    xUrl: string | null;
+    youtubeUrl: string | null;
     currency: string;
     bankName: string | null;
     bankAlias: string | null;

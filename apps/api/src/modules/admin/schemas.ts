@@ -12,6 +12,17 @@ const slug = z
   );
 const resourceId = z.string().trim().min(1).max(64);
 const optionalUrl = z.url().trim().max(2048).nullable().optional();
+const socialUrl = (hosts: string[], network: string) => z
+  .url()
+  .trim()
+  .max(2048)
+  .refine((value) => {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return url.protocol === "https:" && hosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
+  }, `Ingresá un enlace HTTPS válido de ${network}`)
+  .nullable()
+  .optional();
 
 export const resourceIdSchema = resourceId;
 
@@ -83,9 +94,13 @@ export const updateStoreSchema = z
     fontFamily: z.enum(["SYSTEM", "SERIF", "MODERN"]).optional(),
     borderRadius: z.enum(["SQUARE", "MEDIUM", "SOFT"]).optional(),
     announcement: z.string().trim().max(180).nullable().optional(),
-    showPoweredBy: z.boolean().optional(),
     contactEmail: z.email().trim().toLowerCase().max(254).nullable().optional(),
-    whatsapp: z.string().trim().max(30).nullable().optional(),
+    whatsapp: z.string().trim().regex(/^\+?[0-9 ()-]{8,30}$/, "Ingresá un WhatsApp válido con código de país").nullable().optional(),
+    instagramUrl: socialUrl(["instagram.com"], "Instagram"),
+    facebookUrl: socialUrl(["facebook.com", "fb.com"], "Facebook"),
+    tiktokUrl: socialUrl(["tiktok.com"], "TikTok"),
+    xUrl: socialUrl(["x.com", "twitter.com"], "X"),
+    youtubeUrl: socialUrl(["youtube.com", "youtu.be"], "YouTube"),
     currency: z.string().trim().toUpperCase().length(3).optional(),
     bankName: z.string().trim().max(100).nullable().optional(),
     bankAlias: z.string().trim().max(100).nullable().optional(),

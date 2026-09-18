@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import {
   ArrowUpRight,
   Mail,
@@ -47,6 +48,7 @@ function StorefrontChrome({
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { itemCount } = useCart();
+  const pathname = usePathname();
   const primaryColor = store.settings?.primaryColor ?? "#9A6B43";
   const secondaryColor = store.settings?.secondaryColor ?? "#292524";
   const radius =
@@ -61,6 +63,24 @@ function StorefrontChrome({
       : store.settings?.fontFamily === "MODERN"
         ? "Arial, sans-serif"
         : "inherit";
+  const whatsappDigits = store.settings?.whatsapp?.replace(/\D/g, "") ?? "";
+  const helpContext = pathname.includes("/checkout")
+    ? "necesito ayuda para completar mi compra"
+    : pathname.includes("/pedido") || pathname.includes("/mis-pedidos")
+      ? "necesito ayuda con mi pedido"
+      : pathname.includes("/producto/")
+        ? "quiero consultar por un producto"
+        : "quisiera hacer una consulta";
+  const whatsappUrl = whatsappDigits
+    ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(`Hola ${store.name}, ${helpContext}.`)}`
+    : "";
+  const socialLinks = [
+    { label: "Instagram", shortLabel: "IG", url: store.settings?.instagramUrl },
+    { label: "Facebook", shortLabel: "FB", url: store.settings?.facebookUrl },
+    { label: "TikTok", shortLabel: "TT", url: store.settings?.tiktokUrl },
+    { label: "X", shortLabel: "X", url: store.settings?.xUrl },
+    { label: "YouTube", shortLabel: "YT", url: store.settings?.youtubeUrl },
+  ].filter((social): social is { label: string; shortLabel: string; url: string } => Boolean(social.url));
 
   return (
     <div
@@ -123,6 +143,7 @@ function StorefrontChrome({
             >
               Mi cuenta
             </Link>
+            {whatsappUrl && <a className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:-translate-y-0.5 hover:bg-emerald-100" href={whatsappUrl} rel="noreferrer" target="_blank"><MessageCircle size={16} /> Ayuda</a>}
           </nav>
           <div className="flex items-center gap-2">
           <button
@@ -152,6 +173,7 @@ function StorefrontChrome({
             <Link className="block py-2 text-sm font-semibold" href={`/tienda/${store.slug}`} onClick={() => setMenuOpen(false)}>Inicio</Link>
             <Link className="block py-2 text-sm font-semibold" href={`/tienda/${store.slug}/productos`} onClick={() => setMenuOpen(false)}>Productos</Link>
             <Link className="block py-2 text-sm font-semibold" href={`/tienda/${store.slug}/mis-pedidos`} onClick={() => setMenuOpen(false)}>Mi cuenta</Link>
+            {whatsappUrl && <a className="mt-2 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-3 text-sm font-semibold text-emerald-800" href={whatsappUrl} rel="noreferrer" target="_blank"><MessageCircle size={17} /> Consultar por WhatsApp</a>}
           </nav>
         )}
       </header>
@@ -159,48 +181,20 @@ function StorefrontChrome({
       <div className="flex-1">{children}</div>
 
       <footer className="border-t border-stone-200 bg-[#171417] text-white">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-8 px-5 py-12 text-sm text-white/55 sm:flex-row sm:items-end lg:px-8">
-          <div>
-            <p className="text-xl font-semibold text-white">{store.name}</p>
-            {store.settings?.description && <p className="mt-2 max-w-md leading-6">{store.settings.description}</p>}
-            {store.settings?.showPoweredBy !== false && (
-              <Link
-                aria-label="Conocer InfinityShop"
-                className="group mt-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white/70 transition duration-300 hover:-translate-y-0.5 hover:border-[#A56ABD]/70 hover:bg-[#6E3482]/30 hover:text-white hover:shadow-[0_10px_30px_rgba(165,106,189,0.2)]"
-                href="/"
-              >
-                <span className="grid h-6 w-6 place-items-center overflow-hidden rounded-md bg-gradient-to-br from-[#A56ABD] to-[#49225B] shadow-sm transition duration-300 group-hover:rotate-12">
-                  <Image
-                    alt=""
-                    className="aspect-square h-6 w-6 object-contain"
-                    height={24}
-                    sizes="24px"
-                    src="/infinityshop-mark.png"
-                    width={24}
-                  />
-                </span>
-                <span>Creada con <strong className="font-bold text-white">InfinityShop</strong></span>
-                <ArrowUpRight className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" size={14} />
-              </Link>
-            )}
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 text-sm text-white/60 sm:grid-cols-2 lg:grid-cols-[1.6fr_.8fr_1fr_1fr] lg:px-8">
+          <div className="sm:col-span-2 lg:col-span-1">
+            <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/10 bg-cover bg-center font-bold text-white" style={store.settings?.logoUrl ? { backgroundImage: `url(${store.settings.logoUrl})` } : undefined}>{!store.settings?.logoUrl && store.name.slice(0, 1).toUpperCase()}</span><div><p className="text-xl font-semibold text-white">{store.name}</p><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Tienda online</p></div></div>
+            {store.settings?.description && <p className="mt-4 max-w-md leading-6">{store.settings.description}</p>}
+            <Link aria-label="Conocer InfinityShop" className="group mt-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white/70 transition duration-300 hover:-translate-y-0.5 hover:border-[#A56ABD]/70 hover:bg-[#6E3482]/30 hover:text-white" href="/"><span className="grid h-6 w-6 place-items-center overflow-hidden rounded-md bg-gradient-to-br from-[#A56ABD] to-[#49225B]"><Image alt="" className="h-6 w-6 object-contain" height={24} sizes="24px" src="/infinityshop-mark.png" width={24} /></span><span>Creada con <strong className="font-bold text-white">InfinityShop</strong></span><ArrowUpRight size={14} /></Link>
           </div>
-          <div className="flex flex-wrap gap-3">
-            {store.settings?.contactEmail && (
-              <a className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-white transition hover:bg-white hover:text-black" href={`mailto:${store.settings.contactEmail}`}><Mail size={15} /> Contacto</a>
-            )}
-            {store.settings?.whatsapp && (
-              <a
-                className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-white transition hover:bg-white hover:text-black"
-                href={`https://wa.me/${store.settings.whatsapp.replace(/\D/g, "")}`}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <MessageCircle size={15} /> WhatsApp <ArrowUpRight size={14} />
-              </a>
-            )}
-          </div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-white">Navegación</p><nav className="mt-4 grid gap-3"><Link className="transition hover:text-white" href={`/tienda/${store.slug}`}>Inicio</Link><Link className="transition hover:text-white" href={`/tienda/${store.slug}/productos`}>Productos</Link><Link className="transition hover:text-white" href={`/tienda/${store.slug}/mis-pedidos`}>Mis pedidos</Link><Link className="transition hover:text-white" href={`/tienda/${store.slug}/checkout`}>Finalizar compra</Link></nav></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-white">Contacto</p><div className="mt-4 grid gap-3">{store.settings?.contactEmail && <a className="inline-flex items-center gap-2 break-all transition hover:text-white" href={`mailto:${store.settings.contactEmail}`}><Mail className="shrink-0" size={15} /> {store.settings.contactEmail}</a>}{whatsappUrl && <a className="inline-flex items-center gap-2 font-semibold text-emerald-300 transition hover:text-emerald-200" href={whatsappUrl} rel="noreferrer" target="_blank"><MessageCircle className="shrink-0" size={16} /> Hablar por WhatsApp</a>}{!store.settings?.contactEmail && !whatsappUrl && <p>Consultá los canales disponibles en la información de tu pedido.</p>}</div></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-white">Seguinos</p>{socialLinks.length > 0 ? <div className="mt-4 flex flex-wrap gap-2">{socialLinks.map((social) => <a aria-label={`Abrir ${social.label} de ${store.name}`} className="grid h-10 min-w-10 place-items-center rounded-full border border-white/15 px-2 text-[11px] font-bold text-white transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white hover:text-stone-950" href={social.url} key={social.label} rel="noreferrer" target="_blank">{social.shortLabel}</a>)}</div> : <p className="mt-4 leading-6">Próximamente encontrarás acá nuestras redes.</p>}</div>
         </div>
+        <div className="border-t border-white/10"><div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-5 text-xs text-white/35 sm:flex-row sm:items-center sm:justify-between lg:px-8"><span>© {new Date().getFullYear()} {store.name}. Todos los derechos reservados.</span><span>Compra segura y atención directa del vendedor.</span></div></div>
       </footer>
+
+      {!cartOpen && whatsappUrl && <a aria-label={`Pedir ayuda a ${store.name} por WhatsApp`} className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3.5 text-sm font-bold text-white shadow-[0_14px_40px_rgba(37,211,102,.35)] transition hover:-translate-y-1 hover:bg-[#20bd5a] focus:outline-none focus:ring-4 focus:ring-emerald-200 sm:bottom-7 sm:right-7" href={whatsappUrl} rel="noreferrer" target="_blank"><MessageCircle size={21} /><span className="hidden sm:inline">¿Necesitás ayuda?</span></a>}
 
       <CartDrawer
         currency={store.settings?.currency ?? "ARS"}
@@ -208,6 +202,7 @@ function StorefrontChrome({
         open={cartOpen}
         primaryColor={primaryColor}
         storeSlug={store.slug}
+        whatsappUrl={whatsappUrl}
       />
     </div>
   );
@@ -219,12 +214,14 @@ function CartDrawer({
   open,
   primaryColor,
   storeSlug,
+  whatsappUrl,
 }: {
   currency: string;
   onClose: () => void;
   open: boolean;
   primaryColor: string;
   storeSlug: string;
+  whatsappUrl: string;
 }) {
   const { items, itemCount, subtotalInCents, removeItem, setQuantity, clear } = useCart();
   if (!open) return null;
@@ -348,6 +345,7 @@ function CartDrawer({
               <p className="mb-4 text-xs leading-5 text-stone-400">
                 El envío y los descuentos se calculan en el checkout.
               </p>
+              {whatsappUrl && <a className="mb-4 flex items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-5 py-3 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100" href={whatsappUrl} rel="noreferrer" target="_blank"><MessageCircle size={16} /> ¿Tenés una duda? Escribinos</a>}
               <Link
                 className="block w-full rounded-full px-5 py-3.5 text-center text-sm font-bold text-white"
                 href={`/tienda/${storeSlug}/checkout`}

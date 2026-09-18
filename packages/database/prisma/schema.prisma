@@ -421,6 +421,11 @@ model StoreSettings {
   showPoweredBy        Boolean  @default(true)
   contactEmail         String?
   whatsapp             String?
+  instagramUrl         String?
+  facebookUrl          String?
+  tiktokUrl            String?
+  xUrl                 String?
+  youtubeUrl           String?
   currency             String   @default("ARS")
   bankName             String?
   bankAlias            String?

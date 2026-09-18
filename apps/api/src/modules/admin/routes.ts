@@ -1261,7 +1261,6 @@ adminRouter.patch("/store", canManage, async (request, response) => {
     "fontFamily",
     "borderRadius",
     "announcement",
-    "showPoweredBy",
   ] as const;
   if (advancedKeys.some((key) => key in settings)) {
     const subscription = await database.subscription.findUnique({

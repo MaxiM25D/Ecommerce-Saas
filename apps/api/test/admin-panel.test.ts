@@ -200,11 +200,25 @@ test("configuración y dashboard pertenecen a la tienda de la sesión", async ()
     primaryColor: "#B89B72",
     contactEmail: "ventas@alpha.test",
     whatsapp: "+5491100000000",
+    instagramUrl: "https://instagram.com/alpha",
+    facebookUrl: "https://facebook.com/alpha",
+    tiktokUrl: "https://tiktok.com/@alpha",
+    xUrl: "https://x.com/alpha",
+    youtubeUrl: "https://youtube.com/@alpha",
     currency: "ars",
   });
   assert.equal(settings.status, 200);
   assert.equal(settings.body.store.name, "Alpha renovada");
   assert.equal(settings.body.store.settings.currency, "ARS");
+  assert.equal(settings.body.store.settings.instagramUrl, "https://instagram.com/alpha");
+
+  const publicStore = await request(app).get(`/api/storefront/${ownerSlug}`);
+  assert.equal(publicStore.status, 200);
+  assert.equal(publicStore.body.store.settings.youtubeUrl, "https://youtube.com/@alpha");
+  assert.equal(
+    (await ownerAgent.patch("/api/admin/store").send({ instagramUrl: "https://example.com/no-es-instagram" })).status,
+    400,
+  );
 
   const dashboard = await ownerAgent.get("/api/admin/dashboard");
   assert.equal(dashboard.status, 200);
