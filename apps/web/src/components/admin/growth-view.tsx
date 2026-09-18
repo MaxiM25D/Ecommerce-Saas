@@ -181,6 +181,8 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
   const pro = (feature: string) => data.features.includes(feature);
   const pickupLocations = data.pickupLocations ?? [];
   const shippingPreviewZones = selectShippingZones(data.shippingZones, shippingTestPostalCode);
+  const suggestedOriginPostalCode = pickupLocations.find(({ active, postalCode }) => active && postalCode)?.postalCode ?? "";
+  const hasAssistedShippingZones = data.shippingZones.some(({ name }) => name === "Entrega local" || name === "Resto del país");
 
   return (
     <div className={`${styles.surface} mx-auto max-w-7xl space-y-6`}>
@@ -454,6 +456,28 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
           </ol>
           <p className="mt-3 rounded-xl bg-white/80 p-3 text-xs leading-5"><strong>Importante:</strong> una zona sin códigos postales funciona como respaldo para “Resto del país”. Solo se usa cuando no existe una zona más específica. Podés pedir una tarifa al transportista, usar un promedio o sumar un margen de embalaje, y crear distintas zonas para reflejar distancias diferentes.</p>
         </div>
+        <div className="mt-5 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
+          <div className="flex items-start gap-3"><span className="rounded-xl bg-white p-2.5 text-[#6E3482] shadow-sm"><Truck size={18} /></span><div><h4 className="font-semibold">Configuración rápida recomendada</h4><p className="mt-1 text-xs leading-5 text-[#807384]">Tomamos el código postal del local cuando está disponible y preparamos una tarifa local más otra para el resto del país.</p></div></div>
+          {hasAssistedShippingZones ? <p className="mt-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">El asistente ya creó “Entrega local” o “Resto del país”. Revisá esas zonas debajo y tocá <strong>Publicar</strong> cuando estén listas.</p> : <form className={`${styles.form} mt-5`} onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            await mutate("/admin/growth/shipping-setup/assisted", { method: "POST", body: JSON.stringify({
+              originPostalCode: form.get("setupOriginPostalCode"),
+              localPriceInCents: Math.round(Number(form.get("setupLocalPrice")) * 100),
+              nationwidePriceInCents: Math.round(Number(form.get("setupNationwidePrice")) * 100),
+              localDaysMin: Number(form.get("setupLocalDaysMin")),
+              localDaysMax: Number(form.get("setupLocalDaysMax")),
+              nationwideDaysMin: Number(form.get("setupNationwideDaysMin")),
+              nationwideDaysMax: Number(form.get("setupNationwideDaysMax")),
+            }) });
+          }}>
+            <div className="sm:col-span-2"><Input name="setupOriginPostalCode" label="Código postal desde donde despachás" help={suggestedOriginPostalCode ? "Lo obtuvimos de tu punto de retiro. Podés corregirlo para este cálculo." : "No encontramos un código postal en tus puntos de retiro. Ingresalo manualmente."} placeholder="5300 o F5300ABC" defaultValue={suggestedOriginPostalCode} /></div>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3"><Input name="setupLocalPrice" label="Tarifa local estimada" help="Importe que cobrarás a compradores del mismo código postal." placeholder="3500" type="number" step="0.01" /><Input name="setupLocalDaysMin" label="Plazo local mínimo" placeholder="1" type="number" min={1} defaultValue="1" /><Input name="setupLocalDaysMax" label="Plazo local máximo" placeholder="3" type="number" min={1} defaultValue="3" /></div>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3"><Input name="setupNationwidePrice" label="Tarifa estimada para el resto del país" help="Es una tarifa manual de respaldo, no una cotización en vivo." placeholder="12000" type="number" step="0.01" /><Input name="setupNationwideDaysMin" label="Plazo nacional mínimo" placeholder="4" type="number" min={1} defaultValue="4" /><Input name="setupNationwideDaysMax" label="Plazo nacional máximo" placeholder="10" type="number" min={1} defaultValue="10" /></div>
+            <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><input className="mt-0.5 h-4 w-4 accent-[#6E3482]" required type="checkbox" /><span>Confirmo que revisé estas tarifas y plazos. Se crearán como <strong>borradores no publicados</strong> para poder revisar transportistas y seguimiento antes de activarlos.</span></label>
+            <div className={styles.footer}><Button disabled={!canManage}>Crear zonas como borrador</Button></div>
+          </form>}
+        </div>
         <form className={`${styles.form} mt-5`} onSubmit={async (event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
@@ -508,13 +532,13 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
             >
               <div className="flex flex-wrap justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2"><p className="font-semibold">{zone.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${zone.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{zone.active ? "Activa" : "Pausada"}</span></div>
+                  <div className="flex items-center gap-2"><p className="font-semibold">{zone.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${zone.active ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{zone.active ? "Publicada" : "No publicada"}</span></div>
                   <p className="text-xs text-stone-400">
                     {zone.postalPrefixes.join(", ") || "Todo el país"}
                   </p>
                 </div>
                 {canManage && (
-                  <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ active: !zone.active }) })}>{zone.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "DELETE" })}>Eliminar</button></div>
+                  <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ active: !zone.active }) })}>{zone.active ? "Pausar" : "Publicar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "DELETE" })}>Eliminar</button></div>
                 )}
               </div>
               {canManage && <details className="mt-4 border-t border-stone-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar zona</summary><form className={`${styles.form} mt-3`} onSubmit={async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("zoneName"), postalPrefixes: String(form.get("zonePrefixes") ?? "").split(",").map((value) => value.trim()).filter(Boolean) }) }); }}><Input name="zoneName" label="Nombre interno" placeholder="La Rioja capital" defaultValue={zone.name} /><Input name="zonePrefixes" label="Códigos postales o prefijos" help="Separalos con comas. Vacío significa Resto del país." placeholder="5300, 5301" defaultValue={zone.postalPrefixes.join(", ")} required={false} /><div className={styles.footer}><Button>Guardar zona</Button></div></form></details>}

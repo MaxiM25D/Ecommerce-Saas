@@ -102,6 +102,31 @@ const updateShippingZoneSchema = shippingZoneSchema.partial().refine(
   (input) => Object.keys(input).length > 0,
   "Enviá al menos un campo",
 );
+const assistedShippingSetupSchema = z
+  .object({
+    originPostalCode: z.string().trim().toUpperCase().regex(
+      /^(?:[A-Z]?\d{4}(?:[A-Z]{3})?)$/,
+      "Ingresá un código postal de 4 dígitos o un CPA válido",
+    ),
+    localPriceInCents: z.number().int().min(0).max(2_000_000_000),
+    nationwidePriceInCents: z.number().int().min(0).max(2_000_000_000),
+    localDaysMin: z.number().int().positive().max(365),
+    localDaysMax: z.number().int().positive().max(365),
+    nationwideDaysMin: z.number().int().positive().max(365),
+    nationwideDaysMax: z.number().int().positive().max(365),
+  })
+  .strict()
+  .refine(({ localDaysMin, localDaysMax }) => localDaysMin <= localDaysMax, {
+    message: "El plazo local mínimo no puede superar al máximo",
+    path: ["localDaysMax"],
+  })
+  .refine(
+    ({ nationwideDaysMin, nationwideDaysMax }) => nationwideDaysMin <= nationwideDaysMax,
+    {
+      message: "El plazo nacional mínimo no puede superar al máximo",
+      path: ["nationwideDaysMax"],
+    },
+  );
 const deliveryPoliciesSchema = z.object({
   shippingPolicy: z.string().trim().max(3000).nullable().optional(),
   returnPolicy: z.string().trim().max(3000).nullable().optional(),
@@ -511,6 +536,67 @@ growthRouter.post("/shipping-zones", canManage, async (request, response) => {
         data: { ...input, tenantId: tenant.id },
       }),
     });
+});
+
+growthRouter.post("/shipping-setup/assisted", canManage, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const input = assistedShippingSetupSchema.parse(request.body);
+  const numericPostalCode = input.originPostalCode.match(/\d{4}/)?.[0];
+  if (!numericPostalCode)
+    throw new HttpError(400, "No pudimos obtener el código postal de origen");
+
+  const created = await database.$transaction(async (transaction) => {
+    const reservedNames = ["Entrega local", "Resto del país"];
+    const existing = await transaction.shippingZone.findFirst({
+      where: { tenantId: tenant.id, name: { in: reservedNames } },
+      select: { name: true },
+    });
+    if (existing)
+      throw new HttpError(
+        409,
+        `Ya existe la zona “${existing.name}”. Editala o eliminála antes de volver a usar el asistente.`,
+      );
+
+    const localZone = await transaction.shippingZone.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Entrega local",
+        postalPrefixes: [numericPostalCode],
+        active: false,
+        methods: {
+          create: {
+            name: "Envío local",
+            priceInCents: input.localPriceInCents,
+            estimatedDaysMin: input.localDaysMin,
+            estimatedDaysMax: input.localDaysMax,
+            active: true,
+          },
+        },
+      },
+      include: { methods: true },
+    });
+    const nationwideZone = await transaction.shippingZone.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Resto del país",
+        postalPrefixes: [],
+        active: false,
+        methods: {
+          create: {
+            name: "Envío nacional",
+            priceInCents: input.nationwidePriceInCents,
+            estimatedDaysMin: input.nationwideDaysMin,
+            estimatedDaysMax: input.nationwideDaysMax,
+            active: true,
+          },
+        },
+      },
+      include: { methods: true },
+    });
+    return [localZone, nationwideZone];
+  });
+
+  response.status(201).json({ zones: created });
 });
 
 growthRouter.post(

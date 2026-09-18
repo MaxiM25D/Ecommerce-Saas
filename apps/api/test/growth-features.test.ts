@@ -70,6 +70,45 @@ after(async () => {
   await database.$disconnect();
 });
 
+test("el asistente crea zonas local y nacional como borradores seguros", async () => {
+  const setup = await agent
+    .post("/api/admin/growth/shipping-setup/assisted")
+    .send({
+      originPostalCode: "F5300ABC",
+      localPriceInCents: 350000,
+      nationwidePriceInCents: 1200000,
+      localDaysMin: 1,
+      localDaysMax: 3,
+      nationwideDaysMin: 4,
+      nationwideDaysMax: 10,
+    });
+  assert.equal(setup.status, 201);
+  assert.equal(setup.body.zones.length, 2);
+
+  const local = setup.body.zones.find(({ name }: { name: string }) => name === "Entrega local");
+  const nationwide = setup.body.zones.find(({ name }: { name: string }) => name === "Resto del país");
+  assert.deepEqual(local.postalPrefixes, ["5300"]);
+  assert.equal(local.active, false);
+  assert.equal(local.methods[0].priceInCents, 350000);
+  assert.equal(local.methods[0].active, true);
+  assert.deepEqual(nationwide.postalPrefixes, []);
+  assert.equal(nationwide.active, false);
+  assert.equal(nationwide.methods[0].priceInCents, 1200000);
+
+  const duplicate = await agent
+    .post("/api/admin/growth/shipping-setup/assisted")
+    .send({
+      originPostalCode: "5300",
+      localPriceInCents: 1,
+      nationwidePriceInCents: 1,
+      localDaysMin: 1,
+      localDaysMax: 1,
+      nationwideDaysMin: 1,
+      nationwideDaysMax: 1,
+    });
+  assert.equal(duplicate.status, 409);
+});
+
 test("PRO administra variantes, cupones y envíos sin aceptar tenantId", async () => {
   await agent
     .patch("/api/admin/store")
