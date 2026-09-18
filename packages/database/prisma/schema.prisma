@@ -558,6 +558,7 @@ model Order {
   paymentAttempts              PaymentAttempt[]
   paymentReceipt               PaymentReceipt?
   shipment                     Shipment?
+  notificationLogs             NotificationLog[]
   statusHistory                OrderStatusHistory[]
   createdAt                    DateTime             @default(now())
   updatedAt                    DateTime             @updatedAt
@@ -821,6 +822,7 @@ model NotificationRule {
 model NotificationLog {
   id            String             @id @default(cuid())
   tenantId      String
+  orderId       String?
   event         NotificationEvent
   recipient     String
   subject       String             @default("")
@@ -833,10 +835,12 @@ model NotificationLog {
   error         String?
   sentAt        DateTime?
   tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order         Order?             @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
   @@index([tenantId, event, createdAt])
+  @@index([tenantId, orderId, createdAt])
   @@index([status, nextAttemptAt])
 }
 

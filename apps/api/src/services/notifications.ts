@@ -12,17 +12,18 @@ const defaults: Record<NotificationEvent, { subject: (store: string) => string; 
   CART_ABANDONED: { subject: (store) => `Tu carrito te espera en ${store}`, message: "Guardamos los productos que elegiste para que puedas completar tu compra." },
 };
 
-export async function dispatchTenantNotification(input: { tenantId: string; event: NotificationEvent; recipient: string; actionUrl: string }): Promise<void> {
+export async function dispatchTenantNotification(input: { tenantId: string; event: NotificationEvent; recipient: string; actionUrl: string; orderId?: string }): Promise<{ id: string } | null> {
   const tenant = await database.tenant.findUnique({
     where: { id: input.tenantId },
     include: { notificationRules: { where: { event: input.event } } },
   });
-  if (!tenant) return;
+  if (!tenant) return null;
   const rule = tenant.notificationRules[0];
-  if (rule && !rule.active) return;
-  await database.notificationLog.create({
+  if (rule && !rule.active) return null;
+  return database.notificationLog.create({
     data: {
       tenantId: input.tenantId,
+      orderId: input.orderId,
       event: input.event,
       recipient: input.recipient,
       subject: rule?.subject ?? defaults[input.event].subject(tenant.name),
@@ -31,6 +32,7 @@ export async function dispatchTenantNotification(input: { tenantId: string; even
       status: "PENDING",
       nextAttemptAt: new Date(),
     },
+    select: { id: true },
   });
 }
 

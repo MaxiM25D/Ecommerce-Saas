@@ -123,6 +123,45 @@ export async function syncDemoStore(transaction: Prisma.TransactionClient, tenan
     },
   });
 
+  const shippingZone = await transaction.shippingZone.upsert({
+    where: { tenantId_name: { tenantId, name: "Argentina" } },
+    update: { active: true },
+    create: { tenantId, name: "Argentina", postalPrefixes: [], active: true },
+  });
+  const demoShippingMethods = [
+    {
+      name: "Envío estándar",
+      priceInCents: 650_000,
+      estimatedDaysMin: 3,
+      estimatedDaysMax: 6,
+      freeShippingThresholdInCents: 12_000_000,
+      carrierCode: "CORREO_ARGENTINO",
+      carrierName: "Correo Argentino",
+      trackingUrlTemplate: "https://www.correoargentino.com.ar/seguimiento",
+    },
+    {
+      name: "Envío prioritario",
+      priceInCents: 1_050_000,
+      estimatedDaysMin: 1,
+      estimatedDaysMax: 3,
+      freeShippingThresholdInCents: null,
+      carrierCode: "ANDREANI",
+      carrierName: "Andreani",
+      trackingUrlTemplate: "https://www.andreani.com/",
+    },
+  ] as const;
+  for (const method of demoShippingMethods) {
+    const existing = await transaction.shippingMethod.findFirst({
+      where: { tenantId, shippingZoneId: shippingZone.id, name: method.name },
+      select: { id: true },
+    });
+    if (existing) {
+      await transaction.shippingMethod.update({ where: { id: existing.id }, data: { ...method, active: true } });
+    } else {
+      await transaction.shippingMethod.create({ data: { tenantId, shippingZoneId: shippingZone.id, ...method, active: true } });
+    }
+  }
+
   const categories = new Map<string, string>();
   for (const category of DEMO_CATEGORIES) {
     const savedCategory = await transaction.category.upsert({

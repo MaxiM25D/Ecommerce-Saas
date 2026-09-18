@@ -45,6 +45,11 @@ export const checkoutSchema = z
         lastName: z.string().trim().min(2).max(80),
         phone: z.string().trim().min(6).max(30),
         shippingAddress: z.string().trim().min(8).max(500).nullable().optional(),
+        street: z.string().trim().min(2).max(120).nullable().optional(),
+        streetNumber: z.string().trim().min(1).max(20).nullable().optional(),
+        apartment: z.string().trim().max(60).nullable().optional(),
+        city: z.string().trim().min(2).max(100).nullable().optional(),
+        province: z.string().trim().min(2).max(100).nullable().optional(),
         postalCode: z.string().trim().min(2).max(12).nullable().optional(),
         notes: z.string().trim().max(1000).nullable().optional(),
       })
@@ -78,8 +83,14 @@ export const checkoutSchema = z
   })
   .strict()
   .superRefine((input, context) => {
-    if (input.fulfillmentType === "DELIVERY" && !input.customer.shippingAddress) {
-      context.addIssue({ code: "custom", path: ["customer", "shippingAddress"], message: "Ingresá la dirección de entrega" });
+    const hasStructuredAddress = Boolean(
+      input.customer.street &&
+      input.customer.streetNumber &&
+      input.customer.city &&
+      input.customer.province,
+    );
+    if (input.fulfillmentType === "DELIVERY" && !input.customer.shippingAddress && !hasStructuredAddress) {
+      context.addIssue({ code: "custom", path: ["customer", "street"], message: "Completá calle, número, localidad y provincia" });
     }
     if (input.fulfillmentType === "DELIVERY" && !input.customer.postalCode) {
       context.addIssue({ code: "custom", path: ["customer", "postalCode"], message: "Ingresá el código postal" });

@@ -29,6 +29,14 @@ function paymentLabel(status: string, hasReceipt: boolean) {
   }
   return paymentLabels[status] ?? status;
 }
+function notificationStatusLabel(status: string) {
+  return ({
+    PENDING: "Pendiente de envío",
+    SENDING: "Enviando",
+    SENT: "Enviado",
+    FAILED: "No se pudo enviar",
+  } as Record<string, string>)[status] ?? status;
+}
 const nextStatus: Record<string, { status: string; label: string } | undefined> = {
   CONFIRMED: { status: "PREPARING", label: "Empezar preparación" },
   SHIPPED: { status: "DELIVERED", label: "Marcar como entregado" },
@@ -41,6 +49,7 @@ export function OrdersView({ role }: { role: Role }) {
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [selected, setSelected] = useState<OrderDetail | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -65,8 +74,40 @@ export function OrdersView({ role }: { role: Role }) {
   }, [selected]);
   async function open(orderId: string) {
     setError("");
+    setNotice("");
     try { const response = await apiRequest<{ order: OrderDetail }>(`/admin/orders/${orderId}`); setSelected(response.order); }
     catch (caught) { setError(caught instanceof ApiError ? caught.message : "No se pudo abrir el pedido"); }
+  }
+
+  async function updateContactAndResend(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await apiRequest<{
+        customerEmail: string;
+        notification: OrderDetail["notificationLogs"][number] | null;
+      }>(`/admin/orders/${selected.id}/contact-and-resend`, {
+        method: "PATCH",
+        body: JSON.stringify({ email: form.get("email") }),
+      });
+      setSelected({
+        ...selected,
+        customerEmail: response.customerEmail,
+        notificationLogs: response.notification
+          ? [response.notification, ...(selected.notificationLogs ?? [])]
+          : selected.notificationLogs ?? [],
+      });
+      setNotice("Email guardado. La confirmación quedó lista para enviarse.");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "No se pudo guardar y reenviar la confirmación");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function update(body: { status?: string; paymentStatus?: string }) {
@@ -75,7 +116,7 @@ export function OrdersView({ role }: { role: Role }) {
     setError("");
     try {
       const response = await apiRequest<{ order: OrderDetail }>(`/admin/orders/${selected.id}`, { method: "PATCH", body: JSON.stringify(body) });
-      setSelected(response.order);
+      setSelected({ ...response.order, notificationLogs: response.order.notificationLogs ?? selected.notificationLogs });
       await load();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "No se pudo actualizar el pedido");
@@ -103,7 +144,7 @@ export function OrdersView({ role }: { role: Role }) {
           estimatedDelivery: form.get("estimatedDelivery") || null,
         }),
       });
-      setSelected(response.order);
+      setSelected({ ...response.order, notificationLogs: response.order.notificationLogs ?? selected.notificationLogs });
       if (!response.notification.sent) setError("El pedido fue despachado, pero el correo no pudo enviarse. Podés reintentarlo.");
       await load();
     } catch (caught) {
@@ -190,6 +231,23 @@ export function OrdersView({ role }: { role: Role }) {
                   <Detail label="Teléfono del local" value={selected.pickupPhone ?? "—"} />
                 </>}
               </dl>
+              {canManage && (
+                <details className="mt-5 rounded-xl border border-[#e6dfe8] bg-white p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-[#6E3482]">Corregir email y reenviar confirmación</summary>
+                  <form className="mt-4 flex flex-col gap-3 sm:flex-row" onSubmit={updateContactAndResend}>
+                    <label className="min-w-0 flex-1 text-xs font-semibold text-[#66586a]">Email del pedido<input className="control mt-1.5" defaultValue={selected.customerEmail} name="email" required type="email" /></label>
+                    <button className="self-end rounded-xl bg-[#49225B] px-4 py-3 text-xs font-bold text-white disabled:opacity-50" disabled={busy} type="submit">{busy ? "Guardando…" : "Guardar y reenviar"}</button>
+                  </form>
+                  <p className="mt-2 text-xs leading-5 text-[#918495]">El cambio se aplica a este pedido y genera un nuevo enlace seguro de seguimiento.</p>
+                </details>
+              )}
+              {selected.notificationLogs?.length > 0 && (
+                <div className="mt-4 rounded-xl bg-[#fbf8fc] px-4 py-3 text-xs text-[#66586a]">
+                  <strong className="text-[#382d3b]">Último email de confirmación</strong>
+                  <p className="mt-1">{notificationStatusLabel(selected.notificationLogs[0]!.status)} · {selected.notificationLogs[0]!.recipient}</p>
+                  {selected.notificationLogs[0]!.error && <p className="mt-1 text-red-700">{selected.notificationLogs[0]!.error}</p>}
+                </div>
+              )}
               {selected.fulfillmentType === "PICKUP" && selected.pickupInstructions && <p className="mt-4 rounded-xl bg-[#fbf8fc] px-4 py-3 text-xs leading-5 text-[#66586a]"><strong>Indicaciones:</strong> {selected.pickupInstructions}</p>}
               {selected.fulfillmentType === "PICKUP" && selected.pickupMapsUrl && <a className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#6E3482] underline" href={selected.pickupMapsUrl} target="_blank" rel="noreferrer">Abrir ubicación en Google Maps ↗</a>}
               {selected.fulfillmentType === "DELIVERY" && (selected.shippingPolicySnapshot || selected.returnPolicySnapshot) && <div className="mt-4 space-y-3 rounded-xl bg-[#fbf8fc] px-4 py-3 text-xs leading-5 text-[#66586a]">{selected.shippingPolicySnapshot && <p><strong>Política de entrega:</strong> {selected.shippingPolicySnapshot}</p>}{selected.returnPolicySnapshot && <p><strong>Cambios y devoluciones:</strong> {selected.returnPolicySnapshot}</p>}</div>}
@@ -243,6 +301,7 @@ export function OrdersView({ role }: { role: Role }) {
                 ))}
               </ol>
             </Section>
+            {notice && <p className="mt-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p>}
             {error && <p className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
             {canManage && (
               <section className="mt-8 space-y-3 border-t border-stone-200 pt-6">

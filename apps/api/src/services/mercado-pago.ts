@@ -450,6 +450,7 @@ export async function processMercadoPagoWebhook(
       event: "ORDER_PAID",
       recipient: attempt.order.customerEmail,
       actionUrl: `/tienda/${attempt.order.tenant.slug}/pedido/${attempt.orderId}`,
+      orderId: attempt.orderId,
     });
   }
 

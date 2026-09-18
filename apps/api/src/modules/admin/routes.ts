@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { Router } from "express";
 import multer from "multer";
 
@@ -6,6 +8,7 @@ import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { getBillingOverview } from "../../services/saas-billing.js";
 import { dispatchTenantNotification } from "../../services/notifications.js";
+import { hashOpaqueToken } from "../../services/secret-vault.js";
 import {
   getAuthContext,
   requireRoles,
@@ -29,6 +32,7 @@ import {
   updateCategorySchema,
   updateProductSchema,
   updateOrderSchema,
+  updateOrderContactSchema,
   updateMemberSchema,
   updateStoreSchema,
 } from "./schemas.js";
@@ -563,11 +567,68 @@ adminRouter.get("/orders/:id", async (request, response) => {
         orderBy: { createdAt: "asc" },
         select: { id: true, status: true, note: true, createdAt: true },
       },
+      notificationLogs: {
+        where: { event: "ORDER_CREATED" },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: { id: true, recipient: true, status: true, attempts: true, error: true, sentAt: true, createdAt: true },
+      },
     },
   });
   if (!order) throw new HttpError(404, "Pedido no encontrado");
   response.json({ order });
 });
+
+adminRouter.patch(
+  "/orders/:id/contact-and-resend",
+  canManage,
+  async (request, response) => {
+    const { tenant, user } = getAuthContext(request);
+    const id = resourceIdSchema.parse(request.params.id);
+    const input = updateOrderContactSchema.parse(request.body);
+    const publicToken = randomBytes(32).toString("base64url");
+    const order = await database.$transaction(async (transaction) => {
+      const current = await transaction.order.findFirst({
+        where: { id, tenantId: tenant.id },
+        select: { id: true, number: true, status: true, customerEmail: true },
+      });
+      if (!current) throw new HttpError(404, "Pedido no encontrado");
+      await transaction.order.update({
+        where: { id },
+        data: {
+          customerEmail: input.email,
+          publicTokenHash: hashOpaqueToken(publicToken),
+        },
+      });
+      await transaction.orderStatusHistory.create({
+        data: {
+          tenantId: tenant.id,
+          orderId: id,
+          status: current.status,
+          changedByUserId: user.id,
+          note: current.customerEmail === input.email
+            ? "Confirmación de compra reenviada"
+            : "Email de contacto corregido y confirmación reenviada",
+        },
+      });
+      return current;
+    });
+    const notification = await dispatchTenantNotification({
+      tenantId: tenant.id,
+      orderId: id,
+      event: "ORDER_CREATED",
+      recipient: input.email,
+      actionUrl: `/tienda/${tenant.slug}/pedido/${id}?token=${encodeURIComponent(publicToken)}`,
+    });
+    response.json({
+      customerEmail: input.email,
+      notification: notification
+        ? { id: notification.id, recipient: input.email, status: "PENDING", attempts: 0, error: null, sentAt: null, createdAt: new Date().toISOString() }
+        : null,
+      orderNumber: order.number,
+    });
+  },
+);
 
 const orderTransitions: Record<string, string[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
@@ -767,6 +828,7 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
       event: "ORDER_PAID",
       recipient: order.customerEmail,
       actionUrl: `/tienda/${tenant.slug}/pedido/${order.id}`,
+      orderId: order.id,
     });
   }
   if (pickupBecameReady) {
@@ -775,6 +837,7 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
       event: "ORDER_READY_FOR_PICKUP",
       recipient: order.customerEmail,
       actionUrl: `/tienda/${tenant.slug}/pedido/${order.id}`,
+      orderId: order.id,
     });
   }
 

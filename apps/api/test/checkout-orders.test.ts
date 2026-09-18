@@ -17,6 +17,7 @@ const otherAgent = request.agent(app);
 let productId = "";
 let orderId = "";
 let orderToken = "";
+let shippingMethodId = "";
 
 async function cleanup(): Promise<void> {
   const tenants = await database.tenant.findMany({
@@ -65,6 +66,20 @@ before(async () => {
     },
   });
   productId = product.id;
+  const zone = await database.shippingZone.create({
+    data: { tenantId: tenant.id, name: "Todo el país", postalPrefixes: [] },
+  });
+  const method = await database.shippingMethod.create({
+    data: {
+      tenantId: tenant.id,
+      shippingZoneId: zone.id,
+      name: "Envío estándar",
+      priceInCents: 0,
+      estimatedDaysMin: 2,
+      estimatedDaysMax: 5,
+    },
+  });
+  shippingMethodId = method.id;
   await ownerAgent.patch("/api/admin/store").send({
     bankName: "Banco Demo",
     bankAlias: "INFINITY.DEMO",
@@ -85,12 +100,17 @@ test("checkout copia precios y productos y descuenta stock", async () => {
       firstName: "María",
       lastName: "Cliente",
       phone: "+54 9 11 1234 5678",
-      shippingAddress: "Av. Siempre Viva 742, Buenos Aires",
+      street: "Av. Siempre Viva",
+      streetNumber: "742",
+      apartment: "2° B",
+      city: "Springfield",
+      province: "Buenos Aires",
       postalCode: "1000",
       notes: "Entregar por la tarde",
     },
     items: [{ productId, quantity: 2 }],
     paymentMethod: "BANK_TRANSFER",
+    shippingMethodId,
   });
 
   assert.equal(response.status, 201);
@@ -106,7 +126,7 @@ test("checkout copia precios y productos y descuenta stock", async () => {
   assert.equal(product.stock, 3);
   assert.equal(order.items[0]!.productName, "Producto Checkout");
   assert.equal(order.items[0]!.unitPriceInCents, 123400);
-  assert.equal(order.shippingAddress, "Av. Siempre Viva 742, Buenos Aires");
+  assert.equal(order.shippingAddress, "Av. Siempre Viva 742, 2° B, Springfield, Buenos Aires");
   const notification = await database.notificationLog.findFirstOrThrow({ where: { tenantId: order.tenantId, event: "ORDER_CREATED", recipient: "comprador@checkout.test" } });
   assert.equal(notification.status, "PENDING");
   assert.equal(notification.attempts, 0);
@@ -140,6 +160,7 @@ test("stock insuficiente revierte el pedido completo", async () => {
       postalCode: "1000",
     },
     items: [{ productId, quantity: 99 }],
+    shippingMethodId,
   });
 
   assert.equal(response.status, 409);
@@ -189,4 +210,27 @@ test("el panel administra estados y una cancelación repone stock una sola vez",
   ]);
   assert.ok(cancellations.every(({ status }) => status === 200));
   assert.equal((await database.product.findUniqueOrThrow({ where: { id: productId } })).stock, 5);
+});
+
+test("el vendedor puede corregir el email y reenviar la confirmación", async () => {
+  assert.equal(
+    (await otherAgent.patch(`/api/admin/orders/${orderId}/contact-and-resend`).send({ email: "correcto@checkout.test" })).status,
+    404,
+  );
+  assert.equal(
+    (await ownerAgent.patch(`/api/admin/orders/${orderId}/contact-and-resend`).send({ email: "correo-invalido" })).status,
+    400,
+  );
+  const corrected = await ownerAgent
+    .patch(`/api/admin/orders/${orderId}/contact-and-resend`)
+    .send({ email: "correcto@checkout.test" });
+  assert.equal(corrected.status, 200);
+  assert.equal(corrected.body.customerEmail, "correcto@checkout.test");
+  assert.equal(corrected.body.notification.status, "PENDING");
+
+  const detail = await ownerAgent.get(`/api/admin/orders/${orderId}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.order.customerEmail, "correcto@checkout.test");
+  assert.equal(detail.body.order.notificationLogs[0].recipient, "correcto@checkout.test");
+  assert.match(detail.body.order.statusHistory.at(-1).note, /Email de contacto corregido/);
 });

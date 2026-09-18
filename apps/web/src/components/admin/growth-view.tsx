@@ -694,6 +694,9 @@ function ShippingMethodForm({
   disabled?: boolean;
   onSubmit: (payload: Record<string, unknown>, form: HTMLFormElement) => Promise<void>;
 }) {
+  const [offersFreeShipping, setOffersFreeShipping] = useState(
+    Boolean(defaults?.freeShippingThresholdInCents),
+  );
   return <form className={`${styles.form} mt-4`} onSubmit={async (event) => {
     event.preventDefault();
     const element = event.currentTarget;
@@ -706,7 +709,9 @@ function ShippingMethodForm({
       priceInCents: Math.round(Number(form.get("methodPrice")) * 100),
       estimatedDaysMin: Number(form.get("estimatedDaysMin")),
       estimatedDaysMax: Number(form.get("estimatedDaysMax")),
-      freeShippingThresholdInCents: form.get("freeShippingThreshold") ? Math.round(Number(form.get("freeShippingThreshold")) * 100) : null,
+      freeShippingThresholdInCents: offersFreeShipping && form.get("freeShippingThreshold")
+        ? Math.round(Number(form.get("freeShippingThreshold")) * 100)
+        : null,
       carrierCode,
       carrierName: String(form.get("carrierName") || "").trim() || preset?.name || "Otro transportista",
       trackingUrlTemplate: customTrackingUrl || preset?.trackingUrlTemplate || null,
@@ -714,7 +719,11 @@ function ShippingMethodForm({
   }}>
     <Input name="methodName" label="Nombre del método" help="Es la opción que verá el comprador." placeholder="Envío estándar" defaultValue={defaults?.name} />
     <div className="grid gap-4 sm:grid-cols-3"><Input name="methodPrice" label="Costo en pesos" help="Usá 0 para un envío siempre gratis." placeholder="3500" type="number" step="0.01" defaultValue={defaults ? String(defaults.priceInCents / 100) : undefined} /><Input name="estimatedDaysMin" label="Plazo mínimo (días hábiles)" placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Plazo máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
-    <Input name="freeShippingThreshold" label="Envío gratis desde (opcional)" help="Se evalúa sobre los productos después de descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} required={false} />
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-[#e6dfe8] bg-[#fbf8fc] p-4">
+      <span><strong className="block text-sm text-[#382d3b]">Ofrecer envío gratis</strong><span className="mt-1 block text-xs leading-5 text-[#807384]">Activá esta opción para bonificar el envío cuando la compra alcance un monto mínimo.</span></span>
+      <input aria-label="Ofrecer envío gratis" checked={offersFreeShipping} className="h-5 w-5 accent-[#6E3482]" onChange={(event) => setOffersFreeShipping(event.target.checked)} type="checkbox" />
+    </label>
+    {offersFreeShipping && <Input name="freeShippingThreshold" label="Compra mínima para envío gratis" help="Se calcula sobre los productos después de aplicar descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} />}
     <Field label="Transportista" help="Al despachar, se completa automáticamente junto con su página oficial de seguimiento." example="Ejemplo: Correo Argentino"><select defaultValue={defaults?.carrierCode ?? "CORREO_ARGENTINO"} name="carrierCode"><option value="CORREO_ARGENTINO">Correo Argentino</option><option value="ANDREANI">Andreani</option><option value="OCA">OCA</option><option value="VIA_CARGO">Vía Cargo</option><option value="CUSTOM">Otro / mensajería propia</option></select></Field>
     <Input name="carrierName" label="Nombre personalizado del transportista (opcional)" help="Completalo solo si elegiste Otro o querés cambiar el nombre visible." placeholder="Moto Express" defaultValue={defaults?.carrierName ?? undefined} required={false} />
     <Input name="trackingUrlTemplate" label="URL de seguimiento personalizada (opcional)" help="Usá {code} donde debe insertarse el código. Si elegís una empresa conocida podés dejarla vacía." placeholder="https://envios.ejemplo.com/seguimiento/{code}" defaultValue={defaults?.trackingUrlTemplate ?? undefined} required={false} />

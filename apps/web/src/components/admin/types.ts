@@ -106,6 +106,15 @@ export type OrderDetail = OrderSummary & {
     notificationAttempts: number;
     notificationError: string | null;
   } | null;
+  notificationLogs: Array<{
+    id: string;
+    recipient: string;
+    status: string;
+    attempts: number;
+    error: string | null;
+    sentAt: string | null;
+    createdAt: string;
+  }>;
   statusHistory: Array<{
     id: string;
     status: string;

@@ -938,6 +938,11 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
           : null;
         if (input.fulfillmentType === "PICKUP" && !pickupLocation)
           throw new HttpError(409, "El punto de retiro ya no está disponible");
+        if (input.fulfillmentType === "DELIVERY" && !input.shippingMethodId)
+          throw new HttpError(
+            409,
+            "Elegí un método de envío para conocer el costo antes de pagar",
+          );
         const shipping = input.fulfillmentType === "DELIVERY" && input.shippingMethodId
           ? await transaction.shippingMethod.findFirst({
               where: {
@@ -971,6 +976,14 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
         const shippingInCents = input.fulfillmentType === "DELIVERY"
           ? qualifiesForFreeShipping ? 0 : shipping?.priceInCents ?? 0
           : 0;
+        const shippingAddress = input.fulfillmentType === "DELIVERY"
+          ? input.customer.shippingAddress ?? [
+              `${input.customer.street} ${input.customer.streetNumber}`,
+              input.customer.apartment,
+              input.customer.city,
+              input.customer.province,
+            ].filter(Boolean).join(", ")
+          : null;
         const totalInCents = Math.max(
           0,
           subtotalInCents - discountInCents + shippingInCents,
@@ -998,7 +1011,7 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             customerEmail: customer.email,
             customerName: `${customer.firstName} ${customer.lastName}`,
             customerPhone: customer.phone,
-            shippingAddress: input.fulfillmentType === "DELIVERY" ? input.customer.shippingAddress : null,
+            shippingAddress,
             notes: input.customer.notes ?? null,
             currency: tenant.settings?.currency ?? "ARS",
             subtotalInCents,
@@ -1105,6 +1118,7 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
     event: "ORDER_CREATED",
     recipient: input.customer.email,
     actionUrl: `/tienda/${slug}/pedido/${result.order.id}?token=${encodeURIComponent(publicToken)}`,
+    orderId: result.order.id,
   });
   const mercadoPago =
     result.payment.method === "MERCADO_PAGO"

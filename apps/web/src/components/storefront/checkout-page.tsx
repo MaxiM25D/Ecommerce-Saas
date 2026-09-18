@@ -62,11 +62,20 @@ function Checkout({ store }: { store: PublicStore }) {
   const [result, setResult] = useState<CheckoutResult | null>(null);
   const [couponCode, setCouponCode] = useState("");
   const [discountInCents, setDiscountInCents] = useState(0);
-  const [shippingMethodId, setShippingMethodId] = useState("");
-  const [fulfillmentType, setFulfillmentType] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
+  const deliveryAvailable = store.shippingZones.some((zone) => zone.methods.length > 0);
+  const [shippingMethodId, setShippingMethodId] = useState(
+    store.shippingZones.flatMap((zone) => zone.methods)[0]?.id ?? "",
+  );
+  const [fulfillmentType, setFulfillmentType] = useState<"DELIVERY" | "PICKUP">(
+    deliveryAvailable ? "DELIVERY" : pickupLocations.length > 0 ? "PICKUP" : "DELIVERY",
+  );
   const [pickupLocationId, setPickupLocationId] = useState(pickupLocations[0]?.id ?? "");
   const [postalCode, setPostalCode] = useState("");
-  const [shippingAddress, setShippingAddress] = useState("");
+  const [street, setStreet] = useState("");
+  const [streetNumber, setStreetNumber] = useState("");
+  const [apartment, setApartment] = useState("");
+  const [city, setCity] = useState("");
+  const [province, setProvince] = useState("");
   const [savedCartEmail, setSavedCartEmail] = useState("");
   const [customer, setCustomer] = useState<StorefrontCustomer | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState("");
@@ -98,6 +107,12 @@ function Checkout({ store }: { store: PublicStore }) {
     [postalCode, shippingMethods],
   );
   const selectedShippingMethod = shippingMethods.find(({ id }) => id === shippingMethodId);
+  const shippingAddress = [
+    [street, streetNumber].filter(Boolean).join(" "),
+    apartment,
+    city,
+    province,
+  ].filter(Boolean).join(", ");
   const merchandiseAfterDiscount = Math.max(0, subtotalInCents - discountInCents);
   const hasFreeShipping = Boolean(selectedShippingMethod?.freeShippingThresholdInCents && merchandiseAfterDiscount >= selectedShippingMethod.freeShippingThresholdInCents);
   const shippingInCents = fulfillmentType === "DELIVERY"
@@ -128,17 +143,24 @@ function Checkout({ store }: { store: PublicStore }) {
 
   function updatePostalCode(value: string) {
     setPostalCode(value);
+    const normalized = value.replace(/\s+/g, "").toUpperCase();
+    const available = shippingMethods.filter(
+      (method) =>
+        method.postalPrefixes.length === 0 ||
+        !normalized ||
+        method.postalPrefixes.some((prefix) =>
+          normalized.startsWith(prefix.replace(/\s+/g, "").toUpperCase()),
+        ),
+    );
     const selectedMethod = shippingMethods.find(
       ({ id }) => id === shippingMethodId,
     );
     if (
       selectedMethod &&
       selectedMethod.postalPrefixes.length > 0 &&
-      !selectedMethod.postalPrefixes.some((prefix) =>
-        value.replace(/\s+/g, "").toUpperCase().startsWith(prefix.replace(/\s+/g, "").toUpperCase()),
-      )
+      !selectedMethod.postalPrefixes.some((prefix) => normalized.startsWith(prefix.replace(/\s+/g, "").toUpperCase()))
     )
-      setShippingMethodId("");
+      setShippingMethodId(available[0]?.id ?? "");
   }
 
   async function applyCoupon() {
@@ -183,6 +205,11 @@ function Checkout({ store }: { store: PublicStore }) {
     setBusy(true);
     setError("");
     const form = new FormData(event.currentTarget);
+    if (!customer && form.get("email") !== form.get("confirmEmail")) {
+      setError("Los emails no coinciden. Revisalos antes de continuar.");
+      setBusy(false);
+      return;
+    }
     try {
       const response = await apiRequest<CheckoutResult>(
         `/storefront/${store.slug}/orders`,
@@ -197,7 +224,11 @@ function Checkout({ store }: { store: PublicStore }) {
               firstName: form.get("firstName"),
               lastName: form.get("lastName"),
               phone: form.get("phone"),
-              shippingAddress: form.get("shippingAddress"),
+              street: form.get("street") || null,
+              streetNumber: form.get("streetNumber") || null,
+              apartment: form.get("apartment") || null,
+              city: form.get("city") || null,
+              province: form.get("province") || null,
               postalCode: form.get("postalCode") || null,
               notes: form.get("notes") || null,
             },
@@ -305,18 +336,33 @@ function Checkout({ store }: { store: PublicStore }) {
                     onBlur={(value) => void saveAbandonedCart(value)}
                     readOnly={Boolean(customer)}
                   />
+                  {!customer && (
+                    <CheckoutField
+                      label="Confirmá tu email"
+                      name="confirmEmail"
+                      type="email"
+                    />
+                  )}
                   <CheckoutField label="Teléfono" name="phone" />
                 </div>
               </FormCard>
               <FormCard description="Elegí la alternativa que te resulte más cómoda." step="02" title="Cómo querés recibir tu compra">
                 <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${fulfillmentType === "DELIVERY" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} onClick={() => { setFulfillmentType("DELIVERY"); setPickupLocationId(""); }} type="button"><Truck className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Envío a domicilio</strong><span className="mt-1 block text-xs leading-5 text-stone-500">Recibí la compra en la dirección que indiques.</span></span></button>
+                    <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${fulfillmentType === "DELIVERY" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} disabled={!deliveryAvailable} onClick={() => { setFulfillmentType("DELIVERY"); setPickupLocationId(""); }} type="button"><Truck className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Envío a domicilio</strong><span className="mt-1 block text-xs leading-5 text-stone-500">{deliveryAvailable ? "Consultá opciones, precio y plazo antes de pagar." : "La tienda todavía no configuró entregas a domicilio."}</span></span></button>
                     {pickupLocations.length > 0 && <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${fulfillmentType === "PICKUP" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} onClick={() => { setFulfillmentType("PICKUP"); setShippingMethodId(""); setPickupLocationId(pickupLocations[0]?.id ?? ""); }} type="button"><Store className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Retiro en local</strong><span className="mt-1 block text-xs leading-5 text-stone-500">Sin costo de envío. Te avisamos cuando esté listo.</span></span></button>}
                   </div>
                   {fulfillmentType === "DELIVERY" ? <>
-                    <TextArea label="Dirección completa" name="shippingAddress" onChange={setShippingAddress} placeholder="Calle, número, piso, localidad y provincia" required />
-                    <CheckoutField label="Código postal" name="postalCode" onChange={updatePostalCode} required />
+                    <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(7rem,1fr)]">
+                      <CheckoutField label="Calle" name="street" onChange={setStreet} placeholder="Ej. Av. Corrientes" required />
+                      <CheckoutField label="Número" name="streetNumber" onChange={setStreetNumber} placeholder="1234" required />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <CheckoutField label="Piso / departamento (opcional)" name="apartment" onChange={setApartment} placeholder="Ej. 4° B" required={false} />
+                      <CheckoutField label="Código postal" name="postalCode" onChange={updatePostalCode} placeholder="Ej. 1425" required />
+                      <CheckoutField label="Localidad" name="city" onChange={setCity} placeholder="Ej. Palermo" required />
+                      <CheckoutField label="Provincia" name="province" onChange={setProvince} placeholder="Ej. Buenos Aires" required />
+                    </div>
                     {postalCode && !/^(?:[A-Z]\d{4}[A-Z]{3}|\d{4})$/i.test(postalCode.replace(/\s+/g, "")) && <p className="text-xs text-red-700">Usá un código postal de 4 dígitos o un CPA completo, por ejemplo 1425 o C1425ABC.</p>}
                   </> : <div className="space-y-3">
                     <label className="block text-sm font-semibold">Punto de retiro<select className="control mt-2" value={pickupLocationId} onChange={(event) => setPickupLocationId(event.target.value)} required><option value="">Seleccioná una sucursal</option>{pickupLocations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.city}</option>)}</select></label>
@@ -331,30 +377,26 @@ function Checkout({ store }: { store: PublicStore }) {
               </FormCard>
               {fulfillmentType === "DELIVERY" && shippingMethods.length > 0 && (
                 <FormCard description="Mostramos las opciones disponibles para tu código postal." step="03" title="Método de envío">
-                  <select
-                    className="control"
-                    name="shippingMethodId"
-                    value={shippingMethodId}
-                    onChange={(event) =>
-                      setShippingMethodId(event.target.value)
-                    }
-                    required
-                  >
-                    <option value="">Seleccioná una opción</option>
-                    {eligibleShippingMethods.map((method) => (
-                      <option key={method.id} value={method.id}>
-                        {method.zoneName} · {method.name} ·{" "}
-                        {method.freeShippingThresholdInCents && merchandiseAfterDiscount >= method.freeShippingThresholdInCents ? "Gratis" : formatMoney(method.priceInCents, currency)}
-                        {` · ${formatShippingRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}`}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="grid gap-3">
+                    {eligibleShippingMethods.map((method) => {
+                      const isFree = Boolean(method.freeShippingThresholdInCents && merchandiseAfterDiscount >= method.freeShippingThresholdInCents);
+                      const selected = method.id === shippingMethodId;
+                      return <label className={`flex cursor-pointer items-center justify-between gap-4 rounded-2xl border p-4 transition ${selected ? "border-stone-950 bg-stone-50 ring-1 ring-stone-950" : "border-stone-200 bg-white hover:border-stone-400"}`} key={method.id}>
+                        <input className="sr-only" checked={selected} name="shippingMethodId" onChange={() => setShippingMethodId(method.id)} type="radio" value={method.id} />
+                        <span><strong className="block text-sm text-stone-950">{method.name}</strong><span className="mt-1 block text-xs text-stone-500">{method.zoneName} · {formatShippingRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}</span>{method.freeShippingThresholdInCents && !isFree && <span className="mt-1 block text-xs text-emerald-700">Gratis desde {formatMoney(method.freeShippingThresholdInCents, currency)}</span>}</span>
+                        <strong className="shrink-0 text-sm text-stone-950">{isFree ? "Gratis" : formatMoney(method.priceInCents, currency)}</strong>
+                      </label>;
+                    })}
+                  </div>
                   {postalCode && eligibleShippingMethods.length === 0 && (
                     <p className="mt-3 text-sm text-red-700">
                       No encontramos envíos disponibles para ese código postal.
                     </p>
                   )}
                 </FormCard>
+              )}
+              {fulfillmentType === "DELIVERY" && shippingMethods.length === 0 && (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">Esta tienda todavía no configuró opciones de envío a domicilio. Elegí retiro en local o consultale al vendedor.</p>
               )}
               {(store.settings?.shippingPolicy || store.settings?.returnPolicy) && <FormCard description="Información importante antes de confirmar la compra." title="Entrega, cambios y devoluciones"><div className="space-y-4 text-sm leading-6 text-stone-600">{store.settings?.shippingPolicy && <div><strong className="text-stone-900">Política de entrega</strong><p className="mt-1 whitespace-pre-line">{store.settings.shippingPolicy}</p></div>}{store.settings?.returnPolicy && <div><strong className="text-stone-900">Cambios y devoluciones</strong><p className="mt-1 whitespace-pre-line">{store.settings.returnPolicy}</p></div>}</div></FormCard>}
               <FormCard
@@ -417,7 +459,7 @@ function Checkout({ store }: { store: PublicStore }) {
               )}
               <button
                 className="w-full rounded-full bg-stone-950 px-6 py-4 text-sm font-bold text-white disabled:opacity-50"
-                disabled={busy || !hasPaymentMethod}
+                disabled={busy || !hasPaymentMethod || (fulfillmentType === "DELIVERY" && (!deliveryAvailable || !selectedShippingMethod))}
                 style={{ backgroundColor: store.settings?.primaryColor ?? "#171417" }}
                 type="submit"
               >
@@ -531,6 +573,7 @@ function CheckoutField({
   onChange,
   defaultValue,
   readOnly = false,
+  placeholder,
 }: {
   label: string;
   name: string;
@@ -540,6 +583,7 @@ function CheckoutField({
   onChange?: (value: string) => void;
   defaultValue?: string;
   readOnly?: boolean;
+  placeholder?: string;
 }) {
   return (
     <label className="block text-sm font-medium text-stone-700">
@@ -548,6 +592,7 @@ function CheckoutField({
         className="control"
         defaultValue={defaultValue}
         name={name}
+        placeholder={placeholder}
         onChange={(event) => onChange?.(event.target.value)}
         required={required}
         readOnly={readOnly}
