@@ -234,3 +234,64 @@ test("el vendedor puede corregir el email y reenviar la confirmación", async ()
   assert.equal(detail.body.order.notificationLogs[0].recipient, "correcto@checkout.test");
   assert.match(detail.body.order.statusHistory.at(-1).note, /Email de contacto corregido/);
 });
+
+test("el checkout aplica la zona postal más específica y usa la zona general como respaldo", async () => {
+  const tenant = await database.tenant.findUniqueOrThrow({ where: { slug } });
+  const specificZone = await database.shippingZone.create({
+    data: { tenantId: tenant.id, name: "La Rioja capital", postalPrefixes: ["5300"] },
+  });
+  const specificMethod = await database.shippingMethod.create({
+    data: {
+      tenantId: tenant.id,
+      shippingZoneId: specificZone.id,
+      name: "Entrega regional",
+      priceInCents: 250000,
+      estimatedDaysMin: 1,
+      estimatedDaysMax: 2,
+    },
+  });
+  const customer = {
+    email: "postal@checkout.test",
+    firstName: "Zona",
+    lastName: "Postal",
+    phone: "3804000000",
+    street: "Pelagio Luna",
+    streetNumber: "100",
+    city: "La Rioja",
+    province: "La Rioja",
+    postalCode: "F5300ABC",
+  };
+
+  const rejectedFallback = await request(app).post(`/api/storefront/${slug}/orders`).send({
+    customer,
+    items: [{ productId, quantity: 1 }],
+    paymentMethod: "BANK_TRANSFER",
+    shippingMethodId,
+  });
+  assert.equal(rejectedFallback.status, 409);
+  assert.match(rejectedFallback.body.message, /código postal/);
+
+  const specific = await request(app).post(`/api/storefront/${slug}/orders`).send({
+    customer,
+    items: [{ productId, quantity: 1 }],
+    paymentMethod: "BANK_TRANSFER",
+    shippingMethodId: specificMethod.id,
+  });
+  assert.equal(specific.status, 201);
+  assert.equal(
+    (await database.order.findUniqueOrThrow({ where: { id: specific.body.order.id } })).shippingInCents,
+    250000,
+  );
+
+  const fallback = await request(app).post(`/api/storefront/${slug}/orders`).send({
+    customer: { ...customer, email: "fallback@checkout.test", postalCode: "9999" },
+    items: [{ productId, quantity: 1 }],
+    paymentMethod: "BANK_TRANSFER",
+    shippingMethodId,
+  });
+  assert.equal(fallback.status, 201);
+  assert.equal(
+    (await database.order.findUniqueOrThrow({ where: { id: fallback.body.order.id } })).shippingInCents,
+    0,
+  );
+});

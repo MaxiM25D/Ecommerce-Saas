@@ -37,6 +37,26 @@ import { requireCustomerSession } from "../../services/customer-auth.js";
 
 export const storefrontRouter = Router();
 
+function normalizePostalCode(value: string) {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+function postalCandidates(value: string) {
+  const normalized = normalizePostalCode(value);
+  return normalized.match(/^[A-Z]\d/) ? [normalized, normalized.slice(1)] : [normalized];
+}
+
+function postalPrefixSpecificity(postalCode: string, prefixes: string[]) {
+  const candidates = postalCandidates(postalCode);
+  return prefixes.reduce((best, prefix) => {
+    const normalizedPrefix = normalizePostalCode(prefix);
+    if (!normalizedPrefix) return best;
+    return candidates.some((candidate) => candidate.startsWith(normalizedPrefix))
+      ? Math.max(best, normalizedPrefix.length)
+      : best;
+  }, 0);
+}
+
 const productSelection = {
   id: true,
   sku: true,
@@ -960,18 +980,37 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
           : null;
         if (input.shippingMethodId && !shipping)
           throw new HttpError(409, "El método de envío ya no está disponible");
-        if (
-          shipping &&
-          shipping.zone.postalPrefixes.length &&
-          (!input.customer.postalCode ||
-            !shipping.zone.postalPrefixes.some((prefix) =>
-              input.customer.postalCode!.replace(/\s+/g, "").toUpperCase().startsWith(prefix.replace(/\s+/g, "").toUpperCase()),
-            ))
-        )
-          throw new HttpError(
-            409,
-            "El método de envío no cubre ese código postal",
+        if (shipping) {
+          const postalCode = input.customer.postalCode ?? "";
+          const activeZones = await transaction.shippingZone.findMany({
+            where: {
+              tenantId: tenant.id,
+              active: true,
+              methods: { some: { active: true } },
+            },
+            select: { id: true, postalPrefixes: true },
+          });
+          const zonesWithSpecificity = activeZones.map((zone) => ({
+            ...zone,
+            specificity: postalPrefixSpecificity(postalCode, zone.postalPrefixes),
+          }));
+          const bestSpecificity = Math.max(
+            0,
+            ...zonesWithSpecificity.map(({ specificity }) => specificity),
           );
+          const eligibleZoneIds = new Set(
+            zonesWithSpecificity
+              .filter((zone) => bestSpecificity > 0
+                ? zone.specificity === bestSpecificity
+                : zone.postalPrefixes.length === 0)
+              .map(({ id }) => id),
+          );
+          if (!eligibleZoneIds.has(shipping.zone.id))
+            throw new HttpError(
+              409,
+              "El método de envío no corresponde a ese código postal",
+            );
+        }
         const merchandiseAfterDiscount = Math.max(0, subtotalInCents - discountInCents);
         const qualifiesForFreeShipping = Boolean(
           shipping?.freeShippingThresholdInCents

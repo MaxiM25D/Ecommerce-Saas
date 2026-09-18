@@ -121,6 +121,7 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
   const [message, setMessage] = useState("");
   const [section, setSection] = useState<(typeof sections)[number]["id"]>("analytics");
   const [couponType, setCouponType] = useState("PERCENTAGE");
+  const [shippingTestPostalCode, setShippingTestPostalCode] = useState("");
   const [busy, setBusy] = useState(false);
   const mutationLock = useRef(false);
   const canManage = role !== "STAFF";
@@ -179,6 +180,7 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
     );
   const pro = (feature: string) => data.features.includes(feature);
   const pickupLocations = data.pickupLocations ?? [];
+  const shippingPreviewZones = selectShippingZones(data.shippingZones, shippingTestPostalCode);
 
   return (
     <div className={`${styles.surface} mx-auto max-w-7xl space-y-6`}>
@@ -442,6 +444,16 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
           </div>
         </div>
         <div className="mt-8"><h3 className="font-semibold">Envíos a domicilio</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Configurá zonas por código postal y las alternativas disponibles para cada una.</p></div>
+        <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-950">
+          <h4 className="font-semibold">Cómo se calcula el envío</h4>
+          <ol className="mt-3 grid gap-3 leading-6 sm:grid-cols-2">
+            <li><strong>1. Creá una zona.</strong> Agrupá destinos con costo y plazo parecidos, por ejemplo “La Rioja capital” o “Resto del país”.</li>
+            <li><strong>2. Indicá sus códigos postales.</strong> Un prefijo como <strong>53</strong> cubre todos los códigos que empiezan con 53; <strong>5300</strong> es más específico.</li>
+            <li><strong>3. Cargá una tarifa.</strong> Es el importe que verá y pagará el comprador. Por ahora se define manualmente; no se consulta en vivo al transportista.</li>
+            <li><strong>4. InfinityShop elige la mejor coincidencia.</strong> El checkout usa la zona más específica para el código postal del comprador.</li>
+          </ol>
+          <p className="mt-3 rounded-xl bg-white/80 p-3 text-xs leading-5"><strong>Importante:</strong> una zona sin códigos postales funciona como respaldo para “Resto del país”. Solo se usa cuando no existe una zona más específica. Podés pedir una tarifa al transportista, usar un promedio o sumar un margen de embalaje, y crear distintas zonas para reflejar distancias diferentes.</p>
+        </div>
         <form className={`${styles.form} mt-5`} onSubmit={async (event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
@@ -450,6 +462,7 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
             returnPolicy: form.get("returnPolicy") || null,
           }) });
         }}>
+          <p className="sm:col-span-2 rounded-xl bg-stone-50 p-3 text-xs leading-5 text-[#807384]"><strong className="text-[#382d3b]">Estas políticas son textos informativos:</strong> se muestran antes del pago y se copian al pedido para conservar las condiciones aceptadas. No modifican el precio ni calculan el envío.</p>
           <Field label="Política de entrega (opcional)" help="Se muestra antes de pagar y queda guardada en cada pedido." example="Ejemplo: Entregamos de lunes a viernes. Se realizan hasta dos visitas."><textarea defaultValue={data.deliveryPolicies?.shippingPolicy ?? ""} name="shippingPolicy" maxLength={3000} placeholder="Días de entrega, intentos de visita y condiciones del servicio." /></Field>
           <Field label="Política de cambios y devoluciones (opcional)" help="Ayuda a reducir dudas y genera confianza antes del pago." example="Ejemplo: Podés solicitar un cambio dentro de los 10 días de recibir tu compra."><textarea defaultValue={data.deliveryPolicies?.returnPolicy ?? ""} name="returnPolicy" maxLength={3000} placeholder="Plazos, condiciones y canal para solicitar un cambio o devolución." /></Field>
           <div className={styles.footer}><Button disabled={!canManage}>Guardar políticas</Button></div>
@@ -474,11 +487,18 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
             if (saved) element.reset();
           }}
         >
-          <Input name="name" label="1. Nombre de la zona" help="Un nombre para reconocer el área en la que entregás." placeholder="CABA" />
-          <Input name="prefixes" label="Prefijos de códigos postales (opcional)" help="Separalos con comas. Aceptamos CP de 4 dígitos y CPA, por ejemplo C1425ABC. Vacío: todo el país." placeholder="C, 1000, 1001" required={false} />
+          <Input name="name" label="1. Nombre interno de la zona" help="Usá un nombre que te permita reconocer el alcance, por ejemplo Entrega local, Zona cercana o Resto del país." placeholder="La Rioja capital" />
+          <Input name="prefixes" label="2. Códigos postales o prefijos cubiertos" help="Separalos con comas. 5300 cubre códigos que empiezan con 5300; 53 abarca una región más amplia. Dejalo vacío únicamente para crear el respaldo Resto del país." placeholder="5300, 5301, 5302" required={false} />
           <div className={styles.footer}><Button disabled={!canManage}>Crear zona</Button></div>
         </form>
-        <Tip title="2. Agregá una forma de entrega">Crear una zona no alcanza: agregale abajo un método como Mensajería o Retiro en local. Podés definir costo $0 para una entrega gratis.</Tip>
+        <Tip title="3. Agregá una forma de entrega">Crear una zona no alcanza: agregale abajo un método como Correo estándar o Moto mensajería, con la tarifa y el plazo que correspondan a esa zona.</Tip>
+        <div className="mt-5 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
+          <h4 className="font-semibold">Probá un código postal</h4>
+          <p className="mt-1 text-xs leading-5 text-[#807384]">Ingresá un CP como lo haría un comprador. Verás exactamente qué zona, precios y plazos aparecerán en el checkout.</p>
+          <div className="mt-4 max-w-sm"><Input name="shippingTestPostalCode" label="Código postal de prueba" placeholder="5300 o F5300ABC" value={shippingTestPostalCode} onChange={setShippingTestPostalCode} required={false} /></div>
+          {shippingTestPostalCode.trim() && shippingPreviewZones.length === 0 && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No hay una zona activa que cubra este código postal. Creá una zona específica o una zona sin prefijos para “Resto del país”.</p>}
+          {shippingTestPostalCode.trim() && shippingPreviewZones.length > 0 && <div className="mt-3 grid gap-3">{shippingPreviewZones.map((zone) => <div className="rounded-xl border border-[#e6dfe8] bg-white p-4" key={zone.id}><p className="text-sm font-semibold">Zona aplicada: {zone.name}</p>{zone.methods.filter(({ active }) => active).length ? <div className="mt-2 grid gap-1">{zone.methods.filter(({ active }) => active).map((method) => <p className="text-xs text-[#807384]" key={method.id}>{method.name}: <strong>{money(method.priceInCents)}</strong> · {formatDeliveryRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}</p>)}</div> : <p className="mt-2 text-xs text-amber-700">La zona coincide, pero no tiene métodos activos.</p>}</div>)}</div>}
+        </div>
         <div className="mt-5 grid gap-4">
           {data.shippingZones.length === 0 && <EmptyState title="Todavía no hay zonas">Creá una zona y después agregá sus métodos de entrega.</EmptyState>}
           {data.shippingZones.map((zone) => (
@@ -497,7 +517,7 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
                   <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ active: !zone.active }) })}>{zone.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "DELETE" })}>Eliminar</button></div>
                 )}
               </div>
-              {canManage && <details className="mt-4 border-t border-stone-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar zona</summary><form className={`${styles.form} mt-3`} onSubmit={async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("zoneName"), postalPrefixes: String(form.get("zonePrefixes") ?? "").split(",").map((value) => value.trim()).filter(Boolean) }) }); }}><Input name="zoneName" label="Nombre" placeholder="CABA" defaultValue={zone.name} /><Input name="zonePrefixes" label="Prefijos postales" placeholder="C, 1000" defaultValue={zone.postalPrefixes.join(", ")} required={false} /><div className={styles.footer}><Button>Guardar zona</Button></div></form></details>}
+              {canManage && <details className="mt-4 border-t border-stone-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar zona</summary><form className={`${styles.form} mt-3`} onSubmit={async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("zoneName"), postalPrefixes: String(form.get("zonePrefixes") ?? "").split(",").map((value) => value.trim()).filter(Boolean) }) }); }}><Input name="zoneName" label="Nombre interno" placeholder="La Rioja capital" defaultValue={zone.name} /><Input name="zonePrefixes" label="Códigos postales o prefijos" help="Separalos con comas. Vacío significa Resto del país." placeholder="5300, 5301" defaultValue={zone.postalPrefixes.join(", ")} required={false} /><div className={styles.footer}><Button>Guardar zona</Button></div></form></details>}
               <div className="mt-4 grid gap-3">
                 {zone.methods.map((method) => (
                   <article className="rounded-xl border border-stone-100 bg-stone-50 p-4" key={method.id}>
@@ -717,14 +737,14 @@ function ShippingMethodForm({
       trackingUrlTemplate: customTrackingUrl || preset?.trackingUrlTemplate || null,
     }, element);
   }}>
-    <Input name="methodName" label="Nombre del método" help="Es la opción que verá el comprador." placeholder="Envío estándar" defaultValue={defaults?.name} />
-    <div className="grid gap-4 sm:grid-cols-3"><Input name="methodPrice" label="Costo en pesos" help="Usá 0 para un envío siempre gratis." placeholder="3500" type="number" step="0.01" defaultValue={defaults ? String(defaults.priceInCents / 100) : undefined} /><Input name="estimatedDaysMin" label="Plazo mínimo (días hábiles)" placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Plazo máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
+    <Input name="methodName" label="Nombre del método" help="Es la opción que verá el comprador dentro de esta zona." placeholder="Envío estándar" defaultValue={defaults?.name} />
+    <div className="grid gap-4 sm:grid-cols-3"><Input name="methodPrice" label="Tarifa que cobrarás al cliente" help="Importe manual para esta zona. Puede ser la cotización del transportista, un promedio o incluir embalaje. Usá 0 si siempre es gratis." placeholder="3500" type="number" step="0.01" defaultValue={defaults ? String(defaults.priceInCents / 100) : undefined} /><Input name="estimatedDaysMin" label="Plazo mínimo (días hábiles)" placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Plazo máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
     <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-[#e6dfe8] bg-[#fbf8fc] p-4">
       <span><strong className="block text-sm text-[#382d3b]">Ofrecer envío gratis</strong><span className="mt-1 block text-xs leading-5 text-[#807384]">Activá esta opción para bonificar el envío cuando la compra alcance un monto mínimo.</span></span>
       <input aria-label="Ofrecer envío gratis" checked={offersFreeShipping} className="h-5 w-5 accent-[#6E3482]" onChange={(event) => setOffersFreeShipping(event.target.checked)} type="checkbox" />
     </label>
     {offersFreeShipping && <Input name="freeShippingThreshold" label="Compra mínima para envío gratis" help="Se calcula sobre los productos después de aplicar descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} />}
-    <Field label="Transportista" help="Al despachar, se completa automáticamente junto con su página oficial de seguimiento." example="Ejemplo: Correo Argentino"><select defaultValue={defaults?.carrierCode ?? "CORREO_ARGENTINO"} name="carrierCode"><option value="CORREO_ARGENTINO">Correo Argentino</option><option value="ANDREANI">Andreani</option><option value="OCA">OCA</option><option value="VIA_CARGO">Vía Cargo</option><option value="CUSTOM">Otro / mensajería propia</option></select></Field>
+    <Field label="Transportista" help="Estas opciones solo completan el nombre y su página de seguimiento; no cotizan el precio. Elegí Otro para agregar cualquier empresa o mensajería propia." example="Ejemplo: Correo Argentino"><select defaultValue={defaults?.carrierCode ?? "CORREO_ARGENTINO"} name="carrierCode"><option value="CORREO_ARGENTINO">Correo Argentino</option><option value="ANDREANI">Andreani</option><option value="OCA">OCA</option><option value="VIA_CARGO">Vía Cargo</option><option value="CUSTOM">Otro / mensajería propia</option></select></Field>
     <Input name="carrierName" label="Nombre personalizado del transportista (opcional)" help="Completalo solo si elegiste Otro o querés cambiar el nombre visible." placeholder="Moto Express" defaultValue={defaults?.carrierName ?? undefined} required={false} />
     <Input name="trackingUrlTemplate" label="URL de seguimiento personalizada (opcional)" help="Usá {code} donde debe insertarse el código. Si elegís una empresa conocida podés dejarla vacía." placeholder="https://envios.ejemplo.com/seguimiento/{code}" defaultValue={defaults?.trackingUrlTemplate ?? undefined} required={false} />
     <div className={styles.footer}><Button disabled={disabled}>{buttonLabel}</Button></div>
@@ -735,6 +755,36 @@ function formatDeliveryRange(minimum: number | null, maximum: number | null) {
   if (minimum && maximum && minimum !== maximum) return `${minimum} a ${maximum} días hábiles`;
   if (minimum || maximum) return `${minimum ?? maximum} días hábiles`;
   return "Plazo a coordinar";
+}
+
+function normalizePostalCode(value: string) {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+function shippingZoneSpecificity(postalCode: string, prefixes: string[]) {
+  const normalized = normalizePostalCode(postalCode);
+  const candidates = normalized.match(/^[A-Z]\d/) ? [normalized, normalized.slice(1)] : [normalized];
+  return prefixes.reduce((best, prefix) => {
+    const normalizedPrefix = normalizePostalCode(prefix);
+    return normalizedPrefix && candidates.some((candidate) => candidate.startsWith(normalizedPrefix))
+      ? Math.max(best, normalizedPrefix.length)
+      : best;
+  }, 0);
+}
+
+function selectShippingZones(zones: GrowthData["shippingZones"], postalCode: string) {
+  if (!postalCode.trim()) return [];
+  const activeZones = zones.filter((zone) => zone.active && zone.methods.some((method) => method.active));
+  const withSpecificity = activeZones.map((zone) => ({
+    zone,
+    specificity: shippingZoneSpecificity(postalCode, zone.postalPrefixes),
+  }));
+  const bestSpecificity = Math.max(0, ...withSpecificity.map(({ specificity }) => specificity));
+  return withSpecificity
+    .filter(({ zone, specificity }) => bestSpecificity > 0
+      ? specificity === bestSpecificity
+      : zone.postalPrefixes.length === 0)
+    .map(({ zone }) => zone);
 }
 
 function Title({ title, pro, onOpenPlan }: { title: string; pro?: boolean; onOpenPlan?: () => void }) {
@@ -805,6 +855,8 @@ function Input({
   min = 0,
   max,
   step = "1",
+  value,
+  onChange,
 }: {
   name: string;
   label: string;
@@ -816,10 +868,14 @@ function Input({
   min?: number;
   max?: number;
   step?: string;
+  value?: string;
+  onChange?: (value: string) => void;
 }) {
   return (
     <Field label={label} help={help} example={`Ejemplo: ${placeholder}`}><input
-      defaultValue={defaultValue}
+      defaultValue={value === undefined ? defaultValue : undefined}
+      value={value}
+      onChange={onChange ? (event) => onChange(event.target.value) : undefined}
       min={type === "number" ? min : undefined}
       max={max}
       step={type === "number" ? step : undefined}
