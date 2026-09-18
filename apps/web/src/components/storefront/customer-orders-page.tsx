@@ -47,6 +47,8 @@ const statusLabels: Record<string, string> = {
   PREPARING: "En preparación",
   SHIPPED: "Enviado",
   DELIVERED: "Entregado",
+  READY_FOR_PICKUP: "Listo para retirar",
+  PICKED_UP: "Retirado",
   CANCELLED: "Cancelado",
 };
 

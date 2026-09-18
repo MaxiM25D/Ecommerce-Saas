@@ -13,6 +13,8 @@ const statusLabels: Record<string, string> = {
   PREPARING: "Preparando",
   SHIPPED: "Enviado",
   DELIVERED: "Entregado",
+  READY_FOR_PICKUP: "Listo para retirar",
+  PICKED_UP: "Retirado",
   CANCELLED: "Cancelado",
 };
 const paymentLabels: Record<string, string> = {
@@ -30,6 +32,7 @@ function paymentLabel(status: string, hasReceipt: boolean) {
 const nextStatus: Record<string, { status: string; label: string } | undefined> = {
   CONFIRMED: { status: "PREPARING", label: "Empezar preparación" },
   SHIPPED: { status: "DELIVERED", label: "Marcar como entregado" },
+  READY_FOR_PICKUP: { status: "PICKED_UP", label: "Confirmar que fue retirado" },
 };
 const money = (amount: number, currency: string) => new Intl.NumberFormat("es-AR", { style: "currency", currency }).format(amount / 100);
 
@@ -175,13 +178,21 @@ export function OrdersView({ role }: { role: Role }) {
               <Badge label={statusLabels[selected.status] ?? selected.status} />
               <Badge label={paymentLabel(selected.paymentStatus, Boolean(selected.paymentReceipt))} />
             </div>
-            <Section title="Cliente y entrega">
+            <Section title={selected.fulfillmentType === "PICKUP" ? "Cliente y retiro" : "Cliente y entrega"}>
               <dl className="grid gap-4 text-sm sm:grid-cols-2">
                 <Detail label="Cliente" value={selected.customerName} />
                 <Detail label="Email" value={selected.customerEmail} />
                 <Detail label="Teléfono" value={selected.customerPhone ?? "—"} />
-                <Detail label="Dirección" value={selected.shippingAddress ?? "—"} />
+                {selected.fulfillmentType === "DELIVERY" ? <><Detail label="Dirección" value={selected.shippingAddress ?? "—"} /><Detail label="Código postal" value={selected.shippingPostalCode ?? "—"} /><Detail label="Zona" value={selected.shippingZoneName ?? "—"} /><Detail label="Método" value={selected.shippingMethod ?? "—"} /><Detail label="Plazo prometido" value={formatDeliveryRange(selected.shippingEstimatedDaysMin, selected.shippingEstimatedDaysMax)} /><Detail label="Costo cobrado" value={selected.shippingInCents > 0 ? money(selected.shippingInCents, selected.currency) : "Gratis"} /></> : <>
+                  <Detail label="Punto de retiro" value={selected.pickupLocationName ?? "—"} />
+                  <Detail label="Dirección del local" value={selected.pickupAddress ?? "—"} />
+                  <Detail label="Horarios" value={selected.pickupOpeningHours ?? "Consultar con el local"} />
+                  <Detail label="Teléfono del local" value={selected.pickupPhone ?? "—"} />
+                </>}
               </dl>
+              {selected.fulfillmentType === "PICKUP" && selected.pickupInstructions && <p className="mt-4 rounded-xl bg-[#fbf8fc] px-4 py-3 text-xs leading-5 text-[#66586a]"><strong>Indicaciones:</strong> {selected.pickupInstructions}</p>}
+              {selected.fulfillmentType === "PICKUP" && selected.pickupMapsUrl && <a className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#6E3482] underline" href={selected.pickupMapsUrl} target="_blank" rel="noreferrer">Abrir ubicación en Google Maps ↗</a>}
+              {selected.fulfillmentType === "DELIVERY" && (selected.shippingPolicySnapshot || selected.returnPolicySnapshot) && <div className="mt-4 space-y-3 rounded-xl bg-[#fbf8fc] px-4 py-3 text-xs leading-5 text-[#66586a]">{selected.shippingPolicySnapshot && <p><strong>Política de entrega:</strong> {selected.shippingPolicySnapshot}</p>}{selected.returnPolicySnapshot && <p><strong>Cambios y devoluciones:</strong> {selected.returnPolicySnapshot}</p>}</div>}
             </Section>
             <Section title="Productos">
               <div className="divide-y divide-stone-100">
@@ -255,7 +266,8 @@ export function OrdersView({ role }: { role: Role }) {
                     primary
                   />
                 )}
-                {selected.status === "PREPARING" && <DispatchForm busy={busy} onSubmit={dispatch} />}
+                {selected.status === "PREPARING" && selected.fulfillmentType === "DELIVERY" && <DispatchForm busy={busy} onSubmit={dispatch} order={selected} />}
+                {selected.status === "PREPARING" && selected.fulfillmentType === "PICKUP" && <Action disabled={busy || selected.paymentStatus !== "APPROVED"} label="Marcar listo para retirar y avisar" onClick={() => void update({ status: "READY_FOR_PICKUP" })} primary />}
                 {["PENDING", "CONFIRMED", "PREPARING"].includes(selected.status) && <Action danger disabled={busy} label="Cancelar pedido y reponer stock" onClick={() => void update({ status: "CANCELLED" })} />}
               </section>
             )}
@@ -307,19 +319,34 @@ function OrderTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen: (id: s
     </div>
   );
 }
-function DispatchForm({ busy, onSubmit }: { busy: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function DispatchForm({ busy, onSubmit, order }: { busy: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; order: OrderDetail }) {
   return (
     <form className="mt-4 space-y-5 rounded-2xl border border-[#e6dfe8] bg-white p-5" onSubmit={onSubmit}>
       <div><h4 className="text-sm font-semibold">Datos del envío</h4><p className="mt-1 text-xs leading-5 text-[#807384]">Se guardan en el seguimiento del cliente. El transportista es obligatorio; el resto puede completarse si está disponible.</p></div>
-      <Field label="Transportista" help="Empresa o persona responsable de la entrega." example="Ejemplo: Correo Argentino"><input name="carrier" placeholder="Correo Argentino" required /></Field>
+      <Field label="Transportista" help="Se completa con la empresa configurada en el método, pero podés cambiarla." example="Ejemplo: Correo Argentino"><input defaultValue={order.shippingCarrierName ?? ""} name="carrier" placeholder="Correo Argentino" required /></Field>
       <Field label="Código de seguimiento (opcional)" help="Identificador entregado por el transportista." example="Ejemplo: CP123456789AR"><input name="trackingCode" placeholder="CP123456789AR" /></Field>
-      <Field label="Enlace de seguimiento (opcional)" help="URL completa donde el cliente puede consultar su envío." example="Ejemplo: https://correo.com/seguimiento"><input name="trackingUrl" placeholder="https://correo.com/seguimiento" type="url" /></Field>
-      <Field label="Entrega estimada (opcional)" help="Fecha orientativa que verá el cliente."><input name="estimatedDelivery" type="date" /></Field>
+      <Field label="Enlace de seguimiento (opcional)" help={order.shippingTrackingUrlTemplate ? "Si lo dejás vacío, InfinityShop generará el enlace configurado para este transportista." : "URL completa donde el cliente puede consultar su envío."} example="Ejemplo: https://correo.com/seguimiento"><input name="trackingUrl" placeholder="Se genera automáticamente cuando está configurado" type="url" /></Field>
+      <Field label="Entrega estimada (opcional)" help="La calculamos usando el plazo máximo prometido; podés corregirla."><input defaultValue={estimatedBusinessDate(order.shippingEstimatedDaysMax)} name="estimatedDelivery" type="date" /></Field>
       <button className={`${styles.button} w-full`} disabled={busy} type="submit">
         Despachar y notificar
       </button>
     </form>
   );
+}
+function formatDeliveryRange(minimum: number | null, maximum: number | null) {
+  if (minimum && maximum && minimum !== maximum) return `${minimum} a ${maximum} días hábiles`;
+  if (minimum || maximum) return `${minimum ?? maximum} días hábiles`;
+  return "A coordinar";
+}
+function estimatedBusinessDate(days: number | null) {
+  if (!days) return undefined;
+  const date = new Date();
+  let remaining = days;
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    if (date.getDay() !== 0 && date.getDay() !== 6) remaining -= 1;
+  }
+  return date.toISOString().slice(0, 10);
 }
 function Empty() {
   return (

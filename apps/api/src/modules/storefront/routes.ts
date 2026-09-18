@@ -77,6 +77,8 @@ const publicSettingsSelection = {
   whatsapp: true,
   currency: true,
   bankTransferEnabled: true,
+  shippingPolicy: true,
+  returnPolicy: true,
 } as const;
 
 storefrontRouter.get("/resolve-domain/:hostname", async (request, response) => {
@@ -147,10 +149,21 @@ storefrontRouter.get("/:slug", async (request, response) => {
               name: true,
               priceInCents: true,
               estimatedDays: true,
+              estimatedDaysMin: true,
+              estimatedDaysMax: true,
+              freeShippingThresholdInCents: true,
+              carrierCode: true,
+              carrierName: true,
+              trackingUrlTemplate: true,
             },
             orderBy: { priceInCents: "asc" },
           },
         },
+        orderBy: { name: "asc" },
+      },
+      pickupLocations: {
+        where: { active: true },
+        select: { id: true, name: true, address: true, city: true, province: true, postalCode: true, mapsUrl: true, phone: true, openingHours: true, instructions: true, preparationMinutes: true },
         orderBy: { name: "asc" },
       },
       categories: {
@@ -526,10 +539,21 @@ storefrontRouter.get(
                 name: true,
                 priceInCents: true,
                 estimatedDays: true,
+                estimatedDaysMin: true,
+                estimatedDaysMax: true,
+                freeShippingThresholdInCents: true,
+                carrierCode: true,
+                carrierName: true,
+                trackingUrlTemplate: true,
               },
               orderBy: { priceInCents: "asc" },
             },
           },
+          orderBy: { name: "asc" },
+        },
+        pickupLocations: {
+          where: { active: true },
+          select: { id: true, name: true, address: true, city: true, province: true, postalCode: true, mapsUrl: true, phone: true, openingHours: true, instructions: true, preparationMinutes: true },
           orderBy: { name: "asc" },
         },
       },
@@ -907,7 +931,14 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             ? Math.floor((subtotalInCents * coupon.value) / 100)
             : Math.min(subtotalInCents, coupon.value)
           : 0;
-        const shipping = input.shippingMethodId
+        const pickupLocation = input.fulfillmentType === "PICKUP"
+          ? await transaction.pickupLocation.findFirst({
+              where: { id: input.pickupLocationId!, tenantId: tenant.id, active: true },
+            })
+          : null;
+        if (input.fulfillmentType === "PICKUP" && !pickupLocation)
+          throw new HttpError(409, "El punto de retiro ya no está disponible");
+        const shipping = input.fulfillmentType === "DELIVERY" && input.shippingMethodId
           ? await transaction.shippingMethod.findFirst({
               where: {
                 id: input.shippingMethodId,
@@ -925,14 +956,21 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
           shipping.zone.postalPrefixes.length &&
           (!input.customer.postalCode ||
             !shipping.zone.postalPrefixes.some((prefix) =>
-              input.customer.postalCode!.toUpperCase().startsWith(prefix),
+              input.customer.postalCode!.replace(/\s+/g, "").toUpperCase().startsWith(prefix.replace(/\s+/g, "").toUpperCase()),
             ))
         )
           throw new HttpError(
             409,
             "El método de envío no cubre ese código postal",
           );
-        const shippingInCents = shipping?.priceInCents ?? 0;
+        const merchandiseAfterDiscount = Math.max(0, subtotalInCents - discountInCents);
+        const qualifiesForFreeShipping = Boolean(
+          shipping?.freeShippingThresholdInCents
+          && merchandiseAfterDiscount >= shipping.freeShippingThresholdInCents,
+        );
+        const shippingInCents = input.fulfillmentType === "DELIVERY"
+          ? qualifiesForFreeShipping ? 0 : shipping?.priceInCents ?? 0
+          : 0;
         const totalInCents = Math.max(
           0,
           subtotalInCents - discountInCents + shippingInCents,
@@ -960,7 +998,7 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             customerEmail: customer.email,
             customerName: `${customer.firstName} ${customer.lastName}`,
             customerPhone: customer.phone,
-            shippingAddress: input.customer.shippingAddress,
+            shippingAddress: input.fulfillmentType === "DELIVERY" ? input.customer.shippingAddress : null,
             notes: input.customer.notes ?? null,
             currency: tenant.settings?.currency ?? "ARS",
             subtotalInCents,
@@ -968,7 +1006,23 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             couponCode: coupon?.code,
             shippingInCents,
             shippingMethod: shipping?.name,
-            shippingPostalCode: input.customer.postalCode,
+            shippingPostalCode: input.fulfillmentType === "DELIVERY" ? input.customer.postalCode?.replace(/\s+/g, "").toUpperCase() : null,
+            shippingZoneName: shipping?.zone.name ?? null,
+            shippingEstimatedDaysMin: shipping?.estimatedDaysMin ?? shipping?.estimatedDays ?? null,
+            shippingEstimatedDaysMax: shipping?.estimatedDaysMax ?? shipping?.estimatedDays ?? null,
+            shippingFreeThresholdInCents: shipping?.freeShippingThresholdInCents ?? null,
+            shippingCarrierCode: shipping?.carrierCode ?? null,
+            shippingCarrierName: shipping?.carrierName ?? null,
+            shippingTrackingUrlTemplate: shipping?.trackingUrlTemplate ?? null,
+            shippingPolicySnapshot: tenant.settings?.shippingPolicy ?? null,
+            returnPolicySnapshot: tenant.settings?.returnPolicy ?? null,
+            fulfillmentType: input.fulfillmentType,
+            pickupLocationName: pickupLocation?.name ?? null,
+            pickupAddress: pickupLocation ? `${pickupLocation.address}, ${pickupLocation.city}, ${pickupLocation.province}${pickupLocation.postalCode ? ` (${pickupLocation.postalCode})` : ""}` : null,
+            pickupMapsUrl: pickupLocation?.mapsUrl ?? null,
+            pickupOpeningHours: pickupLocation?.openingHours ?? null,
+            pickupInstructions: pickupLocation?.instructions ?? null,
+            pickupPhone: pickupLocation?.phone ?? null,
             totalInCents,
           },
       select: {
@@ -1095,6 +1149,22 @@ storefrontRouter.get("/:slug/orders/:orderId", async (request, response) => {
       totalInCents: order.totalInCents,
       shippingAddress: order.shippingAddress,
       shippingMethod: order.shippingMethod,
+      shippingZoneName: order.shippingZoneName,
+      shippingEstimatedDaysMin: order.shippingEstimatedDaysMin,
+      shippingEstimatedDaysMax: order.shippingEstimatedDaysMax,
+      shippingPolicy: order.shippingPolicySnapshot,
+      returnPolicy: order.returnPolicySnapshot,
+      fulfillmentType: order.fulfillmentType,
+      pickup: order.fulfillmentType === "PICKUP" ? {
+        name: order.pickupLocationName,
+        address: order.pickupAddress,
+        mapsUrl: order.pickupMapsUrl,
+        openingHours: order.pickupOpeningHours,
+        instructions: order.pickupInstructions,
+        phone: order.pickupPhone,
+        readyAt: order.pickupReadyAt,
+        completedAt: order.pickupCompletedAt,
+      } : null,
       items: order.items.map((item) => ({
         id: item.id,
         productName: item.productName,

@@ -8,6 +8,7 @@ const defaults: Record<NotificationEvent, { subject: (store: string) => string; 
   ORDER_CREATED: { subject: (store) => `Recibimos tu pedido en ${store}`, message: "Tu pedido fue creado correctamente. Te avisaremos cuando cambie su estado." },
   ORDER_PAID: { subject: (store) => `Pago confirmado en ${store}`, message: "Confirmamos el pago de tu pedido. Ya estamos trabajando para prepararlo." },
   ORDER_SHIPPED: { subject: (store) => `Tu pedido de ${store} fue enviado`, message: "Tu compra ya está en camino." },
+  ORDER_READY_FOR_PICKUP: { subject: (store) => `Tu pedido de ${store} está listo para retirar`, message: "Tu compra ya está preparada. Revisá el punto de retiro, los horarios y las indicaciones antes de acercarte." },
   CART_ABANDONED: { subject: (store) => `Tu carrito te espera en ${store}`, message: "Guardamos los productos que elegiste para que puedas completar tu compra." },
 };
 

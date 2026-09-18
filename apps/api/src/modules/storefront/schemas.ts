@@ -44,7 +44,7 @@ export const checkoutSchema = z
         firstName: z.string().trim().min(2).max(80),
         lastName: z.string().trim().min(2).max(80),
         phone: z.string().trim().min(6).max(30),
-        shippingAddress: z.string().trim().min(8).max(500),
+        shippingAddress: z.string().trim().min(8).max(500).nullable().optional(),
         postalCode: z.string().trim().min(2).max(12).nullable().optional(),
         notes: z.string().trim().max(1000).nullable().optional(),
       })
@@ -73,8 +73,27 @@ export const checkoutSchema = z
       .nullable()
       .optional(),
     shippingMethodId: z.string().trim().min(1).max(64).nullable().optional(),
+    fulfillmentType: z.enum(["DELIVERY", "PICKUP"]).default("DELIVERY"),
+    pickupLocationId: z.string().trim().min(1).max(64).nullable().optional(),
   })
   .strict()
+  .superRefine((input, context) => {
+    if (input.fulfillmentType === "DELIVERY" && !input.customer.shippingAddress) {
+      context.addIssue({ code: "custom", path: ["customer", "shippingAddress"], message: "Ingresá la dirección de entrega" });
+    }
+    if (input.fulfillmentType === "DELIVERY" && !input.customer.postalCode) {
+      context.addIssue({ code: "custom", path: ["customer", "postalCode"], message: "Ingresá el código postal" });
+    }
+    if (input.fulfillmentType === "DELIVERY" && input.customer.postalCode && !/^(?:[A-Z]\d{4}[A-Z]{3}|\d{4})$/i.test(input.customer.postalCode.replace(/\s+/g, ""))) {
+      context.addIssue({ code: "custom", path: ["customer", "postalCode"], message: "Ingresá un código postal argentino válido (por ejemplo 1425 o C1425ABC)" });
+    }
+    if (input.fulfillmentType === "PICKUP" && !input.pickupLocationId) {
+      context.addIssue({ code: "custom", path: ["pickupLocationId"], message: "Elegí un punto de retiro" });
+    }
+    if (input.fulfillmentType === "PICKUP" && input.shippingMethodId) {
+      context.addIssue({ code: "custom", path: ["shippingMethodId"], message: "El retiro no utiliza un método de envío" });
+    }
+  })
   .refine(
     ({ items }) =>
       new Set(

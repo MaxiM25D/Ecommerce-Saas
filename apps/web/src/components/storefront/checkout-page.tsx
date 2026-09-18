@@ -7,7 +7,10 @@ import {
   Clock3,
   Copy,
   Landmark,
+  MapPin,
   ShieldCheck,
+  Store,
+  Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
@@ -53,13 +56,17 @@ export function CheckoutPage({ slug }: { slug: string }) {
 
 function Checkout({ store }: { store: PublicStore }) {
   const { items, subtotalInCents, clear } = useCart();
+  const pickupLocations = store.pickupLocations ?? [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CheckoutResult | null>(null);
   const [couponCode, setCouponCode] = useState("");
   const [discountInCents, setDiscountInCents] = useState(0);
   const [shippingMethodId, setShippingMethodId] = useState("");
+  const [fulfillmentType, setFulfillmentType] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
+  const [pickupLocationId, setPickupLocationId] = useState(pickupLocations[0]?.id ?? "");
   const [postalCode, setPostalCode] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
   const [savedCartEmail, setSavedCartEmail] = useState("");
   const [customer, setCustomer] = useState<StorefrontCustomer | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState("");
@@ -85,14 +92,17 @@ function Checkout({ store }: { store: PublicStore }) {
           method.postalPrefixes.length === 0 ||
           !postalCode.trim() ||
           method.postalPrefixes.some((prefix) =>
-            postalCode.trim().toUpperCase().startsWith(prefix.toUpperCase()),
+            postalCode.replace(/\s+/g, "").toUpperCase().startsWith(prefix.replace(/\s+/g, "").toUpperCase()),
           ),
       ),
     [postalCode, shippingMethods],
   );
-  const shippingInCents =
-    shippingMethods.find(({ id }) => id === shippingMethodId)?.priceInCents ??
-    0;
+  const selectedShippingMethod = shippingMethods.find(({ id }) => id === shippingMethodId);
+  const merchandiseAfterDiscount = Math.max(0, subtotalInCents - discountInCents);
+  const hasFreeShipping = Boolean(selectedShippingMethod?.freeShippingThresholdInCents && merchandiseAfterDiscount >= selectedShippingMethod.freeShippingThresholdInCents);
+  const shippingInCents = fulfillmentType === "DELIVERY"
+    ? hasFreeShipping ? 0 : selectedShippingMethod?.priceInCents ?? 0
+    : 0;
   const finalTotalInCents = Math.max(
     0,
     subtotalInCents - discountInCents + shippingInCents,
@@ -125,7 +135,7 @@ function Checkout({ store }: { store: PublicStore }) {
       selectedMethod &&
       selectedMethod.postalPrefixes.length > 0 &&
       !selectedMethod.postalPrefixes.some((prefix) =>
-        value.trim().toUpperCase().startsWith(prefix.toUpperCase()),
+        value.replace(/\s+/g, "").toUpperCase().startsWith(prefix.replace(/\s+/g, "").toUpperCase()),
       )
     )
       setShippingMethodId("");
@@ -199,6 +209,8 @@ function Checkout({ store }: { store: PublicStore }) {
             paymentMethod,
             couponCode: couponCode || null,
             shippingMethodId: shippingMethodId || null,
+            fulfillmentType,
+            pickupLocationId: fulfillmentType === "PICKUP" ? pickupLocationId : null,
           }),
         },
       );
@@ -296,20 +308,20 @@ function Checkout({ store }: { store: PublicStore }) {
                   <CheckoutField label="Teléfono" name="phone" />
                 </div>
               </FormCard>
-              <FormCard description="Indicá dónde querés recibir la compra." step="02" title="Entrega">
+              <FormCard description="Elegí la alternativa que te resulte más cómoda." step="02" title="Cómo querés recibir tu compra">
                 <div className="space-y-4">
-                  <TextArea
-                    label="Dirección completa"
-                    name="shippingAddress"
-                    placeholder="Calle, número, piso, localidad y provincia"
-                    required
-                  />
-                  <CheckoutField
-                    label="Código postal"
-                    name="postalCode"
-                    onChange={updatePostalCode}
-                    required={false}
-                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${fulfillmentType === "DELIVERY" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} onClick={() => { setFulfillmentType("DELIVERY"); setPickupLocationId(""); }} type="button"><Truck className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Envío a domicilio</strong><span className="mt-1 block text-xs leading-5 text-stone-500">Recibí la compra en la dirección que indiques.</span></span></button>
+                    {pickupLocations.length > 0 && <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${fulfillmentType === "PICKUP" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} onClick={() => { setFulfillmentType("PICKUP"); setShippingMethodId(""); setPickupLocationId(pickupLocations[0]?.id ?? ""); }} type="button"><Store className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Retiro en local</strong><span className="mt-1 block text-xs leading-5 text-stone-500">Sin costo de envío. Te avisamos cuando esté listo.</span></span></button>}
+                  </div>
+                  {fulfillmentType === "DELIVERY" ? <>
+                    <TextArea label="Dirección completa" name="shippingAddress" onChange={setShippingAddress} placeholder="Calle, número, piso, localidad y provincia" required />
+                    <CheckoutField label="Código postal" name="postalCode" onChange={updatePostalCode} required />
+                    {postalCode && !/^(?:[A-Z]\d{4}[A-Z]{3}|\d{4})$/i.test(postalCode.replace(/\s+/g, "")) && <p className="text-xs text-red-700">Usá un código postal de 4 dígitos o un CPA completo, por ejemplo 1425 o C1425ABC.</p>}
+                  </> : <div className="space-y-3">
+                    <label className="block text-sm font-semibold">Punto de retiro<select className="control mt-2" value={pickupLocationId} onChange={(event) => setPickupLocationId(event.target.value)} required><option value="">Seleccioná una sucursal</option>{pickupLocations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.city}</option>)}</select></label>
+                    {pickupLocations.filter(({ id }) => id === pickupLocationId).map((location) => <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm" key={location.id}><div className="flex gap-3"><MapPin className="mt-0.5 shrink-0 text-emerald-700" size={18} /><div><strong className="text-emerald-950">{location.name}</strong><p className="mt-1 leading-5 text-emerald-800">{location.address}, {location.city}, {location.province}{location.postalCode ? ` (${location.postalCode})` : ""}</p>{location.openingHours && <p className="mt-2 text-xs text-emerald-700"><strong>Horarios:</strong> {location.openingHours}</p>}<p className="mt-1 text-xs text-emerald-700"><strong>Preparación estimada:</strong> {formatPreparationTime(location.preparationMinutes)}</p>{location.instructions && <p className="mt-1 text-xs text-emerald-700">{location.instructions}</p>}{location.mapsUrl && <a className="mt-3 inline-flex items-center gap-1 font-semibold text-emerald-900 underline" href={location.mapsUrl} target="_blank" rel="noreferrer">Abrir en Google Maps ↗</a>}</div></div></div>)}
+                  </div>}
                   <TextArea
                     label="Notas (opcional)"
                     name="notes"
@@ -317,7 +329,7 @@ function Checkout({ store }: { store: PublicStore }) {
                   />
                 </div>
               </FormCard>
-              {shippingMethods.length > 0 && (
+              {fulfillmentType === "DELIVERY" && shippingMethods.length > 0 && (
                 <FormCard description="Mostramos las opciones disponibles para tu código postal." step="03" title="Método de envío">
                   <select
                     className="control"
@@ -332,10 +344,8 @@ function Checkout({ store }: { store: PublicStore }) {
                     {eligibleShippingMethods.map((method) => (
                       <option key={method.id} value={method.id}>
                         {method.zoneName} · {method.name} ·{" "}
-                        {formatMoney(method.priceInCents, currency)}
-                        {method.estimatedDays
-                          ? ` · ${method.estimatedDays} días`
-                          : ""}
+                        {method.freeShippingThresholdInCents && merchandiseAfterDiscount >= method.freeShippingThresholdInCents ? "Gratis" : formatMoney(method.priceInCents, currency)}
+                        {` · ${formatShippingRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}`}
                       </option>
                     ))}
                   </select>
@@ -346,9 +356,10 @@ function Checkout({ store }: { store: PublicStore }) {
                   )}
                 </FormCard>
               )}
+              {(store.settings?.shippingPolicy || store.settings?.returnPolicy) && <FormCard description="Información importante antes de confirmar la compra." title="Entrega, cambios y devoluciones"><div className="space-y-4 text-sm leading-6 text-stone-600">{store.settings?.shippingPolicy && <div><strong className="text-stone-900">Política de entrega</strong><p className="mt-1 whitespace-pre-line">{store.settings.shippingPolicy}</p></div>}{store.settings?.returnPolicy && <div><strong className="text-stone-900">Cambios y devoluciones</strong><p className="mt-1 whitespace-pre-line">{store.settings.returnPolicy}</p></div>}</div></FormCard>}
               <FormCard
                 description="Si tenés un código promocional, aplicalo antes de pagar."
-                step={shippingMethods.length > 0 ? "04" : "03"}
+                step={fulfillmentType === "DELIVERY" && shippingMethods.length > 0 ? "04" : "03"}
                 title="Descuento"
               >
                 <div className="flex gap-3">
@@ -374,7 +385,7 @@ function Checkout({ store }: { store: PublicStore }) {
                   </p>
                 )}
               </FormCard>
-              <FormCard description="Elegí cómo querés abonar tu compra." step={shippingMethods.length > 0 ? "05" : "04"} title="Pago">
+              <FormCard description="Elegí cómo querés abonar tu compra." step={fulfillmentType === "DELIVERY" && shippingMethods.length > 0 ? "05" : "04"} title="Pago">
                 <div className="grid gap-3">
                   {store.paymentMethods.mercadoPago && (
                     <PaymentOption
@@ -421,10 +432,25 @@ function Checkout({ store }: { store: PublicStore }) {
           currency={currency}
           discountInCents={discountInCents}
           shippingInCents={shippingInCents}
+          fulfillmentType={fulfillmentType}
+          shippingAddress={shippingAddress}
+          shippingMethod={selectedShippingMethod}
         />
       </div>
     </main>
   );
+}
+
+function formatPreparationTime(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = minutes / 60;
+  return `${Number.isInteger(hours) ? hours : hours.toLocaleString("es-AR", { maximumFractionDigits: 1 })} h`;
+}
+
+function formatShippingRange(minimum: number | null, maximum: number | null) {
+  if (minimum && maximum && minimum !== maximum) return `${minimum} a ${maximum} días hábiles`;
+  if (minimum || maximum) return `${minimum ?? maximum} días hábiles`;
+  return "plazo a coordinar";
 }
 
 function EmptyCart({ slug }: { slug: string }) {
@@ -475,11 +501,13 @@ function TextArea({
   name,
   placeholder,
   required,
+  onChange,
 }: {
   label: string;
   name: string;
   placeholder: string;
   required?: boolean;
+  onChange?: (value: string) => void;
 }) {
   return (
     <label className="block text-sm font-medium text-stone-700">
@@ -489,6 +517,7 @@ function TextArea({
         name={name}
         placeholder={placeholder}
         required={required}
+        onChange={(event) => onChange?.(event.target.value)}
       />
     </label>
   );
@@ -565,10 +594,16 @@ function OrderSummary({
   currency,
   discountInCents,
   shippingInCents,
+  fulfillmentType,
+  shippingAddress,
+  shippingMethod,
 }: {
   currency: string;
   discountInCents: number;
   shippingInCents: number;
+  fulfillmentType: "DELIVERY" | "PICKUP";
+  shippingAddress: string;
+  shippingMethod?: PublicStore["shippingZones"][number]["methods"][number];
 }) {
   const { items, subtotalInCents } = useCart();
   return (
@@ -610,13 +645,14 @@ function OrderSummary({
             <span>− {formatMoney(discountInCents, currency)}</span>
           </div>
         )}
-        {shippingInCents > 0 && (
+        {(shippingMethod || fulfillmentType === "PICKUP") && (
           <div className="flex justify-between">
-            <span className="text-stone-500">Envío</span>
-            <span>{formatMoney(shippingInCents, currency)}</span>
+            <span className="text-stone-500">{fulfillmentType === "PICKUP" ? "Retiro en local" : "Envío"}</span>
+            <span>{shippingInCents > 0 ? formatMoney(shippingInCents, currency) : "Gratis"}</span>
           </div>
         )}
       </div>
+      {fulfillmentType === "DELIVERY" && shippingMethod && <div className="mt-4 rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-600"><strong className="block text-stone-900">{shippingMethod.name}</strong><span>{formatShippingRange(shippingMethod.estimatedDaysMin ?? shippingMethod.estimatedDays, shippingMethod.estimatedDaysMax ?? shippingMethod.estimatedDays)}</span>{shippingAddress && <span className="mt-1 block">Entrega en: {shippingAddress}</span>}</div>}
       <div className="mt-4 flex justify-between border-t border-stone-100 pt-4">
         <span className="text-sm text-stone-500">Total</span>
         <strong className="text-xl">

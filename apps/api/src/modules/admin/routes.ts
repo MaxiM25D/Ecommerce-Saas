@@ -32,6 +32,19 @@ import {
   updateMemberSchema,
   updateStoreSchema,
 } from "./schemas.js";
+
+function buildTrackingUrl(template: string | null, trackingCode: string | null | undefined): string | null {
+  if (!template) return null;
+  const url = trackingCode
+    ? template.replaceAll("{code}", encodeURIComponent(trackingCode.trim()))
+    : template.replaceAll("{code}", "");
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
 import {
   getStoredReceiptAccess,
   uploadProductFiles,
@@ -515,6 +528,8 @@ adminRouter.get("/orders", async (request, response) => {
       status: true,
       paymentStatus: true,
       paymentMethod: true,
+      fulfillmentType: true,
+      pickupLocationName: true,
       customerName: true,
       customerEmail: true,
       totalInCents: true,
@@ -557,9 +572,11 @@ adminRouter.get("/orders/:id", async (request, response) => {
 const orderTransitions: Record<string, string[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["PREPARING", "CANCELLED"],
-  PREPARING: ["SHIPPED", "CANCELLED"],
+  PREPARING: ["SHIPPED", "READY_FOR_PICKUP", "CANCELLED"],
   SHIPPED: ["DELIVERED"],
   DELIVERED: [],
+  READY_FOR_PICKUP: ["PICKED_UP"],
+  PICKED_UP: [],
   CANCELLED: [],
 };
 const paymentTransitions: Record<string, string[]> = {
@@ -575,6 +592,7 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
   const id = resourceIdSchema.parse(request.params.id);
   const input = updateOrderSchema.parse(request.body);
   let paymentBecameApproved = false;
+  let pickupBecameReady = false;
 
   const order = await database.$transaction(async (transaction) => {
     await transaction.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} AND "tenantId" = ${tenant.id} FOR UPDATE`;
@@ -636,6 +654,15 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
         "Completá los datos de despacho para marcar el envío",
       );
     }
+    if (["READY_FOR_PICKUP", "PICKED_UP"].includes(input.status ?? "") && current.fulfillmentType !== "PICKUP") {
+      throw new HttpError(409, "Ese estado solo corresponde a pedidos con retiro en local");
+    }
+    if (input.status === "READY_FOR_PICKUP" && current.paymentStatus !== "APPROVED") {
+      throw new HttpError(409, "Confirmá el pago antes de avisar que el pedido está listo para retirar");
+    }
+    if (input.status === "PICKED_UP" && current.status !== "READY_FOR_PICKUP") {
+      throw new HttpError(409, "Primero marcá el pedido como listo para retirar");
+    }
 
     const refundBeforeShipment =
       input.paymentStatus === "REFUNDED" &&
@@ -660,6 +687,7 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
       : input.paymentStatus === "APPROVED" && current.status === "PENDING"
         ? "CONFIRMED"
         : input.status;
+    pickupBecameReady = nextStatus === "READY_FOR_PICKUP" && current.status !== "READY_FOR_PICKUP";
     const data = {
       ...input,
       ...(nextStatus ? { status: nextStatus } : {}),
@@ -669,6 +697,8 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
       ...(releaseStock
         ? { stockStatus: "RELEASED" as const, stockExpiresAt: null }
         : {}),
+      ...(nextStatus === "READY_FOR_PICKUP" ? { pickupReadyAt: new Date() } : {}),
+      ...(nextStatus === "PICKED_UP" ? { pickupCompletedAt: new Date() } : {}),
     };
 
     const updated = await transaction.order.update({
@@ -735,6 +765,14 @@ adminRouter.patch("/orders/:id", canManage, async (request, response) => {
     await dispatchTenantNotification({
       tenantId: tenant.id,
       event: "ORDER_PAID",
+      recipient: order.customerEmail,
+      actionUrl: `/tienda/${tenant.slug}/pedido/${order.id}`,
+    });
+  }
+  if (pickupBecameReady) {
+    await dispatchTenantNotification({
+      tenantId: tenant.id,
+      event: "ORDER_READY_FOR_PICKUP",
       recipient: order.customerEmail,
       actionUrl: `/tienda/${tenant.slug}/pedido/${order.id}`,
     });
@@ -848,6 +886,9 @@ adminRouter.post(
         where: { id, tenantId: tenant.id },
       });
       if (!current) throw new HttpError(404, "Pedido no encontrado");
+      if (current.fulfillmentType !== "DELIVERY") {
+        throw new HttpError(409, "Los pedidos con retiro en local no se despachan");
+      }
       if (
         current.status !== "PREPARING" ||
         current.paymentStatus !== "APPROVED"
@@ -857,17 +898,22 @@ adminRouter.post(
           "Solo se pueden despachar pedidos pagados que estén en preparación",
         );
       }
+      const normalizedShipmentInput = {
+        ...shipmentInput,
+        trackingUrl: shipmentInput.trackingUrl
+          ?? buildTrackingUrl(current.shippingTrackingUrlTemplate, shipmentInput.trackingCode),
+      };
       await transaction.shipment.upsert({
         where: { orderId: id },
         update: {
-          ...shipmentInput,
+          ...normalizedShipmentInput,
           shippedAt: new Date(),
           deliveredAt: null,
           notificationStatus: "PENDING",
           notificationError: null,
         },
         create: {
-          ...shipmentInput,
+          ...normalizedShipmentInput,
           tenantId: tenant.id,
           orderId: id,
           shippedAt: new Date(),
@@ -884,7 +930,7 @@ adminRouter.post(
           orderId: id,
           status: "SHIPPED",
           changedByUserId: user.id,
-          note: `Despachado por ${shipmentInput.carrier}`,
+          note: `Despachado por ${normalizedShipmentInput.carrier}`,
         },
       });
       return transaction.order.findUniqueOrThrow({

@@ -59,6 +59,8 @@ export type OrderSummary = {
   status: string;
   paymentStatus: string;
   paymentMethod: string;
+  fulfillmentType: "DELIVERY" | "PICKUP";
+  pickupLocationName: string | null;
   customerName: string;
   customerEmail: string;
   totalInCents: number;
@@ -70,7 +72,26 @@ export type OrderSummary = {
 
 export type OrderDetail = OrderSummary & {
   customerPhone: string | null;
+  shippingInCents: number;
   shippingAddress: string | null;
+  shippingPostalCode: string | null;
+  shippingMethod: string | null;
+  shippingZoneName: string | null;
+  shippingEstimatedDaysMin: number | null;
+  shippingEstimatedDaysMax: number | null;
+  shippingFreeThresholdInCents: number | null;
+  shippingCarrierCode: string | null;
+  shippingCarrierName: string | null;
+  shippingTrackingUrlTemplate: string | null;
+  shippingPolicySnapshot: string | null;
+  returnPolicySnapshot: string | null;
+  pickupAddress: string | null;
+  pickupMapsUrl: string | null;
+  pickupOpeningHours: string | null;
+  pickupInstructions: string | null;
+  pickupPhone: string | null;
+  pickupReadyAt: string | null;
+  pickupCompletedAt: string | null;
   notes: string | null;
   stockStatus: string;
   stockExpiresAt: string | null;

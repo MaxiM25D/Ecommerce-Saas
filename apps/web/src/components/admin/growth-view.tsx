@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Globe, Layers, Mail, ShoppingCart, TicketPercent, Truck } from "lucide-react";
+import { BarChart3, ExternalLink, Globe, Layers, Mail, MapPin, ShoppingCart, Store, TicketPercent, Truck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
@@ -21,8 +21,16 @@ const notificationCopy: Record<string, { title: string; help: string; subject: s
   ORDER_CREATED: { title: "Pedido recibido", help: "Se envía cuando se crea un pedido. No significa que el pago esté aprobado.", subject: "Recibimos tu pedido", message: "¡Gracias por elegirnos! Ya recibimos tu compra." },
   ORDER_PAID: { title: "Pago aprobado", help: "Se envía al confirmar el pago de una compra.", subject: "Tu pago fue aprobado", message: "Ya confirmamos tu pago. Vamos a preparar tu pedido." },
   ORDER_SHIPPED: { title: "Pedido enviado", help: "Avisa al cliente cuando su pedido fue despachado.", subject: "Tu pedido está en camino", message: "Despachamos tu compra. Podés consultar el seguimiento de tu pedido." },
+  ORDER_READY_FOR_PICKUP: { title: "Listo para retirar", help: "Avisa cuando un pedido ya puede buscarse en el local.", subject: "Tu pedido está listo para retirar", message: "Tu compra ya está preparada. Revisá la dirección, los horarios y las indicaciones antes de acercarte." },
   CART_ABANDONED: { title: "Recordatorio de carrito", help: "Es el mensaje usado para recuperar una compra pendiente.", subject: "Tus productos te están esperando", message: "Guardamos tu carrito para que puedas continuar tu compra." },
 };
+
+const carriers = [
+  { code: "CORREO_ARGENTINO", name: "Correo Argentino", trackingUrlTemplate: "https://www.correoargentino.com.ar/seguimiento" },
+  { code: "ANDREANI", name: "Andreani", trackingUrlTemplate: "https://www.andreani.com/" },
+  { code: "OCA", name: "OCA", trackingUrlTemplate: "https://www.oca.com.ar/Seguimiento/Paquetes/" },
+  { code: "VIA_CARGO", name: "Vía Cargo", trackingUrlTemplate: "https://viacargo.com.ar/" },
+] as const;
 
 type GrowthData = {
   features: string[];
@@ -55,12 +63,26 @@ type GrowthData = {
     id: string;
     name: string;
     postalPrefixes: string[];
+    active: boolean;
     methods: Array<{
       id: string;
       name: string;
       priceInCents: number;
       estimatedDays: number | null;
+      estimatedDaysMin: number | null;
+      estimatedDaysMax: number | null;
+      freeShippingThresholdInCents: number | null;
+      carrierCode: string | null;
+      carrierName: string | null;
+      trackingUrlTemplate: string | null;
+      active: boolean;
     }>;
+  }>;
+  deliveryPolicies?: { shippingPolicy: string | null; returnPolicy: string | null };
+  pickupLocations?: Array<{
+    id: string; name: string; address: string; city: string; province: string; postalCode: string | null;
+    mapsUrl: string | null; phone: string | null; openingHours: string | null; instructions: string | null;
+    preparationMinutes: number; active: boolean;
   }>;
   notificationRules: Array<{
     event: string;
@@ -156,6 +178,7 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
       </div>
     );
   const pro = (feature: string) => data.features.includes(feature);
+  const pickupLocations = data.pickupLocations ?? [];
 
   return (
     <div className={`${styles.surface} mx-auto max-w-7xl space-y-6`}>
@@ -366,8 +389,71 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
       </section>
 
       <section id="growth-shipping" hidden={section !== "shipping"}>
-        <Title title="Métodos y zonas de envío" />
+        <Title title="Entregas y puntos de retiro" />
         <p className="mt-2 text-sm leading-6 text-[#807384]">{sections[3].help}</p>
+        <div className="mt-6 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
+          <div className="flex items-start gap-3"><span className="rounded-xl bg-white p-2.5 text-[#6E3482] shadow-sm"><Store size={18} /></span><div><h3 className="font-semibold">Retiro en local</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Cargá cada sucursal una sola vez. La dirección y el enlace de Maps se mostrarán en el checkout y en el seguimiento.</p></div></div>
+          <form className={`${styles.form} mt-5`} onSubmit={async (event) => {
+            event.preventDefault();
+            const element = event.currentTarget;
+            const form = new FormData(element);
+            const saved = await mutate("/admin/growth/pickup-locations", { method: "POST", body: JSON.stringify({
+              name: form.get("pickupName"), address: form.get("pickupAddress"), city: form.get("pickupCity"), province: form.get("pickupProvince"),
+              postalCode: form.get("pickupPostalCode") || null, mapsUrl: form.get("pickupMapsUrl") || null, phone: form.get("pickupPhone") || null,
+              openingHours: form.get("pickupHours") || null, instructions: form.get("pickupInstructions") || null,
+              preparationMinutes: Math.max(0, Math.round(Number(form.get("pickupPreparationHours") || 2) * 60)), active: true,
+            }) });
+            if (saved) element.reset();
+          }}>
+            <div className="grid gap-4 sm:grid-cols-2"><Input name="pickupName" label="Nombre del punto" placeholder="Local Palermo" /><Input name="pickupPhone" label="Teléfono (opcional)" placeholder="11 5555 5555" required={false} /></div>
+            <Input name="pickupAddress" label="Dirección" placeholder="Av. Santa Fe 3200, local 4" />
+            <div className="grid gap-4 sm:grid-cols-3"><Input name="pickupCity" label="Ciudad" placeholder="CABA" /><Input name="pickupProvince" label="Provincia" placeholder="Buenos Aires" /><Input name="pickupPostalCode" label="Código postal" placeholder="C1425" required={false} /></div>
+            <Input name="pickupMapsUrl" label="Enlace de Google Maps (opcional)" help="Pegá el enlace para que el comprador pueda abrir la ubicación exacta." placeholder="https://maps.google.com/..." type="url" required={false} />
+            <div className="grid gap-4 sm:grid-cols-2"><Input name="pickupHours" label="Horarios (opcional)" placeholder="Lun a vie de 9 a 18 h" required={false} /><Input name="pickupPreparationHours" label="Preparación estimada (horas)" placeholder="2" type="number" min={0} required={false} /></div>
+            <Input name="pickupInstructions" label="Indicaciones (opcional)" placeholder="Presentate en recepción con el número de pedido." required={false} />
+            <div className={styles.footer}><Button disabled={!canManage}>Agregar punto de retiro</Button></div>
+          </form>
+          <div className="mt-5 grid gap-3">
+            {pickupLocations.length === 0 && <EmptyState title="Todavía no hay puntos de retiro">Agregá tu local para ofrecer retiro gratuito en el checkout.</EmptyState>}
+            {pickupLocations.map((location) => <article className="rounded-xl border border-[#e6dfe8] bg-white p-4" key={location.id}>
+              <div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><MapPin size={15} className="text-[#6E3482]" /><p className="font-semibold">{location.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${location.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{location.active ? "Activo" : "Pausado"}</span></div><p className="mt-2 text-xs text-[#807384]">{location.address}, {location.city}, {location.province}</p>{location.openingHours && <p className="mt-1 text-xs text-[#918495]">{location.openingHours}</p>}</div><div className="flex shrink-0 gap-3">{location.mapsUrl && <a className="text-[#6E3482]" href={location.mapsUrl} target="_blank" rel="noreferrer" aria-label={`Abrir ${location.name} en Maps`}><ExternalLink size={16} /></a>}{canManage && <><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/pickup-locations/${location.id}`, { method: "PATCH", body: JSON.stringify({ active: !location.active }) })}>{location.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/pickup-locations/${location.id}`, { method: "DELETE" })}>Eliminar</button></>}</div></div>
+              {canManage && <details className="mt-4 border-t border-[#eee8f0] pt-3">
+                <summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar datos y ubicación</summary>
+                <form className={`${styles.form} mt-4`} onSubmit={async (event) => {
+                  event.preventDefault();
+                  const form = new FormData(event.currentTarget);
+                  await mutate(`/admin/growth/pickup-locations/${location.id}`, { method: "PATCH", body: JSON.stringify({
+                    name: form.get("editPickupName"), address: form.get("editPickupAddress"), city: form.get("editPickupCity"), province: form.get("editPickupProvince"),
+                    postalCode: form.get("editPickupPostalCode") || null, mapsUrl: form.get("editPickupMapsUrl") || null, phone: form.get("editPickupPhone") || null,
+                    openingHours: form.get("editPickupHours") || null, instructions: form.get("editPickupInstructions") || null,
+                    preparationMinutes: Math.max(0, Math.round(Number(form.get("editPickupPreparationHours") || 0) * 60)),
+                  }) });
+                }}>
+                  <div className="grid gap-4 sm:grid-cols-2"><Input name="editPickupName" label="Nombre del punto" placeholder="Local Palermo" defaultValue={location.name} /><Input name="editPickupPhone" label="Teléfono (opcional)" placeholder="11 5555 5555" defaultValue={location.phone ?? undefined} required={false} /></div>
+                  <Input name="editPickupAddress" label="Dirección" placeholder="Av. Santa Fe 3200, local 4" defaultValue={location.address} />
+                  <div className="grid gap-4 sm:grid-cols-3"><Input name="editPickupCity" label="Ciudad" placeholder="CABA" defaultValue={location.city} /><Input name="editPickupProvince" label="Provincia" placeholder="Buenos Aires" defaultValue={location.province} /><Input name="editPickupPostalCode" label="Código postal" placeholder="C1425" defaultValue={location.postalCode ?? undefined} required={false} /></div>
+                  <Input name="editPickupMapsUrl" label="Enlace de Google Maps (opcional)" help="Se reutiliza en el checkout, la confirmación y el seguimiento del pedido." placeholder="https://maps.app.goo.gl/..." type="url" defaultValue={location.mapsUrl ?? undefined} required={false} />
+                  <div className="grid gap-4 sm:grid-cols-2"><Input name="editPickupHours" label="Horarios (opcional)" placeholder="Lun a vie de 9 a 18 h" defaultValue={location.openingHours ?? undefined} required={false} /><Input name="editPickupPreparationHours" label="Preparación estimada (horas)" placeholder="2" type="number" min={0} step="0.5" defaultValue={String(location.preparationMinutes / 60)} required={false} /></div>
+                  <Input name="editPickupInstructions" label="Indicaciones (opcional)" placeholder="Presentate en recepción con el número de pedido." defaultValue={location.instructions ?? undefined} required={false} />
+                  <div className={styles.footer}><Button>Guardar punto de retiro</Button></div>
+                </form>
+              </details>}
+            </article>)}
+          </div>
+        </div>
+        <div className="mt-8"><h3 className="font-semibold">Envíos a domicilio</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Configurá zonas por código postal y las alternativas disponibles para cada una.</p></div>
+        <form className={`${styles.form} mt-5`} onSubmit={async (event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          await mutate("/admin/growth/delivery-policies", { method: "PATCH", body: JSON.stringify({
+            shippingPolicy: form.get("shippingPolicy") || null,
+            returnPolicy: form.get("returnPolicy") || null,
+          }) });
+        }}>
+          <Field label="Política de entrega (opcional)" help="Se muestra antes de pagar y queda guardada en cada pedido." example="Ejemplo: Entregamos de lunes a viernes. Se realizan hasta dos visitas."><textarea defaultValue={data.deliveryPolicies?.shippingPolicy ?? ""} name="shippingPolicy" maxLength={3000} placeholder="Días de entrega, intentos de visita y condiciones del servicio." /></Field>
+          <Field label="Política de cambios y devoluciones (opcional)" help="Ayuda a reducir dudas y genera confianza antes del pago." example="Ejemplo: Podés solicitar un cambio dentro de los 10 días de recibir tu compra."><textarea defaultValue={data.deliveryPolicies?.returnPolicy ?? ""} name="returnPolicy" maxLength={3000} placeholder="Plazos, condiciones y canal para solicitar un cambio o devolución." /></Field>
+          <div className={styles.footer}><Button disabled={!canManage}>Guardar políticas</Button></div>
+        </form>
         <form
           className={styles.form}
           onSubmit={async (event) => {
@@ -389,7 +475,7 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
           }}
         >
           <Input name="name" label="1. Nombre de la zona" help="Un nombre para reconocer el área en la que entregás." placeholder="CABA" />
-          <Input name="prefixes" label="Prefijos de códigos postales (opcional)" help="Separalos con comas. Se comparan con el inicio del código postal del cliente. Vacío: cualquier código." placeholder="C, 1000, 1001" required={false} />
+          <Input name="prefixes" label="Prefijos de códigos postales (opcional)" help="Separalos con comas. Aceptamos CP de 4 dígitos y CPA, por ejemplo C1425ABC. Vacío: todo el país." placeholder="C, 1000, 1001" required={false} />
           <div className={styles.footer}><Button disabled={!canManage}>Crear zona</Button></div>
         </form>
         <Tip title="2. Agregá una forma de entrega">Crear una zona no alcanza: agregale abajo un método como Mensajería o Retiro en local. Podés definir costo $0 para una entrega gratis.</Tip>
@@ -400,64 +486,27 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
               className="rounded-2xl border border-stone-200 bg-white p-5"
               key={zone.id}
             >
-              <div className="flex justify-between">
+              <div className="flex flex-wrap justify-between gap-3">
                 <div>
-                  <p className="font-semibold">{zone.name}</p>
+                  <div className="flex items-center gap-2"><p className="font-semibold">{zone.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${zone.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{zone.active ? "Activa" : "Pausada"}</span></div>
                   <p className="text-xs text-stone-400">
                     {zone.postalPrefixes.join(", ") || "Todo el país"}
                   </p>
                 </div>
                 {canManage && (
-                  <button
-                    className="text-xs font-semibold text-red-600"
-                    onClick={() =>
-                      void mutate(`/admin/growth/shipping-zones/${zone.id}`, {
-                        method: "DELETE",
-                      })
-                    }
-                  >
-                    Eliminar
-                  </button>
+                  <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ active: !zone.active }) })}>{zone.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "DELETE" })}>Eliminar</button></div>
                 )}
               </div>
-              <div className="mt-3 space-y-2 text-sm">
+              {canManage && <details className="mt-4 border-t border-stone-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar zona</summary><form className={`${styles.form} mt-3`} onSubmit={async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("zoneName"), postalPrefixes: String(form.get("zonePrefixes") ?? "").split(",").map((value) => value.trim()).filter(Boolean) }) }); }}><Input name="zoneName" label="Nombre" placeholder="CABA" defaultValue={zone.name} /><Input name="zonePrefixes" label="Prefijos postales" placeholder="C, 1000" defaultValue={zone.postalPrefixes.join(", ")} required={false} /><div className={styles.footer}><Button>Guardar zona</Button></div></form></details>}
+              <div className="mt-4 grid gap-3">
                 {zone.methods.map((method) => (
-                  <p key={method.id}>
-                    {method.name} · {money(method.priceInCents)}{" "}
-                    {method.estimatedDays
-                      ? `· ${method.estimatedDays} días`
-                      : ""}
-                  </p>
+                  <article className="rounded-xl border border-stone-100 bg-stone-50 p-4" key={method.id}>
+                    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{method.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${method.active ? "bg-emerald-50 text-emerald-700" : "bg-white text-stone-500"}`}>{method.active ? "Activo" : "Pausado"}</span></div><p className="mt-1 text-xs text-[#807384]">{money(method.priceInCents)} · {formatDeliveryRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}{method.freeShippingThresholdInCents ? ` · Gratis desde ${money(method.freeShippingThresholdInCents)}` : ""}</p>{method.carrierName && <p className="mt-1 text-xs text-[#918495]">Transportista: {method.carrierName}</p>}</div>{canManage && <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify({ active: !method.active }) })}>{method.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "DELETE" })}>Eliminar</button></div>}</div>
+                    {canManage && <details className="mt-3 border-t border-stone-200 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar método</summary><ShippingMethodForm buttonLabel="Guardar método" defaults={method} onSubmit={async (payload) => { await mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify(payload) }); }} /></details>}
+                  </article>
                 ))}
               </div>
-              <form
-                className={styles.form}
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  const element = event.currentTarget;
-                  const form = new FormData(element);
-                  const saved = await mutate(
-                    `/admin/growth/shipping-zones/${zone.id}/methods`,
-                    {
-                      method: "POST",
-                      body: JSON.stringify({
-                        name: form.get("name"),
-                        priceInCents: Math.round(Number(form.get("price")) * 100),
-                        estimatedDays: form.get("days")
-                          ? Number(form.get("days"))
-                          : null,
-                        active: true,
-                      }),
-                    },
-                  );
-                  if (saved) element.reset();
-                }}
-              >
-                <Input name="name" label="Nombre del método" help="Lo verá el cliente al elegir el envío." placeholder="Mensajería a domicilio" />
-                <Input name="price" label="Costo en pesos" help="Se suma al total de la compra. 0 significa gratis." placeholder="3500" type="number" step="0.01" />
-                <Input name="days" label="Días estimados (opcional)" help="Plazo orientativo de entrega, en días enteros." placeholder="3" type="number" min={1} required={false} />
-                <div className={styles.footer}><Button disabled={!canManage}>Agregar método</Button></div>
-              </form>
+              <details className="mt-5"><summary className="cursor-pointer text-sm font-semibold text-[#6E3482]">+ Agregar método de envío</summary><ShippingMethodForm buttonLabel="Agregar método" disabled={!canManage} onSubmit={async (payload, element) => { const saved = await mutate(`/admin/growth/shipping-zones/${zone.id}/methods`, { method: "POST", body: JSON.stringify({ ...payload, active: true }) }); if (saved) element.reset(); }} /></details>
             </article>
           ))}
         </div>
@@ -531,6 +580,7 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
               "ORDER_CREATED",
               "ORDER_PAID",
               "ORDER_SHIPPED",
+              "ORDER_READY_FOR_PICKUP",
               "CART_ABANDONED",
             ].map((eventName) => {
               const rule = data.notificationRules.find(
@@ -631,6 +681,53 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
   );
 }
 
+type ShippingMethodDefaults = GrowthData["shippingZones"][number]["methods"][number];
+
+function ShippingMethodForm({
+  buttonLabel,
+  defaults,
+  disabled,
+  onSubmit,
+}: {
+  buttonLabel: string;
+  defaults?: ShippingMethodDefaults;
+  disabled?: boolean;
+  onSubmit: (payload: Record<string, unknown>, form: HTMLFormElement) => Promise<void>;
+}) {
+  return <form className={`${styles.form} mt-4`} onSubmit={async (event) => {
+    event.preventDefault();
+    const element = event.currentTarget;
+    const form = new FormData(element);
+    const carrierCode = String(form.get("carrierCode") || "CUSTOM");
+    const preset = carriers.find(({ code }) => code === carrierCode);
+    const customTrackingUrl = String(form.get("trackingUrlTemplate") || "").trim();
+    await onSubmit({
+      name: form.get("methodName"),
+      priceInCents: Math.round(Number(form.get("methodPrice")) * 100),
+      estimatedDaysMin: Number(form.get("estimatedDaysMin")),
+      estimatedDaysMax: Number(form.get("estimatedDaysMax")),
+      freeShippingThresholdInCents: form.get("freeShippingThreshold") ? Math.round(Number(form.get("freeShippingThreshold")) * 100) : null,
+      carrierCode,
+      carrierName: String(form.get("carrierName") || "").trim() || preset?.name || "Otro transportista",
+      trackingUrlTemplate: customTrackingUrl || preset?.trackingUrlTemplate || null,
+    }, element);
+  }}>
+    <Input name="methodName" label="Nombre del método" help="Es la opción que verá el comprador." placeholder="Envío estándar" defaultValue={defaults?.name} />
+    <div className="grid gap-4 sm:grid-cols-3"><Input name="methodPrice" label="Costo en pesos" help="Usá 0 para un envío siempre gratis." placeholder="3500" type="number" step="0.01" defaultValue={defaults ? String(defaults.priceInCents / 100) : undefined} /><Input name="estimatedDaysMin" label="Plazo mínimo (días hábiles)" placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Plazo máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
+    <Input name="freeShippingThreshold" label="Envío gratis desde (opcional)" help="Se evalúa sobre los productos después de descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} required={false} />
+    <Field label="Transportista" help="Al despachar, se completa automáticamente junto con su página oficial de seguimiento." example="Ejemplo: Correo Argentino"><select defaultValue={defaults?.carrierCode ?? "CORREO_ARGENTINO"} name="carrierCode"><option value="CORREO_ARGENTINO">Correo Argentino</option><option value="ANDREANI">Andreani</option><option value="OCA">OCA</option><option value="VIA_CARGO">Vía Cargo</option><option value="CUSTOM">Otro / mensajería propia</option></select></Field>
+    <Input name="carrierName" label="Nombre personalizado del transportista (opcional)" help="Completalo solo si elegiste Otro o querés cambiar el nombre visible." placeholder="Moto Express" defaultValue={defaults?.carrierName ?? undefined} required={false} />
+    <Input name="trackingUrlTemplate" label="URL de seguimiento personalizada (opcional)" help="Usá {code} donde debe insertarse el código. Si elegís una empresa conocida podés dejarla vacía." placeholder="https://envios.ejemplo.com/seguimiento/{code}" defaultValue={defaults?.trackingUrlTemplate ?? undefined} required={false} />
+    <div className={styles.footer}><Button disabled={disabled}>{buttonLabel}</Button></div>
+  </form>;
+}
+
+function formatDeliveryRange(minimum: number | null, maximum: number | null) {
+  if (minimum && maximum && minimum !== maximum) return `${minimum} a ${maximum} días hábiles`;
+  if (minimum || maximum) return `${minimum ?? maximum} días hábiles`;
+  return "Plazo a coordinar";
+}
+
 function Title({ title, pro, onOpenPlan }: { title: string; pro?: boolean; onOpenPlan?: () => void }) {
   return (
     <div>
@@ -691,7 +788,7 @@ function Card({
 function Input({
   name,
   label,
-  help,
+  help = "",
   placeholder,
   type = "text",
   defaultValue,
@@ -702,7 +799,7 @@ function Input({
 }: {
   name: string;
   label: string;
-  help: string;
+  help?: string;
   placeholder: string;
   type?: string;
   defaultValue?: string;

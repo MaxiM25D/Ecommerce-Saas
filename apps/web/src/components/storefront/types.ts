@@ -44,6 +44,8 @@ export type PublicStore = {
     contactEmail: string | null;
     whatsapp: string | null;
     currency: string;
+    shippingPolicy: string | null;
+    returnPolicy: string | null;
   } | null;
   paymentMethods: {
     bankTransfer: boolean;
@@ -58,7 +60,18 @@ export type PublicStore = {
       name: string;
       priceInCents: number;
       estimatedDays: number | null;
+      estimatedDaysMin: number | null;
+      estimatedDaysMax: number | null;
+      freeShippingThresholdInCents: number | null;
+      carrierCode: string | null;
+      carrierName: string | null;
+      trackingUrlTemplate: string | null;
     }>;
+  }>;
+  pickupLocations?: Array<{
+    id: string; name: string; address: string; city: string; province: string; postalCode: string | null;
+    mapsUrl: string | null; phone: string | null; openingHours: string | null; instructions: string | null;
+    preparationMinutes: number;
   }>;
   categories?: StorefrontCategory[];
   products?: StorefrontProduct[];

@@ -108,6 +108,8 @@ export const updateOrderSchema = z
         "PREPARING",
         "SHIPPED",
         "DELIVERED",
+        "READY_FOR_PICKUP",
+        "PICKED_UP",
         "CANCELLED",
       ])
       .optional(),

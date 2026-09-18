@@ -86,6 +86,7 @@ test("checkout copia precios y productos y descuenta stock", async () => {
       lastName: "Cliente",
       phone: "+54 9 11 1234 5678",
       shippingAddress: "Av. Siempre Viva 742, Buenos Aires",
+      postalCode: "1000",
       notes: "Entregar por la tarde",
     },
     items: [{ productId, quantity: 2 }],
@@ -136,6 +137,7 @@ test("stock insuficiente revierte el pedido completo", async () => {
       lastName: "Cliente",
       phone: "11111111",
       shippingAddress: "Dirección de prueba número 123",
+      postalCode: "1000",
     },
     items: [{ productId, quantity: 99 }],
   });

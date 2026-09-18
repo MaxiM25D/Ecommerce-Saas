@@ -18,6 +18,7 @@ let productId = "";
 let variantId = "";
 let couponId = "";
 let shippingMethodId = "";
+let pickupLocationId = "";
 
 async function cleanup() {
   const tenants = await database.tenant.findMany({
@@ -139,15 +140,94 @@ test("PRO administra variantes, cupones y envíos sin aceptar tenantId", async (
     .send({
       name: "Correo",
       priceInCents: 15000,
-      estimatedDays: 3,
+      estimatedDaysMin: 2,
+      estimatedDaysMax: 4,
+      freeShippingThresholdInCents: 200000,
+      carrierCode: "OCA",
+      carrierName: "OCA",
+      trackingUrlTemplate: "https://tracking.example/{code}",
       active: true,
     });
   assert.equal(method.status, 201);
   shippingMethodId = method.body.method.id;
+  assert.equal((await agent.patch(`/api/admin/growth/shipping-zones/${zone.body.zone.id}`).send({ active: false })).status, 200);
+  assert.equal((await agent.patch(`/api/admin/growth/shipping-zones/${zone.body.zone.id}`).send({ active: true })).status, 200);
+  assert.equal((await agent.patch(`/api/admin/growth/shipping-methods/${shippingMethodId}`).send({ priceInCents: 15000 })).status, 200);
+  assert.equal((await otherAgent.patch(`/api/admin/growth/shipping-methods/${shippingMethodId}`).send({ active: false })).status, 404);
+  const policies = await agent.patch("/api/admin/growth/delivery-policies").send({
+    shippingPolicy: "Entregamos de lunes a viernes.",
+    returnPolicy: "Cambios dentro de los 10 días.",
+  });
+  assert.equal(policies.status, 200);
+  const pickup = await agent
+    .post("/api/admin/growth/pickup-locations")
+    .send({
+      name: "Local Palermo",
+      address: "Av. Santa Fe 3200",
+      city: "CABA",
+      province: "Buenos Aires",
+      postalCode: "C1425",
+      mapsUrl: "https://maps.google.com/?q=Av.+Santa+Fe+3200",
+      phone: "1155555555",
+      openingHours: "Lun a vie de 9 a 18 h",
+      instructions: "Presentarse con el número de pedido",
+      preparationMinutes: 120,
+      active: true,
+    });
+  assert.equal(pickup.status, 201);
+  pickupLocationId = pickup.body.location.id;
   assert.equal(
     (await otherAgent.delete(`/api/admin/growth/coupons/${couponId}`)).status,
     404,
   );
+  assert.equal(
+    (await otherAgent.patch(`/api/admin/growth/pickup-locations/${pickupLocationId}`).send({ active: false })).status,
+    404,
+  );
+});
+
+test("retiro en local no pide domicilio, guarda snapshots y usa estados propios", async () => {
+  const catalog = await request(app).get(`/api/storefront/${slug}`);
+  assert.equal(catalog.body.store.pickupLocations[0].id, pickupLocationId);
+  assert.match(catalog.body.store.pickupLocations[0].mapsUrl, /maps\.google\.com/);
+
+  const checkout = await request(app)
+    .post(`/api/storefront/${slug}/orders`)
+    .send({
+      customer: {
+        email: "pickup@growth.test",
+        firstName: "Retiro",
+        lastName: "Local",
+        phone: "1122334455",
+      },
+      items: [{ productId, variantId, quantity: 1 }],
+      paymentMethod: "BANK_TRANSFER",
+      fulfillmentType: "PICKUP",
+      pickupLocationId,
+      shippingMethodId: null,
+    });
+  assert.equal(checkout.status, 201);
+  const orderId = checkout.body.order.id as string;
+  const order = await database.order.findUniqueOrThrow({ where: { id: orderId } });
+  assert.equal(order.fulfillmentType, "PICKUP");
+  assert.equal(order.shippingAddress, null);
+  assert.equal(order.shippingInCents, 0);
+  assert.equal(order.pickupLocationName, "Local Palermo");
+  assert.match(order.pickupMapsUrl!, /maps\.google\.com/);
+
+  await database.order.update({ where: { id: orderId }, data: { status: "PREPARING", paymentStatus: "APPROVED" } });
+  const ready = await agent.patch(`/api/admin/orders/${orderId}`).send({ status: "READY_FOR_PICKUP" });
+  assert.equal(ready.status, 200);
+  assert.equal(ready.body.order.status, "READY_FOR_PICKUP");
+  assert.ok(ready.body.order.pickupReadyAt);
+  assert.equal(
+    await database.notificationLog.count({ where: { tenantId, event: "ORDER_READY_FOR_PICKUP", recipient: "pickup@growth.test" } }),
+    1,
+  );
+  const pickedUp = await agent.patch(`/api/admin/orders/${orderId}`).send({ status: "PICKED_UP" });
+  assert.equal(pickedUp.status, 200);
+  assert.equal(pickedUp.body.order.status, "PICKED_UP");
+  assert.ok(pickedUp.body.order.pickupCompletedAt);
 });
 
 test("checkout usa snapshots de variante, cupón y envío y descuenta stock", async () => {
@@ -158,6 +238,8 @@ test("checkout usa snapshots de variante, cupón y envío y descuenta stock", as
     catalog.body.store.shippingZones[0].methods[0].id,
     shippingMethodId,
   );
+  assert.equal(catalog.body.store.shippingZones[0].methods[0].estimatedDaysMin, 2);
+  assert.equal(catalog.body.store.settings.shippingPolicy, "Entregamos de lunes a viernes.");
   const checkout = await request(app)
     .post(`/api/storefront/${slug}/orders`)
     .send({
@@ -175,14 +257,20 @@ test("checkout usa snapshots de variante, cupón y envío y descuenta stock", as
       shippingMethodId,
     });
   assert.equal(checkout.status, 201);
-  assert.equal(checkout.body.order.totalInCents, 231000);
+  assert.equal(checkout.body.order.totalInCents, 216000);
   const order = await database.order.findUniqueOrThrow({
     where: { id: checkout.body.order.id },
     include: { items: true },
   });
   assert.equal(order.subtotalInCents, 240000);
   assert.equal(order.discountInCents, 24000);
-  assert.equal(order.shippingInCents, 15000);
+  assert.equal(order.shippingInCents, 0);
+  assert.equal(order.shippingZoneName, "Argentina");
+  assert.equal(order.shippingEstimatedDaysMin, 2);
+  assert.equal(order.shippingEstimatedDaysMax, 4);
+  assert.equal(order.shippingCarrierName, "OCA");
+  assert.equal(order.shippingPolicySnapshot, "Entregamos de lunes a viernes.");
+  assert.equal(order.returnPolicySnapshot, "Cambios dentro de los 10 días.");
   assert.equal(order.items[0]!.variantName, "Negra / M");
   assert.equal(
     (
@@ -190,13 +278,22 @@ test("checkout usa snapshots de variante, cupón y envío y descuenta stock", as
         where: { id: variantId },
       })
     ).stock,
-    3,
+    2,
   );
   assert.equal(
     (await database.coupon.findUniqueOrThrow({ where: { id: couponId } }))
       .usedCount,
     1,
   );
+  await database.order.update({ where: { id: order.id }, data: { status: "PREPARING", paymentStatus: "APPROVED" } });
+  const dispatch = await agent.post(`/api/admin/orders/${order.id}/dispatch`).send({
+    carrier: "OCA",
+    trackingCode: "ABC123",
+    trackingUrl: null,
+    estimatedDelivery: null,
+  });
+  assert.equal(dispatch.status, 200);
+  assert.equal(dispatch.body.order.shipment.trackingUrl, "https://tracking.example/ABC123");
 });
 
 test("el plan único expone analytics y herramientas avanzadas", async () => {

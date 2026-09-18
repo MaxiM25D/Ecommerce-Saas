@@ -25,6 +25,13 @@ type PublicOrder = {
   totalInCents: number;
   shippingAddress: string | null;
   shippingMethod: string | null;
+  shippingZoneName: string | null;
+  shippingEstimatedDaysMin: number | null;
+  shippingEstimatedDaysMax: number | null;
+  shippingPolicy: string | null;
+  returnPolicy: string | null;
+  fulfillmentType: "DELIVERY" | "PICKUP";
+  pickup: { name: string | null; address: string | null; mapsUrl: string | null; openingHours: string | null; instructions: string | null; phone: string | null; readyAt: string | null; completedAt: string | null } | null;
   items: Array<{
     id: string;
     productName: string;
@@ -47,6 +54,8 @@ const orderLabels: Record<string, string> = {
   PREPARING: "En preparación",
   SHIPPED: "Enviado",
   DELIVERED: "Entregado",
+  READY_FOR_PICKUP: "Listo para retirar",
+  PICKED_UP: "Retirado",
   CANCELLED: "Cancelado",
 };
 const paymentLabels: Record<string, string> = {
@@ -145,7 +154,7 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
           </div>
         </div>
 
-        <OrderProgress accentColor={accentColor} status={order.status} />
+        <OrderProgress accentColor={accentColor} fulfillmentType={order.fulfillmentType} status={order.status} />
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_0.82fr] lg:items-start">
           <div className="space-y-6">
@@ -172,11 +181,27 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
               </ol>
             </section>
 
+            {order.fulfillmentType === "DELIVERY" && (
+              <section className="rounded-[1.75rem] border border-black/[0.07] bg-white p-6 sm:p-8">
+                <div className="flex items-center gap-3"><PackageCheck size={20} /><h2 className="font-semibold">Entrega a domicilio</h2></div>
+                <dl className="mt-5 grid gap-3 text-sm"><Row label="Dirección" value={order.shippingAddress ?? "Sin dirección"} />{order.shippingZoneName && <Row label="Zona" value={order.shippingZoneName} />}{order.shippingMethod && <Row label="Método" value={order.shippingMethod} />}<Row label="Plazo informado" value={formatDeliveryRange(order.shippingEstimatedDaysMin, order.shippingEstimatedDaysMax)} /></dl>
+                {(order.shippingPolicy || order.returnPolicy) && <div className="mt-5 space-y-3 border-t border-stone-100 pt-5 text-xs leading-5 text-stone-600">{order.shippingPolicy && <p><strong className="text-stone-900">Política de entrega:</strong> {order.shippingPolicy}</p>}{order.returnPolicy && <p><strong className="text-stone-900">Cambios y devoluciones:</strong> {order.returnPolicy}</p>}</div>}
+              </section>
+            )}
+
             {order.shipment && (
               <section className="rounded-[1.75rem] border border-black/[0.07] bg-white p-6 sm:p-8">
                 <div className="flex items-center gap-3"><PackageCheck size={20} /><h2 className="font-semibold">Datos del envío</h2></div>
                 <dl className="mt-5 grid gap-3 text-sm"><Row label="Transportista" value={order.shipment.carrier} />{order.shipment.trackingCode && <Row label="Código" value={order.shipment.trackingCode} />}{order.shipment.estimatedDelivery && <Row label="Entrega estimada" value={new Date(order.shipment.estimatedDelivery).toLocaleDateString("es-AR")} />}</dl>
                 {order.shipment.trackingUrl && <a className="mt-5 inline-flex items-center gap-2 rounded-full px-5 py-3 text-xs font-bold text-white" href={order.shipment.trackingUrl} rel="noreferrer" style={{ backgroundColor: accentColor }} target="_blank">Seguir envío <ArrowRight size={14} /></a>}
+              </section>
+            )}
+            {order.pickup && (
+              <section className="rounded-[1.75rem] border border-emerald-200 bg-emerald-50 p-6 sm:p-8">
+                <div className="flex items-center gap-3"><PackageCheck size={20} /><h2 className="font-semibold text-emerald-950">Retiro en local</h2></div>
+                <dl className="mt-5 grid gap-3 text-sm"><Row label="Punto de retiro" value={order.pickup.name ?? "Local"} />{order.pickup.address && <Row label="Dirección" value={order.pickup.address} />}{order.pickup.openingHours && <Row label="Horarios" value={order.pickup.openingHours} />}{order.pickup.phone && <Row label="Teléfono" value={order.pickup.phone} />}</dl>
+                {order.pickup.instructions && <p className="mt-4 rounded-xl bg-white/70 px-4 py-3 text-xs leading-5 text-emerald-900">{order.pickup.instructions}</p>}
+                {order.pickup.mapsUrl && <a className="mt-5 inline-flex items-center gap-2 rounded-full px-5 py-3 text-xs font-bold text-white" href={order.pickup.mapsUrl} rel="noreferrer" style={{ backgroundColor: accentColor }} target="_blank">Abrir en Google Maps <ArrowRight size={14} /></a>}
               </section>
             )}
           </div>
@@ -202,20 +227,35 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
   );
 }
 
-const progressStages = [
+function formatDeliveryRange(minimum: number | null, maximum: number | null) {
+  if (minimum && maximum && minimum !== maximum) return `${minimum} a ${maximum} días hábiles`;
+  if (minimum || maximum) return `${minimum ?? maximum} días hábiles`;
+  return "A coordinar";
+}
+
+const deliveryProgressStages = [
   { status: "PENDING", label: "Recibido" },
   { status: "CONFIRMED", label: "Confirmado" },
   { status: "PREPARING", label: "Preparando" },
   { status: "SHIPPED", label: "Enviado" },
   { status: "DELIVERED", label: "Entregado" },
 ];
+const pickupProgressStages = [
+  { status: "PENDING", label: "Recibido" },
+  { status: "CONFIRMED", label: "Confirmado" },
+  { status: "PREPARING", label: "Preparando" },
+  { status: "READY_FOR_PICKUP", label: "Listo" },
+  { status: "PICKED_UP", label: "Retirado" },
+];
 
 function OrderProgress({
   status,
   accentColor,
+  fulfillmentType,
 }: {
   status: string;
   accentColor: string;
+  fulfillmentType: "DELIVERY" | "PICKUP";
 }) {
   if (status === "CANCELLED")
     return (
@@ -224,6 +264,7 @@ function OrderProgress({
         cerrado.
       </section>
     );
+  const progressStages = fulfillmentType === "PICKUP" ? pickupProgressStages : deliveryProgressStages;
   const currentIndex = Math.max(
     0,
     progressStages.findIndex((stage) => stage.status === status),
@@ -341,7 +382,7 @@ function OrderSummary({ order, slug }: { order: PublicOrder; slug: string }) {
           />
         )}
         <SummaryRow
-          label="Envío"
+          label={order.fulfillmentType === "PICKUP" ? "Retiro en local" : "Envío"}
           value={
             order.shippingInCents > 0
               ? formatMoney(order.shippingInCents, order.currency)
@@ -362,6 +403,13 @@ function OrderSummary({ order, slug }: { order: PublicOrder; slug: string }) {
           {order.shippingMethod && <span>{order.shippingMethod}</span>}
           {order.shippingMethod && order.shippingAddress && <span> · </span>}
           {order.shippingAddress && <span>{order.shippingAddress}</span>}
+        </div>
+      )}
+      {order.pickup && (
+        <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-4 text-xs leading-5 text-emerald-800">
+          <strong className="block text-emerald-950">Retiro en {order.pickup.name ?? "el local"}</strong>
+          {order.pickup.address && <span>{order.pickup.address}</span>}
+          {order.pickup.mapsUrl && <a className="mt-2 block font-semibold underline" href={order.pickup.mapsUrl} target="_blank" rel="noreferrer">Ver ubicación en Maps ↗</a>}
         </div>
       )}
 
