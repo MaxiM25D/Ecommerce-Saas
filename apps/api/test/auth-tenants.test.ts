@@ -48,6 +48,23 @@ test("el onboarding rechaza tenantId enviado por el cliente", async () => {
   assert.equal(await database.user.count({ where: { email: alphaEmail } }), 0);
 });
 
+test("el registro informa exactamente qué requisito de contraseña falta", async () => {
+  const response = await alphaAgent.post("/api/auth/register").send({
+    email: alphaEmail,
+    password: "lunek2026",
+    firstName: "Alpha",
+    lastName: "Owner",
+    storeName: "Tienda Alpha",
+    storeSlug: alphaSlug,
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error, "VALIDATION_ERROR");
+  assert.ok(response.body.details.some(({ field, message }: { field: string; message: string }) => field === "password" && /mayúscula/.test(message)));
+  assert.ok(response.body.details.some(({ field, message }: { field: string; message: string }) => field === "password" && /símbolo/.test(message)));
+  assert.equal(await database.user.count({ where: { email: alphaEmail } }), 0);
+});
+
 test("el registro crea usuario, tienda, membresía OWNER y sesión", async () => {
   const response = await alphaAgent.post("/api/auth/register").send({
     email: alphaEmail,

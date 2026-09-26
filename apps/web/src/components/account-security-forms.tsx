@@ -136,14 +136,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
     <>
       <Header
         title="Creá una nueva contraseña"
-        description="Debe tener entre 10 y 72 caracteres."
+        description="Usá 8 caracteres o más, con mayúscula, minúscula, número y símbolo."
       />
       <form className="mt-7 space-y-4" onSubmit={submit}>
         <Field
           label="Nueva contraseña"
           name="password"
           type="password"
-          placeholder="Mínimo 10 caracteres"
+          placeholder="8 caracteres, mayúscula, número y símbolo"
         />
         <Field
           label="Repetir contraseña"
@@ -320,7 +320,7 @@ export function InvitationAcceptance({ token }: { token: string }) {
           }
           name="password"
           type="password"
-          placeholder="Mínimo 10 caracteres"
+          placeholder={invitation.existingUser ? "Tu contraseña actual" : "8 caracteres, mayúscula, número y símbolo"}
         />
         {error && <ErrorMessage>{error}</ErrorMessage>}
         <Submit busy={busy} label="Aceptar invitación" />

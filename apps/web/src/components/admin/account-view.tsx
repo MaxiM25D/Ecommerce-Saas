@@ -73,11 +73,11 @@ export function AccountView({ user, onOpenStore, onUserUpdated }: { user: User; 
 
       <div className="space-y-6">
         <section className="rounded-[1.5rem] border border-[#e6dfe8] bg-white p-6">
-          <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">Cambiar contraseña</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Usá al menos 10 caracteres. Al cambiarla, se cierran tus otras sesiones.</p></div><span className="rounded-lg bg-[#f5eff8] p-2 text-[#6E3482]"><KeyRound size={18} /></span></div>
+          <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">Cambiar contraseña</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Usá 8 caracteres o más, con mayúscula, minúscula, número y símbolo. Al cambiarla, se cierran tus otras sesiones.</p></div><span className="rounded-lg bg-[#f5eff8] p-2 text-[#6E3482]"><KeyRound size={18} /></span></div>
           <form className="mt-6 space-y-5" onSubmit={changePassword}>
-            <Field label="Contraseña actual" help="Confirma que sos la persona propietaria de la cuenta."><input autoComplete="current-password" minLength={10} name="currentPassword" required type="password" /></Field>
-            <Field label="Nueva contraseña" help="Debe ser diferente a la actual y tener entre 10 y 72 caracteres."><input autoComplete="new-password" maxLength={72} minLength={10} name="newPassword" required type="password" /></Field>
-            <Field label="Repetir nueva contraseña" help="Escribila otra vez para evitar errores."><input autoComplete="new-password" maxLength={72} minLength={10} name="confirmation" required type="password" /></Field>
+            <Field label="Contraseña actual" help="Confirma que sos la persona propietaria de la cuenta."><input autoComplete="current-password" maxLength={72} name="currentPassword" required type="password" /></Field>
+            <Field label="Nueva contraseña" help="Debe ser diferente a la actual e incluir mayúscula, minúscula, número y símbolo."><input autoComplete="new-password" maxLength={72} minLength={8} name="newPassword" required type="password" /></Field>
+            <Field label="Repetir nueva contraseña" help="Escribila otra vez para evitar errores."><input autoComplete="new-password" maxLength={72} minLength={8} name="confirmation" required type="password" /></Field>
             <button className={`${styles.button} w-full`} disabled={busy} type="submit"><KeyRound size={16} /> {busy ? "Actualizando…" : "Cambiar contraseña"}</button>
           </form>
           <p className="mt-4 text-center text-xs text-[#807384]">¿No recordás la actual? <Link className="font-semibold text-[#6E3482] underline" href="/recuperar-clave">Recuperala por email</Link>.</p>

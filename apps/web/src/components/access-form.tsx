@@ -34,7 +34,10 @@ export function AccessForm({
   const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
+  const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [storeName, setStoreName] = useState("");
   const [storeSlug, setStoreSlug] = useState("");
   const [customSlug, setCustomSlug] = useState(false);
@@ -43,15 +46,43 @@ export function AccessForm({
   function changeMode(nextMode: Mode) {
     setMode(nextMode);
     setError("");
+    setFieldErrors({});
     setShowPassword(false);
+    setPassword("");
+    setPasswordConfirmation("");
+  }
+
+  function clearFieldError(name: string) {
+    setError((current) => current === "Revisá los campos marcados para continuar." ? "" : current);
+    setFieldErrors((current) => {
+      if (!current[name]) return current;
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
     setError("");
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    if (mode === "register") {
+      const validationErrors = validateRegistration(form);
+      setFieldErrors(validationErrors);
+      if (Object.keys(validationErrors).length > 0) {
+        setError("Revisá los campos marcados para continuar.");
+        requestAnimationFrame(() => {
+          formElement
+            .querySelector<HTMLElement>("[aria-invalid='true']")
+            ?.focus();
+        });
+        return;
+      }
+    }
+
+    setBusy(true);
     const body =
       mode === "login"
         ? { email: form.get("email"), password: form.get("password") }
@@ -84,6 +115,11 @@ export function AccessForm({
       }
       router.refresh();
     } catch (caught) {
+      if (caught instanceof ApiError && caught.details.length > 0) {
+        setFieldErrors(Object.fromEntries(caught.details.map(({ field, message }) => [field, friendlyValidationMessage(field, message)])));
+        setError("Revisá los campos marcados para continuar.");
+        return;
+      }
       setError(
         caught instanceof ApiError
           ? caught.message
@@ -147,7 +183,7 @@ export function AccessForm({
             </p>
           </div>
 
-          <form className="space-y-4" onSubmit={submit}>
+          <form className="space-y-4" noValidate={mode === "register"} onSubmit={submit}>
             {mode === "register" && (
               <div className="grid grid-cols-2 gap-3">
                 <Field
@@ -155,6 +191,10 @@ export function AccessForm({
                   icon={UserRound}
                   label="Nombre"
                   name="firstName"
+                  error={fieldErrors.firstName}
+                  maxLength={60}
+                  minLength={2}
+                  onChange={() => clearFieldError("firstName")}
                   placeholder=""
                 />
                 <Field
@@ -162,6 +202,10 @@ export function AccessForm({
                   icon={UserRound}
                   label="Apellido"
                   name="lastName"
+                  error={fieldErrors.lastName}
+                  maxLength={60}
+                  minLength={2}
+                  onChange={() => clearFieldError("lastName")}
                   placeholder=""
                 />
               </div>
@@ -171,6 +215,9 @@ export function AccessForm({
               icon={Mail}
               label="Email"
               name="email"
+              error={fieldErrors.email}
+              maxLength={254}
+              onChange={() => clearFieldError("email")}
               placeholder="vos@tienda.com"
               type="email"
             />
@@ -181,8 +228,17 @@ export function AccessForm({
               icon={LockKeyhole}
               label="Contraseña"
               name="password"
-              placeholder="Mínimo 10 caracteres"
+              error={fieldErrors.password}
+              maxLength={72}
+              minLength={mode === "register" ? 8 : undefined}
+              onChange={(value) => {
+                setPassword(value);
+                clearFieldError("password");
+                if (passwordConfirmation) clearFieldError("passwordConfirmation");
+              }}
+              placeholder={mode === "register" ? "Creá una contraseña segura" : "Tu contraseña"}
               type={showPassword ? "text" : "password"}
+              value={password}
               trailing={
                 <button
                   aria-label={
@@ -200,6 +256,33 @@ export function AccessForm({
                 </button>
               }
             />
+            {mode === "register" && (
+              <>
+                <PasswordGuidance password={password} />
+                <Field
+                  autoComplete="new-password"
+                  icon={LockKeyhole}
+                  label="Repetir contraseña"
+                  name="passwordConfirmation"
+                  error={fieldErrors.passwordConfirmation}
+                  maxLength={72}
+                  minLength={8}
+                  onChange={(value) => {
+                    setPasswordConfirmation(value);
+                    clearFieldError("passwordConfirmation");
+                  }}
+                  placeholder="Escribila nuevamente"
+                  type={showPassword ? "text" : "password"}
+                  value={passwordConfirmation}
+                />
+                {passwordConfirmation && !fieldErrors.passwordConfirmation && (
+                  <p className={`-mt-2 flex items-center gap-2 text-xs ${password === passwordConfirmation ? "text-emerald-300" : "text-amber-300"}`}>
+                    <span aria-hidden="true">{password === passwordConfirmation ? "✓" : "•"}</span>
+                    {password === passwordConfirmation ? "Las contraseñas coinciden" : "Todavía no coinciden"}
+                  </p>
+                )}
+              </>
+            )}
             {mode === "login" && (
               <Link
                 className="block text-right text-xs font-semibold text-blue-300 transition hover:text-blue-200"
@@ -216,9 +299,16 @@ export function AccessForm({
                   icon={Store}
                   label="Nombre de la tienda"
                   name="storeName"
+                  error={fieldErrors.storeName}
+                  maxLength={100}
+                  minLength={2}
                   onChange={(value) => {
+                    clearFieldError("storeName");
                     setStoreName(value);
-                    if (!customSlug) setStoreSlug(createSlug(value));
+                    if (!customSlug) {
+                      setStoreSlug(createSlug(value));
+                      clearFieldError("storeSlug");
+                    }
                   }}
                   placeholder="Mi tienda"
                   value={storeName}
@@ -227,7 +317,11 @@ export function AccessForm({
                   icon={Store}
                   label="Dirección de tu tienda"
                   name="storeSlug"
+                  error={fieldErrors.storeSlug}
+                  maxLength={48}
+                  minLength={3}
                   onChange={(value) => {
+                    clearFieldError("storeSlug");
                     setCustomSlug(true);
                     setStoreSlug(createSlug(value));
                   }}
@@ -316,10 +410,92 @@ export function AccessForm({
   );
 }
 
+const passwordRules = [
+  { label: "8 caracteres como mínimo", test: (value: string) => value.length >= 8 },
+  { label: "Una letra mayúscula", test: (value: string) => /[A-Z]/.test(value) },
+  { label: "Una letra minúscula", test: (value: string) => /[a-z]/.test(value) },
+  { label: "Un número", test: (value: string) => /\d/.test(value) },
+  { label: "Un símbolo, por ejemplo ! @ #", test: (value: string) => /[^A-Za-z0-9]/.test(value) },
+] as const;
+
+function PasswordGuidance({ password }: { password: string }) {
+  const results = passwordRules.map((rule) => ({ ...rule, met: rule.test(password) }));
+  const completed = results.filter(({ met }) => met).length;
+  const ready = completed === results.length && password.length <= 72;
+
+  return (
+    <div className="-mt-1 rounded-xl border border-white/[.08] bg-white/[.035] p-4" aria-live="polite">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold text-white/75">Seguridad de la contraseña</p>
+          <p className={`mt-1 text-[11px] ${ready ? "text-emerald-300" : password ? "text-amber-300" : "text-white/35"}`}>
+            {ready ? "Lista para usar" : password ? `Cumplís ${completed} de ${results.length} requisitos` : "Completá todos los requisitos"}
+          </p>
+        </div>
+        <span className="text-[11px] tabular-nums text-white/35">{password.length}/72</span>
+      </div>
+      <div className="mt-3 grid grid-cols-5 gap-1.5" aria-hidden="true">
+        {results.map(({ label, met }) => <span className={`h-1.5 rounded-full transition-colors ${met ? "bg-emerald-400" : "bg-white/10"}`} key={label} />)}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {results.map(({ label, met }) => (
+          <p className={`flex items-start gap-2 text-[11px] leading-4 transition-colors ${met ? "text-emerald-300" : "text-white/40"}`} key={label}>
+            <span className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border text-[9px] ${met ? "border-emerald-400 bg-emerald-400 text-[#071b17]" : "border-white/20"}`}>{met ? "✓" : ""}</span>
+            {label}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function validateRegistration(form: FormData) {
+  const value = (name: string) => String(form.get(name) ?? "");
+  const errors: Record<string, string> = {};
+  const firstName = value("firstName").trim();
+  const lastName = value("lastName").trim();
+  const email = value("email").trim();
+  const password = value("password");
+  const confirmation = value("passwordConfirmation");
+  const storeName = value("storeName").trim();
+  const storeSlug = value("storeSlug").trim();
+
+  if (firstName.length < 2) errors.firstName = "Ingresá al menos 2 caracteres.";
+  else if (firstName.length > 60) errors.firstName = "El nombre no puede superar los 60 caracteres.";
+  if (lastName.length < 2) errors.lastName = "Ingresá al menos 2 caracteres.";
+  else if (lastName.length > 60) errors.lastName = "El apellido no puede superar los 60 caracteres.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Ingresá un email válido, sin espacios.";
+  if (password.length > 72) errors.password = "La contraseña no puede superar los 72 caracteres.";
+  else if (!passwordRules.every((rule) => rule.test(password))) errors.password = "La contraseña todavía no cumple todos los requisitos.";
+  if (!confirmation) errors.passwordConfirmation = "Repetí la contraseña para evitar errores.";
+  else if (password !== confirmation) errors.passwordConfirmation = "Las contraseñas no coinciden.";
+  if (storeName.length < 2) errors.storeName = "Ingresá al menos 2 caracteres.";
+  else if (storeName.length > 100) errors.storeName = "El nombre de la tienda no puede superar los 100 caracteres.";
+  if (storeSlug.length < 3 || storeSlug.length > 48 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(storeSlug))
+    errors.storeSlug = "Usá entre 3 y 48 letras minúsculas, números o guiones simples.";
+
+  return errors;
+}
+
+function friendlyValidationMessage(field: string, message: string) {
+  const messages: Record<string, string> = {
+    email: "Ingresá un email válido, sin espacios.",
+    password: "La contraseña debe tener 8 caracteres o más e incluir mayúscula, minúscula, número y símbolo.",
+    firstName: "Revisá el nombre ingresado.",
+    lastName: "Revisá el apellido ingresado.",
+    storeName: "Revisá el nombre de la tienda.",
+    storeSlug: "La dirección debe tener entre 3 y 48 letras minúsculas, números o guiones simples.",
+  };
+  return messages[field] ?? message;
+}
+
 function Field({
   autoComplete,
+  error,
   icon: Icon,
   label,
+  maxLength,
+  minLength,
   name,
   onChange,
   placeholder,
@@ -329,8 +505,11 @@ function Field({
   value,
 }: {
   autoComplete?: string;
+  error?: string;
   icon: LucideIcon;
   label: string;
+  maxLength?: number;
+  minLength?: number;
   name: string;
   onChange?: (value: string) => void;
   placeholder: string;
@@ -339,19 +518,24 @@ function Field({
   type?: string;
   value?: string;
 }) {
+  const errorId = `${name}-error`;
   return (
     <label className="block text-sm font-medium text-white/70">
       <span className="mb-1.5 block">{label}</span>
-      <span className="flex min-h-12 items-center rounded-xl border border-white/10 bg-white/[.045] px-3.5 transition focus-within:border-fuchsia-400/60 focus-within:bg-white/[.07] focus-within:ring-2 focus-within:ring-fuchsia-400/10">
-        <Icon className="mr-3 h-4 w-4 shrink-0 text-white/25" />
+      <span className={`flex min-h-12 items-center rounded-xl border bg-white/[.045] px-3.5 transition focus-within:bg-white/[.07] focus-within:ring-2 ${error ? "border-red-400/70 ring-2 ring-red-400/10 focus-within:border-red-300 focus-within:ring-red-400/15" : "border-white/10 focus-within:border-fuchsia-400/60 focus-within:ring-fuchsia-400/10"}`}>
+        <Icon className={`mr-3 h-4 w-4 shrink-0 ${error ? "text-red-300" : "text-white/25"}`} />
         {prefix && (
           <span className="hidden shrink-0 text-xs text-white/25 sm:inline">
             {prefix}
           </span>
         )}
         <input
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={Boolean(error)}
           autoComplete={autoComplete}
           className="min-w-0 flex-1 bg-transparent py-3 text-sm text-white outline-none placeholder:text-white/20"
+          maxLength={maxLength}
+          minLength={minLength}
           name={name}
           onChange={
             onChange ? (event) => onChange(event.target.value) : undefined
@@ -363,6 +547,7 @@ function Field({
         />
         {trailing}
       </span>
+      {error && <span className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-red-300" id={errorId} role="alert"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</span>}
     </label>
   );
 }

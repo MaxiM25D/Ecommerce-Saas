@@ -11,6 +11,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly details: Array<{ field: string; message: string }> = [],
   ) {
     super(message);
   }
@@ -33,8 +35,17 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new ApiError(response.status, body?.message ?? "No se pudo completar la operación");
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+      details?: Array<{ field: string; message: string }>;
+    } | null;
+    throw new ApiError(
+      response.status,
+      body?.message ?? "No se pudo completar la operación",
+      body?.error,
+      body?.details ?? [],
+    );
   }
 
   if (response.status === 204) return undefined as T;

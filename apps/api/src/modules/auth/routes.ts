@@ -31,6 +31,7 @@ import {
   forgotPasswordSchema,
   invitationTokenSchema,
   loginSchema,
+  newPasswordSchema,
   registerSchema,
   resetPasswordSchema,
   selectTenantSchema,
@@ -399,6 +400,7 @@ authRouter.post(
         "Completá nombre y apellido para crear tu cuenta",
       );
     }
+    if (!existingUser) newPasswordSchema.parse(input.password);
     const passwordHash = existingUser
       ? null
       : await bcrypt.hash(input.password, 12);
