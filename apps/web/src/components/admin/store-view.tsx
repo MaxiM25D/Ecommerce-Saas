@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CheckCircle2, CreditCard, ExternalLink, Landmark, Mail, MessageCircle, Paintbrush, Save, Store as StoreIcon } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, CreditCard, ExternalLink, Landmark, Mail, MessageCircle, Paintbrush, RefreshCw, Save, Store as StoreIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -39,8 +39,12 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
   const [features, setFeatures] = useState<string[]>([]);
   const [mercadoPago, setMercadoPago] = useState<MercadoPagoIntegration | null>(null);
   const [error, setError] = useState(mercadoPagoResult === "error" ? (mercadoPagoMessage ?? "No se pudo conectar Mercado Pago") : "");
+  const [errorDetails, setErrorDetails] = useState<Array<{ field: string; message: string }>>([]);
   const [success, setSuccess] = useState(mercadoPagoResult === "connected");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [saveStage, setSaveStage] = useState<"idle" | "uploading" | "saving">("idle");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState("");
@@ -50,27 +54,35 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
   function selectSection(next: Section) { setError(""); setSuccess(false); onSectionChange?.(next); }
 
   useEffect(() => {
+    let active = true;
     void Promise.all([
       apiRequest<{ store: Store; features: string[] }>("/admin/store"),
       apiRequest<MercadoPagoIntegration>("/admin/integrations/mercadopago"),
     ]).then(([storeResponse, integration]) => {
+      if (!active) return;
       setStore(storeResponse.store); setFeatures(storeResponse.features); setMercadoPago(integration); setDraft(createDraft(storeResponse.store));
+      setError(mercadoPagoResult === "error" ? (mercadoPagoMessage ?? "No se pudo conectar Mercado Pago") : "");
+    }).catch((caught) => {
+      if (active) setError(caught instanceof ApiError ? caught.message : "No pudimos cargar la configuración de tu tienda.");
+    }).finally(() => {
+      if (active) setLoading(false);
     });
-  }, []);
+    return () => { active = false; };
+  }, [loadAttempt, mercadoPagoMessage, mercadoPagoResult]);
 
   function update<Key extends keyof Draft>(key: Key, value: Draft[Key]) {
-    setDraft((current) => current ? { ...current, [key]: value } : current); setSuccess(false);
+    setDraft((current) => current ? { ...current, [key]: value } : current); setSuccess(false); setError(""); setErrorDetails([]);
   }
   function chooseLogo(file: File | null) {
-    if (logoPreview) URL.revokeObjectURL(logoPreview); setLogoFile(file); setLogoPreview(file ? URL.createObjectURL(file) : ""); if (!file) update("logoUrl", "");
+    setError(""); setErrorDetails([]); if (logoPreview) URL.revokeObjectURL(logoPreview); setLogoFile(file); setLogoPreview(file ? URL.createObjectURL(file) : ""); if (!file) update("logoUrl", "");
   }
   function chooseBanner(file: File | null) {
-    if (bannerPreview) URL.revokeObjectURL(bannerPreview); setBannerFile(file); setBannerPreview(file ? URL.createObjectURL(file) : ""); if (!file) update("bannerUrl", "");
+    setError(""); setErrorDetails([]); if (bannerPreview) URL.revokeObjectURL(bannerPreview); setBannerFile(file); setBannerPreview(file ? URL.createObjectURL(file) : ""); if (!file) update("bannerUrl", "");
   }
 
   async function save() {
     if (!draft || !store || !canManage) return;
-    setBusy(true); setError(""); setSuccess(false);
+    setBusy(true); setError(""); setErrorDetails([]); setSuccess(false);
     try {
       let body: Record<string, string | number | boolean | null>;
       if (section === "identity") {
@@ -90,6 +102,7 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
       } else if (section === "appearance") {
         let logoUrl = draft.logoUrl || null; let bannerUrl = draft.bannerUrl || null;
         if (logoFile || bannerFile) {
+          setSaveStage("uploading");
           const upload = new FormData(); if (logoFile) upload.append("logo", logoFile); if (bannerFile) upload.append("banner", bannerFile);
           const uploaded = await apiRequest<{ logoUrl?: string; bannerUrl?: string }>("/admin/uploads/store-assets", { method: "POST", body: upload });
           logoUrl = uploaded.logoUrl ?? logoUrl; bannerUrl = uploaded.bannerUrl ?? bannerUrl;
@@ -99,12 +112,14 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
       } else {
         body = { bankTransferEnabled: draft.bankTransferEnabled, bankName: draft.bankName || null, bankAlias: draft.bankAlias || null, bankHolder: draft.bankHolder || null, bankCvu: draft.bankCvu || null, bankCuit: draft.bankCuit || null, bankReservationHours: Number(draft.bankReservationHours) };
       }
+      setSaveStage("saving");
       const response = await apiRequest<{ store: Store; features: string[] }>("/admin/store", { method: "PATCH", body: JSON.stringify(body) });
       setStore(response.store); setDraft(createDraft(response.store)); setFeatures(response.features); onStoreUpdated(response.store.name);
       setLogoFile(null); setBannerFile(null); if (logoPreview) URL.revokeObjectURL(logoPreview); if (bannerPreview) URL.revokeObjectURL(bannerPreview); setLogoPreview(""); setBannerPreview(""); setSuccess(true);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "No se pudo guardar la configuración");
-    } finally { setBusy(false); }
+      setErrorDetails(caught instanceof ApiError ? caught.details : []);
+    } finally { setBusy(false); setSaveStage("idle"); }
   }
 
   async function connectMercadoPago() {
@@ -121,7 +136,8 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
     finally { setBusy(false); }
   }
 
-  if (!store || !draft || !mercadoPago) return <div className="h-[36rem] animate-pulse rounded-[1.75rem] bg-[#eee9ef]" />;
+  if (loading) return <div aria-label="Cargando configuración" className="h-[36rem] animate-pulse rounded-[1.75rem] bg-[#eee9ef]" />;
+  if (!store || !draft || !mercadoPago) return <div className="mx-auto max-w-2xl rounded-3xl border border-red-200 bg-white p-8 text-center shadow-sm" role="alert"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-50 text-red-700"><AlertCircle className="h-6 w-6" /></span><h2 className="mt-4 text-lg font-semibold text-[#382d3b]">No pudimos cargar la configuración</h2><p className="mt-2 text-sm leading-6 text-[#807384]">{error || "Ocurrió un inconveniente temporal. Tus datos siguen guardados."}</p><button className="mx-auto mt-5 inline-flex items-center gap-2 rounded-xl bg-[#49225B] px-5 py-3 text-sm font-semibold text-white" onClick={() => { setError(""); setLoading(true); setLoadAttempt((value) => value + 1); }} type="button"><RefreshCw className="h-4 w-4" /> Volver a intentar</button></div>;
   const displayedLogo = logoPreview || draft.logoUrl; const displayedBanner = bannerPreview || draft.bannerUrl;
   const configurationStatus: Array<{ id: Section; label: string; complete: boolean; detail: string; icon: typeof StoreIcon }> = [
     { id: "identity", label: "Información", complete: Boolean(draft.name && draft.description && draft.contactEmail), detail: "Nombre, descripción y contacto", icon: StoreIcon },
@@ -153,9 +169,9 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
           {section === "identity" && <IdentitySection draft={draft} onUpdate={update} />}
           {section === "appearance" && <AppearanceSection canAdvanced={canAdvanced} draft={draft} bannerPreview={displayedBanner} logoPreview={displayedLogo} onBannerChange={chooseBanner} onLogoChange={chooseLogo} onOpenPlan={onOpenPlan} onUpdate={update} />}
           {section === "payments" && <PaymentsSection busy={busy} canManage={canManage} draft={draft} mercadoPago={mercadoPago} onConnect={() => void connectMercadoPago()} onDisconnect={() => void disconnectMercadoPago()} onUpdate={update} />}
-          {error && <p className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+          {error && <div className="mt-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert"><p className="flex items-start gap-2 font-medium"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>{errorDetails.length > 1 && <ul className="mt-2 list-disc space-y-1 pl-10 text-xs">{errorDetails.slice(1).map((detail) => <li key={`${detail.field}-${detail.message}`}>{detail.message}</li>)}</ul>}<p className="mt-2 pl-6 text-xs text-red-600/80">Corregí el dato indicado y volvé a guardar. Lo que completaste no se perdió.</p></div>}
           {success && <p className="mt-6 flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Cambios guardados correctamente.</p>}
-          {canManage && <div className="mt-8 flex justify-end border-t border-[#eee9ef] pt-6"><button className="inline-flex items-center gap-2 rounded-xl bg-[#49225B] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#6E3482] disabled:opacity-50" disabled={busy} onClick={() => void save()} type="button"><Save className="h-4 w-4" /> {busy ? "Guardando…" : `Guardar ${sections.find(({ id }) => id === section)?.label.toLowerCase()}`}</button></div>}
+          {canManage && <div className="mt-8 flex justify-end border-t border-[#eee9ef] pt-6"><button className="inline-flex items-center gap-2 rounded-xl bg-[#49225B] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#6E3482] disabled:opacity-50" disabled={busy} onClick={() => void save()} type="button"><Save className="h-4 w-4" /> {saveStage === "uploading" ? "Subiendo imágenes…" : saveStage === "saving" ? "Guardando cambios…" : `Guardar ${sections.find(({ id }) => id === section)?.label.toLowerCase()}`}</button></div>}
         </section>
         <StorePreview bannerUrl={displayedBanner} description={draft.description} logoUrl={displayedLogo} name={draft.name} primaryColor={draft.primaryColor} slug={store.slug} />
       </div>

@@ -196,7 +196,7 @@ test("configuración y dashboard pertenecen a la tienda de la sesión", async ()
     name: "Alpha renovada",
     description: "Tienda de indumentaria",
     logoUrl: "https://images.example.com/alpha-logo.png",
-    bannerUrl: null,
+    bannerUrl: "/demo-store/coleccion-nebula.webp",
     primaryColor: "#B89B72",
     contactEmail: "ventas@alpha.test",
     whatsapp: "+5491100000000",
@@ -211,6 +211,7 @@ test("configuración y dashboard pertenecen a la tienda de la sesión", async ()
   assert.equal(settings.body.store.name, "Alpha renovada");
   assert.equal(settings.body.store.settings.currency, "ARS");
   assert.equal(settings.body.store.settings.instagramUrl, "https://instagram.com/alpha");
+  assert.equal(settings.body.store.settings.bannerUrl, "/demo-store/coleccion-nebula.webp");
 
   const publicStore = await request(app).get(`/api/storefront/${ownerSlug}`);
   assert.equal(publicStore.status, 200);

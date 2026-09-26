@@ -11,7 +11,20 @@ const slug = z
     "Usá letras minúsculas, números y guiones simples",
   );
 const resourceId = z.string().trim().min(1).max(64);
-const optionalUrl = z.url().trim().max(2048).nullable().optional();
+const storeAssetUrl = z
+  .string()
+  .trim()
+  .max(2048, "La dirección de la imagen es demasiado larga")
+  .refine((value) => {
+    if (/^\/[A-Za-z0-9][A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(value)) return true;
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" || url.protocol === "http:";
+    } catch {
+      return false;
+    }
+  }, "La imagen debe usar una dirección web válida");
+const optionalStoreAssetUrl = storeAssetUrl.nullable().optional();
 const socialUrl = (hosts: string[], network: string) => z
   .url()
   .trim()
@@ -79,8 +92,8 @@ export const updateStoreSchema = z
   .object({
     name: z.string().trim().min(2).max(100).optional(),
     description: z.string().trim().max(2000).nullable().optional(),
-    logoUrl: optionalUrl,
-    bannerUrl: optionalUrl,
+    logoUrl: optionalStoreAssetUrl,
+    bannerUrl: optionalStoreAssetUrl,
     primaryColor: z
       .string()
       .trim()
