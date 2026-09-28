@@ -451,10 +451,10 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
           <ol className="mt-3 grid gap-3 leading-6 sm:grid-cols-2">
             <li><strong>1. Creá una zona.</strong> Agrupá destinos con costo y plazo parecidos, por ejemplo “La Rioja capital” o “Resto del país”.</li>
             <li><strong>2. Indicá sus códigos postales.</strong> Un prefijo como <strong>53</strong> cubre todos los códigos que empiezan con 53; <strong>5300</strong> es más específico.</li>
-            <li><strong>3. Cargá una tarifa.</strong> Es el importe que verá y pagará el comprador. Por ahora se define manualmente; no se consulta en vivo al transportista.</li>
+            <li><strong>3. Calculá el precio final.</strong> Consultá la tarifa del transportista y, si corresponde, sumá embalaje y un margen operativo fijo.</li>
             <li><strong>4. InfinityShop elige la mejor coincidencia.</strong> El checkout usa la zona más específica para el código postal del comprador.</li>
           </ol>
-          <p className="mt-3 rounded-xl bg-white/80 p-3 text-xs leading-5"><strong>Importante:</strong> una zona sin códigos postales funciona como respaldo para “Resto del país”. Solo se usa cuando no existe una zona más específica. Podés pedir una tarifa al transportista, usar un promedio o sumar un margen de embalaje, y crear distintas zonas para reflejar distancias diferentes.</p>
+          <p className="mt-3 rounded-xl bg-white/80 p-3 text-xs leading-5"><strong>Importante:</strong> una zona sin códigos postales funciona como respaldo para “Resto del país”. Solo se usa cuando no existe una zona más específica. La tarifa es manual y fija para cada zona: InfinityShop no consulta todavía precios en vivo. Revisala periódicamente y creá zonas diferentes cuando el costo cambie según la distancia.</p>
         </div>
         <div className="mt-5 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
           <div className="flex items-start gap-3"><span className="rounded-xl bg-white p-2.5 text-[#6E3482] shadow-sm"><Truck size={18} /></span><div><h4 className="font-semibold">Configuración rápida recomendada</h4><p className="mt-1 text-xs leading-5 text-[#807384]">Tomamos el código postal del local cuando está disponible y preparamos una tarifa local más otra para el resto del país.</p></div></div>
@@ -472,8 +472,8 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
             }) });
           }}>
             <div className="sm:col-span-2"><Input name="setupOriginPostalCode" label="Código postal desde donde despachás" help={suggestedOriginPostalCode ? "Lo obtuvimos de tu punto de retiro. Podés corregirlo para este cálculo." : "No encontramos un código postal en tus puntos de retiro. Ingresalo manualmente."} placeholder="5300 o F5300ABC" defaultValue={suggestedOriginPostalCode} /></div>
-            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3"><Input name="setupLocalPrice" label="Tarifa local estimada" help="Importe que cobrarás a compradores del mismo código postal." placeholder="3500" type="number" step="0.01" /><Input name="setupLocalDaysMin" label="Plazo local mínimo" placeholder="1" type="number" min={1} defaultValue="1" /><Input name="setupLocalDaysMax" label="Plazo local máximo" placeholder="3" type="number" min={1} defaultValue="3" /></div>
-            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3"><Input name="setupNationwidePrice" label="Tarifa estimada para el resto del país" help="Es una tarifa manual de respaldo, no una cotización en vivo." placeholder="12000" type="number" step="0.01" /><Input name="setupNationwideDaysMin" label="Plazo nacional mínimo" placeholder="4" type="number" min={1} defaultValue="4" /><Input name="setupNationwideDaysMax" label="Plazo nacional máximo" placeholder="10" type="number" min={1} defaultValue="10" /></div>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3"><Input name="setupLocalPrice" label="Precio final de envío local" help="Tarifa del transportista más embalaje o margen, si decidís incluirlos." placeholder="3500" type="number" step="0.01" /><Input name="setupLocalDaysMin" label="Plazo local mínimo" placeholder="1" type="number" min={1} defaultValue="1" /><Input name="setupLocalDaysMax" label="Plazo local máximo" placeholder="3" type="number" min={1} defaultValue="3" /></div>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3"><Input name="setupNationwidePrice" label="Precio final para el resto del país" help="Usá una tarifa promedio de respaldo. Después podés dividirla en más zonas." placeholder="12000" type="number" step="0.01" /><Input name="setupNationwideDaysMin" label="Plazo nacional mínimo" placeholder="4" type="number" min={1} defaultValue="4" /><Input name="setupNationwideDaysMax" label="Plazo nacional máximo" placeholder="10" type="number" min={1} defaultValue="10" /></div>
             <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><input className="mt-0.5 h-4 w-4 accent-[#6E3482]" required type="checkbox" /><span>Confirmo que revisé estas tarifas y plazos. Se crearán como <strong>borradores no publicados</strong> para poder revisar transportistas y seguimiento antes de activarlos.</span></label>
             <div className={styles.footer}><Button disabled={!canManage}>Crear zonas como borrador</Button></div>
           </form>}
@@ -545,12 +545,12 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
               <div className="mt-4 grid gap-3">
                 {zone.methods.map((method) => (
                   <article className="rounded-xl border border-stone-100 bg-stone-50 p-4" key={method.id}>
-                    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{method.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${method.active ? "bg-emerald-50 text-emerald-700" : "bg-white text-stone-500"}`}>{method.active ? "Activo" : "Pausado"}</span></div><p className="mt-1 text-xs text-[#807384]">{money(method.priceInCents)} · {formatDeliveryRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}{method.freeShippingThresholdInCents ? ` · Gratis desde ${money(method.freeShippingThresholdInCents)}` : ""}</p>{method.carrierName && <p className="mt-1 text-xs text-[#918495]">Transportista: {method.carrierName}</p>}</div>{canManage && <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify({ active: !method.active }) })}>{method.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "DELETE" })}>Eliminar</button></div>}</div>
-                    {canManage && <details className="mt-3 border-t border-stone-200 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar método</summary><ShippingMethodForm buttonLabel="Guardar método" defaults={method} onSubmit={async (payload) => { await mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify(payload) }); }} /></details>}
+                    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{method.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${method.active ? "bg-emerald-50 text-emerald-700" : "bg-white text-stone-500"}`}>{method.active ? "Activo" : "Pausado"}</span></div><p className="mt-1 text-xs text-[#807384]">Precio final: <strong>{money(method.priceInCents)}</strong> · {formatDeliveryRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}{method.freeShippingThresholdInCents ? ` · Gratis desde ${money(method.freeShippingThresholdInCents)}` : ""}</p>{method.carrierName && <p className="mt-1 text-xs text-[#918495]">Transportista: {method.carrierName}</p>}</div>{canManage && <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify({ active: !method.active }) })}>{method.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "DELETE" })}>Eliminar</button></div>}</div>
+                    {canManage && <details className="mt-3 border-t border-stone-200 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar método</summary><ShippingMethodForm buttonLabel="Guardar método" defaults={method} onSubmit={(payload) => mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify(payload) })} /></details>}
                   </article>
                 ))}
               </div>
-              <details className="mt-5"><summary className="cursor-pointer text-sm font-semibold text-[#6E3482]">+ Agregar método de envío</summary><ShippingMethodForm buttonLabel="Agregar método" disabled={!canManage} onSubmit={async (payload, element) => { const saved = await mutate(`/admin/growth/shipping-zones/${zone.id}/methods`, { method: "POST", body: JSON.stringify({ ...payload, active: true }) }); if (saved) element.reset(); }} /></details>
+              <details className="mt-5"><summary className="cursor-pointer text-sm font-semibold text-[#6E3482]">+ Agregar método de envío</summary><ShippingMethodForm buttonLabel="Agregar método" disabled={!canManage} onSubmit={(payload) => mutate(`/admin/growth/shipping-zones/${zone.id}/methods`, { method: "POST", body: JSON.stringify({ ...payload, active: true }) })} /></details>
             </article>
           ))}
         </div>
@@ -736,11 +736,21 @@ function ShippingMethodForm({
   buttonLabel: string;
   defaults?: ShippingMethodDefaults;
   disabled?: boolean;
-  onSubmit: (payload: Record<string, unknown>, form: HTMLFormElement) => Promise<void>;
+  onSubmit: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [offersFreeShipping, setOffersFreeShipping] = useState(
     Boolean(defaults?.freeShippingThresholdInCents),
   );
+  const [carrierRate, setCarrierRate] = useState(
+    defaults ? String(defaults.priceInCents / 100) : "",
+  );
+  const [packagingCost, setPackagingCost] = useState("");
+  const [operatingMargin, setOperatingMargin] = useState("");
+  const carrierRateValue = parseShippingAmount(carrierRate);
+  const packagingCostValue = parseShippingAmount(packagingCost);
+  const operatingMarginValue = parseShippingAmount(operatingMargin);
+  const finalShippingPrice = carrierRateValue + packagingCostValue + operatingMarginValue;
+
   return <form className={`${styles.form} mt-4`} onSubmit={async (event) => {
     event.preventDefault();
     const element = event.currentTarget;
@@ -748,9 +758,9 @@ function ShippingMethodForm({
     const carrierCode = String(form.get("carrierCode") || "CUSTOM");
     const preset = carriers.find(({ code }) => code === carrierCode);
     const customTrackingUrl = String(form.get("trackingUrlTemplate") || "").trim();
-    await onSubmit({
+    const saved = await onSubmit({
       name: form.get("methodName"),
-      priceInCents: Math.round(Number(form.get("methodPrice")) * 100),
+      priceInCents: Math.round(finalShippingPrice * 100),
       estimatedDaysMin: Number(form.get("estimatedDaysMin")),
       estimatedDaysMax: Number(form.get("estimatedDaysMax")),
       freeShippingThresholdInCents: offersFreeShipping && form.get("freeShippingThreshold")
@@ -759,20 +769,54 @@ function ShippingMethodForm({
       carrierCode,
       carrierName: String(form.get("carrierName") || "").trim() || preset?.name || "Otro transportista",
       trackingUrlTemplate: customTrackingUrl || preset?.trackingUrlTemplate || null,
-    }, element);
+    });
+    if (saved && !defaults) {
+      element.reset();
+      setCarrierRate("");
+      setPackagingCost("");
+      setOperatingMargin("");
+      setOffersFreeShipping(false);
+    }
   }}>
     <Input name="methodName" label="Nombre del método" help="Es la opción que verá el comprador dentro de esta zona." placeholder="Envío estándar" defaultValue={defaults?.name} />
-    <div className="grid gap-4 sm:grid-cols-3"><Input name="methodPrice" label="Tarifa que cobrarás al cliente" help="Importe manual para esta zona. Puede ser la cotización del transportista, un promedio o incluir embalaje. Usá 0 si siempre es gratis." placeholder="3500" type="number" step="0.01" defaultValue={defaults ? String(defaults.priceInCents / 100) : undefined} /><Input name="estimatedDaysMin" label="Plazo mínimo (días hábiles)" placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Plazo máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
-    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-[#e6dfe8] bg-[#fbf8fc] p-4">
-      <span><strong className="block text-sm text-[#382d3b]">Ofrecer envío gratis</strong><span className="mt-1 block text-xs leading-5 text-[#807384]">Activá esta opción para bonificar el envío cuando la compra alcance un monto mínimo.</span></span>
-      <input aria-label="Ofrecer envío gratis" checked={offersFreeShipping} className="h-5 w-5 accent-[#6E3482]" onChange={(event) => setOffersFreeShipping(event.target.checked)} type="checkbox" />
-    </label>
-    {offersFreeShipping && <Input name="freeShippingThreshold" label="Compra mínima para envío gratis" help="Se calcula sobre los productos después de aplicar descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} />}
     <Field label="Transportista" help="Estas opciones solo completan el nombre y su página de seguimiento; no cotizan el precio. Elegí Otro para agregar cualquier empresa o mensajería propia." example="Ejemplo: Correo Argentino"><select defaultValue={defaults?.carrierCode ?? "CORREO_ARGENTINO"} name="carrierCode"><option value="CORREO_ARGENTINO">Correo Argentino</option><option value="ANDREANI">Andreani</option><option value="OCA">OCA</option><option value="VIA_CARGO">Vía Cargo</option><option value="CUSTOM">Otro / mensajería propia</option></select></Field>
     <Input name="carrierName" label="Nombre personalizado del transportista (opcional)" help="Completalo solo si elegiste Otro o querés cambiar el nombre visible." placeholder="Moto Express" defaultValue={defaults?.carrierName ?? undefined} required={false} />
     <Input name="trackingUrlTemplate" label="URL de seguimiento personalizada (opcional)" help="Usá {code} donde debe insertarse el código. Si elegís una empresa conocida podés dejarla vacía." placeholder="https://envios.ejemplo.com/seguimiento/{code}" defaultValue={defaults?.trackingUrlTemplate ?? undefined} required={false} />
+    <div className="sm:col-span-2 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><h5 className="text-sm font-semibold text-[#382d3b]">Calculadora del precio de envío</h5><p className="mt-1 max-w-2xl text-xs leading-5 text-[#807384]">Consultá una tarifa representativa para esta zona y sumá únicamente los costos que quieras trasladar al comprador.</p></div><span className="shrink-0 rounded-full bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#6E3482] shadow-sm">Tarifa manual</span></div>
+      {defaults && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong>Al editar:</strong> cargamos el precio final actual como tarifa base porque el desglose anterior no se guardaba. Corregilo antes de sumar embalaje o margen.</p>}
+      <div className="mt-5 grid gap-4 sm:grid-cols-3">
+        <Input name="carrierRate" label="1. Tarifa del transportista" help="Precio consultado para esta zona o un promedio representativo." placeholder="3500" type="number" step="0.01" value={carrierRate} onChange={setCarrierRate} />
+        <Input name="packagingCost" label="2. Embalaje (opcional)" help="Caja, bolsa, protección o preparación del paquete." placeholder="500" type="number" step="0.01" value={packagingCost} onChange={setPackagingCost} required={false} />
+        <Input name="operatingMargin" label="3. Gestión o margen (opcional)" help="Importe fijo para cubrir gestión o variaciones de tarifa." placeholder="300" type="number" step="0.01" value={operatingMargin} onChange={setOperatingMargin} required={false} />
+      </div>
+      <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950" aria-live="polite">
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><p className="text-xs font-medium">Precio final que verá el comprador</p><p className="mt-1 text-2xl font-semibold tracking-tight">{formatShippingPesos(finalShippingPrice)}</p></div><p className="text-xs leading-5 text-emerald-800">{formatShippingPesos(carrierRateValue)} tarifa + {formatShippingPesos(packagingCostValue)} embalaje + {formatShippingPesos(operatingMarginValue)} gestión</p></div>
+      </div>
+      <p className="mt-3 text-[11px] leading-5 text-[#918495]">El comprador verá un único precio de envío. Por ahora InfinityShop guarda el total final, no el desglose, y lo suma automáticamente al pedido.</p>
+    </div>
+    <div className="grid gap-4 sm:grid-cols-2"><Input name="estimatedDaysMin" label="Plazo mínimo (días hábiles)" placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Plazo máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-[#e6dfe8] bg-[#fbf8fc] p-4">
+      <span><strong className="block text-sm text-[#382d3b]">Ofrecer envío gratis</strong><span className="mt-1 block text-xs leading-5 text-[#807384]">Activá esta opción para bonificar el precio final cuando la compra alcance un monto mínimo.</span></span>
+      <input aria-label="Ofrecer envío gratis" checked={offersFreeShipping} className="h-5 w-5 accent-[#6E3482]" onChange={(event) => setOffersFreeShipping(event.target.checked)} type="checkbox" />
+    </label>
+    {offersFreeShipping && <Input name="freeShippingThreshold" label="Compra mínima para envío gratis" help="Se calcula sobre los productos después de aplicar descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} />}
     <div className={styles.footer}><Button disabled={disabled}>{buttonLabel}</Button></div>
   </form>;
+}
+
+function parseShippingAmount(value: string) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function formatShippingPesos(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatDeliveryRange(minimum: number | null, maximum: number | null) {
