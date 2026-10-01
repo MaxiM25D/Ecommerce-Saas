@@ -3,6 +3,7 @@
 import {
   BarChart3,
   Boxes,
+  Calculator,
   ChartNoAxesCombined,
   CircleUserRound,
   CreditCard,
@@ -33,6 +34,7 @@ import { PlanView } from "./plan-view";
 import { StoreView } from "./store-view";
 import { TeamView } from "./team-view";
 import { GrowthView } from "./growth-view";
+import { ManagementView } from "./management-view";
 import { TenantSwitcher } from "./tenant-switcher";
 import type { Role } from "./types";
 
@@ -42,6 +44,7 @@ export type AdminTab =
   | "products"
   | "orders"
   | "customers"
+  | "management"
   | "growth"
   | "team"
   | "plan"
@@ -77,6 +80,7 @@ const navigationGroups: Array<{ label: string; items: NavigationItem[] }> = [
   {
     label: "Operación",
     items: [
+      { id: "management", label: "Gestión", description: "Ventas del local y stock", icon: Calculator },
       { id: "orders", label: "Pedidos", description: "Ventas, pagos y entregas", icon: ShoppingBag },
       { id: "products", label: "Productos", description: "Catálogo, stock y variantes", icon: Boxes },
       { id: "categories", label: "Categorías", description: "Organización del catálogo", icon: Tags },
@@ -176,6 +180,7 @@ export function AdminPanel({
     products: <ProductsView onOpenCategories={() => selectTab("categories")} role={session.role} />,
     orders: <OrdersView role={session.role} />,
     customers: <CustomersView />,
+    management: <ManagementView role={session.role} />,
     growth: <GrowthView onNavigate={selectTab} role={session.role} />,
     team: <TeamView onOpenPlan={() => selectTab("plan")} role={session.role} />,
     plan: <PlanView onOpenStore={openStoreSection} role={session.role} />,

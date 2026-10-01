@@ -23,6 +23,7 @@ let ownerProductId = "";
 let otherProductId = "";
 
 async function cleanup(): Promise<void> {
+  await database.order.deleteMany({ where: { tenant: { slug: { in: [ownerSlug, otherSlug] } } } });
   await database.tenant.deleteMany({ where: { slug: { in: [ownerSlug, otherSlug] } } });
   await database.user.deleteMany({
     where: { email: { in: [ownerEmail, otherEmail, staffEmail] } },
@@ -254,6 +255,38 @@ test("STAFF puede consultar pero no modificar el catálogo", async () => {
     ).status,
     403,
   );
+});
+
+test("gestión registra una venta local, descuenta stock y lo repone al anular", async () => {
+  const tenant = await database.tenant.findUniqueOrThrow({ where: { slug: ownerSlug } });
+  const product = await database.product.create({ data: {
+    tenantId: tenant.id, sku: "LOCAL-001", slug: "producto-local", name: "Producto del local",
+    priceInCents: 100_000, stock: 8, active: true,
+  } });
+
+  const created = await staffAgent.post("/api/admin/management/sales").send({
+    items: [{ productId: product.id, quantity: 2 }],
+    discount: { type: "PERCENTAGE", value: 10 },
+    paymentMethod: "CASH",
+    customer: { name: "Cliente mostrador", email: "", phone: "" },
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.sale.channel, "LOCAL");
+  assert.equal(created.body.sale.totalInCents, 180_000);
+  assert.equal((await database.product.findUniqueOrThrow({ where: { id: product.id } })).stock, 6);
+  assert.equal(await database.stockMovement.count({ where: { orderId: created.body.sale.id, type: "LOCAL_SALE" } }), 1);
+
+  const cancelled = await ownerAgent.post(`/api/admin/management/sales/${created.body.sale.id}/cancel`);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.body.sale.status, "CANCELLED");
+  assert.equal((await database.product.findUniqueOrThrow({ where: { id: product.id } })).stock, 8);
+
+  const adjusted = await ownerAgent.post("/api/admin/management/stock-adjustments").send({
+    productId: product.id, newStock: 11, note: "Recuento físico",
+  });
+  assert.equal(adjusted.status, 201);
+  assert.equal(adjusted.body.movement.quantityDelta, 3);
+  assert.equal(adjusted.body.movement.stockAfter, 11);
 });
 
 test("el CRUD elimina recursos propios en orden seguro", async () => {

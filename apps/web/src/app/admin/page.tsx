@@ -6,6 +6,7 @@ const tabs = new Set<AdminTab>([
   "products",
   "orders",
   "customers",
+  "management",
   "growth",
   "team",
   "plan",

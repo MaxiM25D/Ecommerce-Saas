@@ -80,6 +80,21 @@ enum PaymentStatus {
 enum PaymentMethod {
   BANK_TRANSFER
   MERCADO_PAGO
+  CASH
+  CARD_EXTERNAL
+  MERCADO_PAGO_EXTERNAL
+  OTHER
+}
+
+enum SalesChannel {
+  ONLINE
+  LOCAL
+}
+
+enum StockMovementType {
+  LOCAL_SALE
+  LOCAL_SALE_CANCELLED
+  MANUAL_ADJUSTMENT
 }
 
 enum StockStatus {
@@ -158,6 +173,7 @@ model Tenant {
   notificationRules      NotificationRule[]
   notificationLogs       NotificationLog[]
   analyticsEvents        AnalyticsEvent[]
+  stockMovements         StockMovement[]
   lastActiveUsers        User[]                  @relation("UserLastTenant")
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
@@ -180,6 +196,8 @@ model User {
   sentTeamInvitations     TeamInvitation[]         @relation("TeamInvitationInviter")
   mercadoPagoOAuthStates  MercadoPagoOAuthState[]
   orderStatusChanges      OrderStatusHistory[]
+  localSales              Order[]                  @relation("LocalSaleSeller")
+  stockMovements          StockMovement[]
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
 
@@ -356,28 +374,29 @@ model Category {
 }
 
 model Product {
-  id            String           @id @default(cuid())
-  tenantId      String
-  categoryId    String?
-  sku           String
-  slug          String
-  name          String
-  description   String?
-  images        String[]         @default([])
-  priceInCents  Int
-  stock         Int              @default(0)
-  active        Boolean          @default(true)
-  brand         String?
-  tags          String[]         @default([])
-  featured      Boolean          @default(false)
-  featuredOrder Int              @default(0)
-  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category      Category?        @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
-  cartItems     CartItem[]
-  orderItems    OrderItem[]
-  variants      ProductVariant[]
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id             String           @id @default(cuid())
+  tenantId       String
+  categoryId     String?
+  sku            String
+  slug           String
+  name           String
+  description    String?
+  images         String[]         @default([])
+  priceInCents   Int
+  stock          Int              @default(0)
+  active         Boolean          @default(true)
+  brand          String?
+  tags           String[]         @default([])
+  featured       Boolean          @default(false)
+  featuredOrder  Int              @default(0)
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category       Category?        @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  variants       ProductVariant[]
+  stockMovements StockMovement[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   @@unique([tenantId, sku])
   @@unique([tenantId, slug])
@@ -387,21 +406,22 @@ model Product {
 }
 
 model ProductVariant {
-  id           String      @id @default(cuid())
-  tenantId     String
-  productId    String
-  sku          String
-  name         String
-  options      Json
-  priceInCents Int
-  stock        Int         @default(0)
-  active       Boolean     @default(true)
-  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  product      Product     @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
-  cartItems    CartItem[]
-  orderItems   OrderItem[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id             String          @id @default(cuid())
+  tenantId       String
+  productId      String
+  sku            String
+  name           String
+  options        Json
+  priceInCents   Int
+  stock          Int             @default(0)
+  active         Boolean         @default(true)
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product        Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  stockMovements StockMovement[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   @@unique([tenantId, sku])
   @@unique([tenantId, id])
@@ -520,6 +540,8 @@ model Order {
   tenantId                     String
   customerId                   String?
   number                       Int
+  channel                      SalesChannel         @default(ONLINE)
+  soldByUserId                 String?
   status                       OrderStatus          @default(PENDING)
   paymentStatus                PaymentStatus        @default(PENDING)
   paymentMethod                PaymentMethod        @default(BANK_TRANSFER)
@@ -565,6 +587,8 @@ model Order {
   shipment                     Shipment?
   notificationLogs             NotificationLog[]
   statusHistory                OrderStatusHistory[]
+  soldBy                       User?                @relation("LocalSaleSeller", fields: [soldByUserId], references: [id], onDelete: SetNull)
+  stockMovements               StockMovement[]
   createdAt                    DateTime             @default(now())
   updatedAt                    DateTime             @updatedAt
 
@@ -573,6 +597,33 @@ model Order {
   @@index([tenantId, status])
   @@index([tenantId, stockStatus, stockExpiresAt])
   @@index([tenantId, customerId])
+  @@index([tenantId, channel, createdAt])
+  @@index([soldByUserId])
+}
+
+model StockMovement {
+  id              String            @id @default(cuid())
+  tenantId        String
+  productId       String?
+  variantId       String?
+  orderId         String?
+  changedByUserId String?
+  type            StockMovementType
+  quantityDelta   Int
+  stockAfter      Int
+  note            String?
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product         Product?          @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  variant         ProductVariant?   @relation(fields: [tenantId, variantId], references: [tenantId, id], onDelete: Restrict)
+  order           Order?            @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
+  changedBy       User?             @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime          @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, productId, createdAt])
+  @@index([tenantId, variantId, createdAt])
+  @@index([tenantId, orderId])
+  @@index([changedByUserId])
 }
 
 model MercadoPagoConnection {

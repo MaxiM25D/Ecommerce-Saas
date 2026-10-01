@@ -177,3 +177,10 @@ select:not(:disabled) {
     width: 100%;
   }
 }
+
+@media print {
+  body * { visibility: hidden !important; }
+  .management-receipt, .management-receipt * { visibility: visible !important; }
+  .management-receipt { position: absolute; left: 0; top: 0; width: 80mm; padding: 5mm; }
+  @page { size: 80mm auto; margin: 0; }
+}

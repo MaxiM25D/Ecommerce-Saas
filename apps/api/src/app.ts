@@ -8,6 +8,7 @@ import helmet from "helmet";
 import { environment } from "./config.js";
 import { errorHandler, HttpError } from "./errors.js";
 import { adminRouter } from "./modules/admin/routes.js";
+import { managementRouter } from "./modules/management/routes.js";
 import { authRouter } from "./modules/auth/routes.js";
 import { storefrontRouter } from "./modules/storefront/routes.js";
 import { platformRouter } from "./modules/platform/routes.js";
@@ -88,6 +89,7 @@ app.get("/api/ready", async (_request, response) => {
 app.use("/api/auth", authRouter);
 app.use("/api/tenants", tenantRouter);
 app.use("/api/storefront", storefrontRouter);
+app.use("/api/admin/management", managementRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/admin/integrations", adminIntegrationRouter);
 app.use("/api/integrations", integrationRouter);

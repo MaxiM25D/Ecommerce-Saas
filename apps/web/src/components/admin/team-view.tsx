@@ -13,7 +13,7 @@ type Invitation = { id: string; email: string; role: Exclude<Role, "OWNER">; exp
 const roleCopy: Record<Role, { label: string; help: string }> = {
   OWNER: { label: "Propietario", help: "Control total: equipo, plan, cobros y configuración." },
   ADMIN: { label: "Administrador", help: "Gestiona productos, pedidos, clientes y la tienda." },
-  STAFF: { label: "Personal", help: "Puede consultar el panel, sin realizar cambios." },
+  STAFF: { label: "Personal", help: "Registra ventas locales y consulta el panel; no modifica catálogo ni configuración." },
 };
 
 export function TeamView({ onOpenPlan, role }: { onOpenPlan: () => void; role: Role }) {
@@ -84,7 +84,7 @@ export function TeamView({ onOpenPlan, role }: { onOpenPlan: () => void; role: R
       <Summary icon={Clock3} label="Invitaciones pendientes" value={invitations.length} help="También reservan un lugar del plan." />
       <Summary icon={ShieldCheck} label="Tu permiso" value={roleCopy[role].label} help={roleCopy[role].help} />
     </div>
-    <Tip title="Elegí el permiso mínimo necesario">Usá Administrador para quien opera el negocio y Personal para quien solo necesita consultar. Solo el Propietario administra el equipo y la suscripción desde <GuideLink onClick={onOpenPlan}>Plan y uso</GuideLink>.</Tip>
+    <Tip title="Elegí el permiso mínimo necesario">Usá Administrador para quien configura el negocio y Personal para caja, ventas locales y consulta. Solo el Propietario administra el equipo y la suscripción desde <GuideLink onClick={onOpenPlan}>Plan y uso</GuideLink>.</Tip>
     {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="mt-5 flex items-center gap-2 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700"><CheckCircle2 size={16} /> {notice}</p>}
     {loading ? <div className="mt-6 h-72 animate-pulse rounded-2xl bg-[#eee9ef]" /> : <div className="mt-6 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
@@ -93,7 +93,7 @@ export function TeamView({ onOpenPlan, role }: { onOpenPlan: () => void; role: R
           <div className="border-b border-[#eee9ef] px-6 py-5"><h3 className="font-semibold">Miembros del equipo</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Los cambios de rol se aplican en la próxima acción del usuario.</p></div>
           <div className="divide-y divide-[#eee9ef]">{members.map((member) => <article className="flex flex-col justify-between gap-4 px-6 py-5 sm:flex-row sm:items-center" key={member.user.id}>
             <div className="flex min-w-0 items-center gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#f5eff8] text-sm font-semibold text-[#6E3482]">{member.user.firstName[0]}{member.user.lastName[0]}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold">{member.user.firstName} {member.user.lastName}</p>{member.user.emailVerified ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Email verificado</span> : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">Email pendiente</span>}</div><p className="mt-1 truncate text-xs text-[#807384]">{member.user.email}</p><p className="mt-1 text-[11px] text-[#918495]">{roleCopy[member.role].help}</p></div></div>
-            <div className="flex shrink-0 items-center gap-2">{canManage && member.role !== "OWNER" ? <><label><span className="sr-only">Rol de {member.user.firstName}</span><select className="rounded-xl border border-[#e6dfe8] bg-white px-3 py-2 text-xs text-[#4b3a50]" disabled={busy} onChange={(event) => void update(member.user.id, event.target.value)} value={member.role}><option value="ADMIN">Administrador</option><option value="STAFF">Personal · solo lectura</option></select></label><button className="rounded-xl px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50" disabled={busy} onClick={() => void remove(member.user.id)} type="button">Quitar</button></> : <span className="rounded-full bg-[#f4eff7] px-3 py-1.5 text-xs font-semibold text-[#6E3482]">{roleCopy[member.role].label}</span>}</div>
+            <div className="flex shrink-0 items-center gap-2">{canManage && member.role !== "OWNER" ? <><label><span className="sr-only">Rol de {member.user.firstName}</span><select className="rounded-xl border border-[#e6dfe8] bg-white px-3 py-2 text-xs text-[#4b3a50]" disabled={busy} onChange={(event) => void update(member.user.id, event.target.value)} value={member.role}><option value="ADMIN">Administrador</option><option value="STAFF">Personal · ventas y consulta</option></select></label><button className="rounded-xl px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50" disabled={busy} onClick={() => void remove(member.user.id)} type="button">Quitar</button></> : <span className="rounded-full bg-[#f4eff7] px-3 py-1.5 text-xs font-semibold text-[#6E3482]">{roleCopy[member.role].label}</span>}</div>
           </article>)}</div>
         </section>
         <section className="overflow-hidden rounded-[1.5rem] border border-[#e6dfe8] bg-white">
@@ -105,7 +105,7 @@ export function TeamView({ onOpenPlan, role }: { onOpenPlan: () => void; role: R
         <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">Invitar colaborador</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Recibirá un enlace seguro para ingresar o crear su cuenta.</p></div><span className="rounded-lg bg-[#f5eff8] p-2 text-[#6E3482]"><MailPlus size={18} /></span></div>
         {canManage ? <form className="mt-6 space-y-5" onSubmit={invite}>
           <Field label="Email de la persona" help="La invitación solo puede aceptarse con esta dirección." example="Ejemplo: ventas@mitienda.com"><input name="email" placeholder="ventas@mitienda.com" required type="email" /></Field>
-          <Field label="Permiso" help="Podés cambiarlo más adelante desde la lista de miembros."><select name="role"><option value="STAFF">Personal — solo lectura</option><option value="ADMIN">Administrador — gestión del negocio</option></select></Field>
+          <Field label="Permiso" help="Podés cambiarlo más adelante desde la lista de miembros."><select name="role"><option value="STAFF">Personal — ventas locales y consulta</option><option value="ADMIN">Administrador — gestión del negocio</option></select></Field>
           <Tip title="Antes de enviar">Las invitaciones pendientes también cuentan para el límite de colaboradores. Consultá el disponible en <GuideLink onClick={onOpenPlan}>Plan y uso</GuideLink>.</Tip>
           {previewUrl && <a className="block break-all rounded-xl bg-[#f5eff8] px-3 py-2.5 text-xs font-semibold text-[#6E3482]" href={previewUrl} target="_blank">Abrir invitación local ↗</a>}
           <button className={`${styles.button} w-full`} disabled={busy} type="submit">{busy ? "Enviando…" : "Enviar invitación"}</button>
