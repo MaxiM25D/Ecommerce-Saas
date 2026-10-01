@@ -8,6 +8,7 @@ import { requireWritableSubscription } from "../saas/limits.js";
 
 const idSchema = z.string().trim().min(1).max(100);
 const saleSchema = z.object({
+  operationId: z.string().uuid().optional(),
   items: z.array(z.object({
     productId: idSchema,
     variantId: idSchema.nullish(),
@@ -130,6 +131,10 @@ managementRouter.post("/sales", async (request, response) => {
 
   const order = await database.$transaction(async (transaction) => {
     await transaction.$queryRaw`SELECT "id" FROM "Tenant" WHERE "id" = ${auth.tenant.id} FOR UPDATE`;
+    if (input.operationId) {
+      const existing = await transaction.order.findFirst({ where: { tenantId: auth.tenant.id, channel: "LOCAL", localSaleKey: input.operationId }, select: { id: true } });
+      if (existing) return existing;
+    }
     const lines = [];
     for (const requested of merged.values()) {
       const product = await transaction.product.findFirst({
@@ -164,7 +169,7 @@ managementRouter.post("/sales", async (request, response) => {
 
     const created = await transaction.order.create({
       data: {
-        tenantId: auth.tenant.id, customerId, number: (last?.number ?? 0) + 1, channel: "LOCAL", soldByUserId: auth.user.id,
+        tenantId: auth.tenant.id, customerId, number: (last?.number ?? 0) + 1, channel: "LOCAL", soldByUserId: auth.user.id, localSaleKey: input.operationId ?? null,
         status: "DELIVERED", paymentStatus: "APPROVED", paymentMethod: input.paymentMethod, stockStatus: "COMMITTED",
         customerName, customerEmail: input.customer?.email?.toLowerCase() ?? "", customerPhone: input.customer?.phone || null,
         notes: input.notes || null, currency: settings?.currency ?? "ARS", subtotalInCents, discountInCents, totalInCents: subtotalInCents - discountInCents,

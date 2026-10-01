@@ -265,6 +265,7 @@ test("gestión registra una venta local, descuenta stock y lo repone al anular",
   } });
 
   const created = await staffAgent.post("/api/admin/management/sales").send({
+    operationId: "9df5926f-8793-42e3-869c-1c369c42c1ed",
     items: [{ productId: product.id, quantity: 2 }],
     discount: { type: "PERCENTAGE", value: 10 },
     paymentMethod: "CASH",
@@ -275,6 +276,16 @@ test("gestión registra una venta local, descuenta stock y lo repone al anular",
   assert.equal(created.body.sale.totalInCents, 180_000);
   assert.equal((await database.product.findUniqueOrThrow({ where: { id: product.id } })).stock, 6);
   assert.equal(await database.stockMovement.count({ where: { orderId: created.body.sale.id, type: "LOCAL_SALE" } }), 1);
+
+  const retried = await staffAgent.post("/api/admin/management/sales").send({
+    operationId: "9df5926f-8793-42e3-869c-1c369c42c1ed",
+    items: [{ productId: product.id, quantity: 2 }],
+    discount: { type: "PERCENTAGE", value: 10 },
+    paymentMethod: "CASH",
+  });
+  assert.equal(retried.status, 201);
+  assert.equal(retried.body.sale.id, created.body.sale.id);
+  assert.equal((await database.product.findUniqueOrThrow({ where: { id: product.id } })).stock, 6);
 
   const cancelled = await ownerAgent.post(`/api/admin/management/sales/${created.body.sale.id}/cancel`);
   assert.equal(cancelled.status, 200);

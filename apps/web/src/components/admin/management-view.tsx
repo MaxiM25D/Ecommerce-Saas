@@ -1,7 +1,7 @@
 "use client";
 
 import { BarChart3, Minus, Plus, Printer, ReceiptText, RotateCcw, Search, ShoppingCart, SlidersHorizontal, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, apiRequest } from "@/lib/api";
 import { confirmAction } from "@/lib/confirm-action";
 import { EmptyState, Tip, panelStyles as styles } from "./guided-panel";
@@ -37,6 +37,7 @@ export function ManagementView({ role }: { role: Role }) {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [discountType, setDiscountType] = useState<"NONE" | "PERCENTAGE" | "FIXED">("NONE");
   const [discountValue, setDiscountValue] = useState(0);
+  const pendingOperationId = useRef<string | null>(null);
 
   const refreshOverview = useCallback(async () => setOverview(await apiRequest<Overview>(`/admin/management/overview?${dayRange()}`)), []);
   const refreshProducts = useCallback(async (term = "") => setProducts((await apiRequest<{ products: Product[] }>(`/admin/management/catalog?search=${encodeURIComponent(term)}`)).products), []);
@@ -50,11 +51,14 @@ export function ManagementView({ role }: { role: Role }) {
 
   async function submitSale(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!cart.length) return setError("Agregá al menos un producto a la venta.");
-    const form = new FormData(event.currentTarget); setBusy(true); setError(""); setNotice("");
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement); setBusy(true); setError(""); setNotice("");
+    pendingOperationId.current ??= crypto.randomUUID();
     try {
-      const result = await apiRequest<Receipt>("/admin/management/sales", { method: "POST", body: JSON.stringify({ items: cart.map(({ productId, variantId, quantity: amount }) => ({ productId, variantId, quantity: amount })), discount: { type: discountType, value: discountType === "FIXED" ? discountValue * 100 : discountValue }, paymentMethod: form.get("paymentMethod"), customer: { name: form.get("customerName"), email: form.get("customerEmail"), phone: form.get("customerPhone") }, notes: form.get("notes") }) });
-      setReceipt(result); setCart([]); setDiscountType("NONE"); setDiscountValue(0); event.currentTarget.reset(); setNotice(`Venta #${result.sale.number} registrada. El stock ya fue descontado.`); await Promise.all([refreshOverview(), refreshProducts(search)]);
-    } catch (caught) { setError(errorMessage(caught)); } finally { setBusy(false); }
+      const result = await apiRequest<Receipt>("/admin/management/sales", { method: "POST", body: JSON.stringify({ operationId: pendingOperationId.current, items: cart.map(({ productId, variantId, quantity: amount }) => ({ productId, variantId, quantity: amount })), discount: { type: discountType, value: discountType === "FIXED" ? discountValue * 100 : discountValue }, paymentMethod: form.get("paymentMethod"), customer: { name: form.get("customerName"), email: form.get("customerEmail"), phone: form.get("customerPhone") }, notes: form.get("notes") }) });
+      pendingOperationId.current = null; setReceipt(result); setCart([]); setDiscountType("NONE"); setDiscountValue(0); formElement.reset(); setNotice(`Venta #${result.sale.number} registrada. El stock ya fue descontado.`);
+      void Promise.all([refreshOverview(), refreshProducts(search)]).catch(() => setNotice(`Venta #${result.sale.number} registrada. Actualizá la página si el resumen no cambia.`));
+    } catch (caught) { if (!(caught instanceof ApiError) || ![0, 408].includes(caught.status)) pendingOperationId.current = null; setError(errorMessage(caught)); } finally { setBusy(false); }
   }
   async function openReceipt(id: string) { try { setReceipt(await apiRequest<Receipt>(`/admin/management/sales/${id}`)); } catch (caught) { setError(errorMessage(caught)); } }
   async function cancelSale(id: string, number: number) { if (!(await confirmAction({ title: `¿Anular la venta #${number}?`, description: "El stock se repondrá. Si ya cobraste, devolvé el dinero por el mismo medio: InfinityShop no puede revertir efectivo, posnet o aplicaciones externas.", confirmLabel: "Anular y reponer stock", tone: "danger" }))) return; setBusy(true); try { await apiRequest(`/admin/management/sales/${id}/cancel`, { method: "POST" }); setNotice(`Venta #${number} anulada y stock repuesto.`); await Promise.all([refreshOverview(), refreshProducts(search)]); } catch (caught) { setError(errorMessage(caught)); } finally { setBusy(false); } }

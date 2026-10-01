@@ -542,6 +542,7 @@ model Order {
   number                       Int
   channel                      SalesChannel         @default(ONLINE)
   soldByUserId                 String?
+  localSaleKey                 String?              @unique
   status                       OrderStatus          @default(PENDING)
   paymentStatus                PaymentStatus        @default(PENDING)
   paymentMethod                PaymentMethod        @default(BANK_TRANSFER)
