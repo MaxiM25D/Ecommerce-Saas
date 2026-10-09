@@ -19,16 +19,18 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { ApiError, apiRequest } from "@/lib/api";
-import { marketingPlans, type MarketingPlanCode } from "@/lib/plan-catalog";
+import { type MarketingPlan, type MarketingPlanCode } from "@/lib/plan-catalog";
 
 type Mode = "login" | "register";
 
 export function AccessForm({
   initialMode = "login",
   initialPlan = "PRO",
+  plans,
 }: {
   initialMode?: Mode;
   initialPlan?: MarketingPlanCode;
+  plans: MarketingPlan[];
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -42,6 +44,7 @@ export function AccessForm({
   const [storeSlug, setStoreSlug] = useState("");
   const [customSlug, setCustomSlug] = useState(false);
   const planCode: MarketingPlanCode = initialPlan;
+  const selectedPlan = plans.find((plan) => plan.code === planCode) ?? plans[0];
 
   function changeMode(nextMode: Mode) {
     setMode(nextMode);
@@ -169,7 +172,7 @@ export function AccessForm({
         >
           <div className="mb-7">
             <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-fuchsia-300">
-              {mode === "login" ? "Bienvenido de nuevo" : "7 días gratis"}
+              {mode === "login" ? "Bienvenido de nuevo" : selectedPlan.trialDays > 0 ? `${selectedPlan.trialDays} días gratis` : "Creá tu tienda"}
             </p>
             <h2 className="text-3xl font-semibold tracking-tight text-white">
               {mode === "login"
@@ -333,11 +336,11 @@ export function AccessForm({
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-medium text-white/70">InfinityShop Pro</span>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">
-                      7 días gratis
+                      {selectedPlan.trialDays > 0 ? `${selectedPlan.trialDays} días gratis` : "Sin prueba"}
                     </span>
                   </div>
                   <div className="grid gap-3">
-                    {marketingPlans.map((plan) => {
+                    {plans.map((plan) => {
                       return (
                         <div
                           className="relative rounded-xl border border-fuchsia-400/70 bg-fuchsia-400/10 p-3 ring-2 ring-fuchsia-400/10"

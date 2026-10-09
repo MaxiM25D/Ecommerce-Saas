@@ -19,6 +19,26 @@ import { billingWebhookSchema, cancelBillingSchema, selectBillingPlanSchema } fr
 
 export const billingRouter = Router();
 
+billingRouter.get("/plans", async (_request, response) => {
+  const plans = await database.plan.findMany({
+    where: { active: true },
+    orderBy: { code: "asc" },
+    select: {
+      code: true,
+      name: true,
+      description: true,
+      priceInCents: true,
+      currency: true,
+      maxProducts: true,
+      maxMembers: true,
+      trialDays: true,
+      features: true,
+    },
+  });
+  response.set("Cache-Control", "no-store");
+  response.json({ plans });
+});
+
 billingRouter.post("/mercadopago/webhook", async (request, response) => {
   if (!environment.SAAS_MP_WEBHOOK_SECRET) throw new HttpError(503, "Webhook de facturación no configurado");
   const input = billingWebhookSchema.parse(request.body);

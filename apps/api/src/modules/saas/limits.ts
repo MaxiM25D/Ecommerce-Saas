@@ -42,6 +42,9 @@ export function monthStart(date = new Date()): Date {
 }
 
 export function newTrialSubscription(planId: string, trialDays: number, now = new Date()) {
+  if (trialDays <= 0) {
+    return { planId, status: "PAST_DUE" as const, trialEndsAt: null, currentPeriodFrom: now, currentPeriodTo: null };
+  }
   const trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
   return { planId, status: "TRIALING" as const, trialEndsAt, currentPeriodFrom: now, currentPeriodTo: trialEndsAt };
 }

@@ -7,9 +7,12 @@ import {
 
 import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
+import { updateProviderSubscription } from "../../services/saas-billing-provider.js";
 import { getAuthContext, requireSession } from "../auth/session.js";
 import {
+  planCodeSchema,
   tenantIdSchema,
+  updateCommercialPlanSchema,
   updateSubscriptionSchema,
   updateTenantSchema,
 } from "./schemas.js";
@@ -105,6 +108,71 @@ platformRouter.get("/plans", async (_request, response) => {
     include: { _count: { select: { subscriptions: true } } },
   });
   response.json({ plans });
+});
+
+platformRouter.patch("/plans/:code", async (request, response) => {
+  const code = planCodeSchema.parse(request.params.code);
+  const input = updateCommercialPlanSchema.parse(request.body);
+  const current = await database.plan.findUnique({ where: { code } });
+  if (!current?.active) throw new HttpError(404, "Plan comercial no encontrado");
+
+  const plan = await database.plan.update({
+    where: { code },
+    data: {
+      ...(input.priceInCents !== undefined ? { priceInCents: input.priceInCents } : {}),
+      ...(input.trialDays !== undefined ? { trialDays: input.trialDays } : {}),
+    },
+    include: { _count: { select: { subscriptions: true } } },
+  });
+
+  const synchronization = {
+    requested: input.syncExistingSubscriptions,
+    eligible: 0,
+    updated: 0,
+    failed: [] as Array<{ tenantId: string; tenantName: string; message: string }>,
+  };
+
+  if (input.syncExistingSubscriptions) {
+    const subscriptions = await database.subscription.findMany({
+      where: {
+        providerSubscriptionId: { not: null },
+        OR: [{ planId: plan.id }, { pendingPlanId: plan.id }],
+      },
+      select: {
+        tenantId: true,
+        providerSubscriptionId: true,
+        providerStatus: true,
+        status: true,
+        tenant: { select: { name: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    const eligibleSubscriptions = subscriptions.filter(
+      (subscription) =>
+        subscription.status !== "CANCELED" &&
+        subscription.providerStatus?.toLowerCase() !== "canceled",
+    );
+    synchronization.eligible = eligibleSubscriptions.length;
+    for (const subscription of eligibleSubscriptions) {
+      try {
+        await updateProviderSubscription(subscription.providerSubscriptionId!, {
+          planName: plan.name,
+          tenantName: subscription.tenant.name,
+          priceInCents: plan.priceInCents,
+          currency: plan.currency,
+        });
+        synchronization.updated += 1;
+      } catch (error) {
+        synchronization.failed.push({
+          tenantId: subscription.tenantId,
+          tenantName: subscription.tenant.name,
+          message: error instanceof Error ? error.message : "No se pudo sincronizar con Mercado Pago",
+        });
+      }
+    }
+  }
+
+  response.json({ plan, synchronization });
 });
 
 platformRouter.get("/tenants", async (_request, response) => {

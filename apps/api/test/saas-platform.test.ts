@@ -59,6 +59,20 @@ test("solo SUPERADMIN accede al panel global y Starter queda archivado", async (
   assert.deepEqual(plans.body.plans.map(({ active }: { active: boolean }) => active), [false, true]);
 });
 
+test("SUPERADMIN modifica precio y prueba del plan comercial", async () => {
+  assert.equal((await ownerAgent.patch("/api/platform/plans/PRO").send({ priceInCents: 5_500_000, trialDays: 10 })).status, 403);
+  const updated = await superAgent.patch("/api/platform/plans/PRO").send({ priceInCents: 5_500_000, trialDays: 10, syncExistingSubscriptions: false });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.plan.priceInCents, 5_500_000);
+  assert.equal(updated.body.plan.trialDays, 10);
+  assert.equal(updated.body.synchronization.requested, false);
+  const publicPlans = await request(app).get("/api/billing/plans");
+  assert.equal(publicPlans.status, 200);
+  assert.equal(publicPlans.body.plans[0].priceInCents, 5_500_000);
+  assert.equal(publicPlans.body.plans[0].trialDays, 10);
+  await superAgent.patch("/api/platform/plans/PRO").send({ priceInCents: 5_000_000, trialDays: 7, syncExistingSubscriptions: false });
+});
+
 test("PRO admite 1000 productos y cinco colaboradores", async () => {
   const invitation = await ownerAgent.post("/api/admin/team").send({ email: memberEmail, role: "STAFF" });
   assert.equal(invitation.status, 201);

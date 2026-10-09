@@ -3,7 +3,9 @@ import { Check, CheckCircle2 } from "lucide-react";
 import { AccessForm } from "@/components/access-form";
 import styles from "@/components/auth-shell.module.css";
 import { BrandLogo } from "@/components/brand-logo";
-import { marketingPlans } from "@/lib/plan-catalog";
+import { loadMarketingPlans } from "@/lib/plan-catalog-server";
+
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage({
   searchParams,
@@ -13,6 +15,7 @@ export default async function LoginPage({
   const query = await searchParams;
   const initialMode = query.mode === "register" ? "register" : "login";
   const initialPlan = "PRO" as const;
+  const marketingPlans = await loadMarketingPlans();
   return (
     <main
       className={`${styles.shell} relative min-h-screen overflow-hidden px-5 py-7 text-white sm:px-8 lg:py-10`}
@@ -87,7 +90,7 @@ export default async function LoginPage({
             ))}
           </div>
         </section>
-        <AccessForm initialMode={initialMode} initialPlan={initialPlan} />
+        <AccessForm initialMode={initialMode} initialPlan={initialPlan} plans={marketingPlans} />
       </div>
     </main>
   );

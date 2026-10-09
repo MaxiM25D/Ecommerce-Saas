@@ -10,7 +10,7 @@ import type { Role } from "./types";
 
 type Plan = {
   id: string; code: "STARTER" | "PRO"; name: string; description: string | null;
-  priceInCents: number; currency: string; maxProducts: number; maxMembers: number; features: string[];
+  priceInCents: number; currency: string; maxProducts: number; maxMembers: number; trialDays: number; features: string[];
 };
 type Invoice = {
   id: string; status: string; planName: string; amountInCents: number; currency: string;
@@ -18,7 +18,7 @@ type Invoice = {
 };
 type Data = {
   subscription: {
-    status: string; cancelAtPeriodEnd: boolean; trialEndsAt: string | null; currentPeriodTo: string | null;
+    status: string; cancelAtPeriodEnd: boolean; trialEndsAt: string | null; currentPeriodFrom: string | null; currentPeriodTo: string | null;
     billingProvider: string | null; providerSubscriptionId: string | null; payerEmail: string | null;
     providerStatus: string | null; providerCheckoutUrl: string | null; lastPaymentAt: string | null; plan: Plan; pendingPlan: Plan | null;
   };
@@ -110,6 +110,9 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
   const providerStatus = paymentProfile?.status ?? subscription.providerStatus;
   const automaticBillingActive = providerStatus === "authorized";
   const trialIsActive = subscription.status === "TRIALING" && Boolean(subscription.trialEndsAt);
+  const trialDurationDays = subscription.trialEndsAt && subscription.currentPeriodFrom
+    ? Math.max(0, Math.round((new Date(subscription.trialEndsAt).getTime() - new Date(subscription.currentPeriodFrom).getTime()) / 86_400_000))
+    : subscription.plan.trialDays;
   const expectedFirstCharge = paymentProfile?.nextPaymentDate
     ?? (trialIsActive ? subscription.trialEndsAt : subscription.currentPeriodTo);
   const paymentMethod = paymentProfile?.paymentMethodId
@@ -121,7 +124,7 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
 
     <section className="overflow-hidden rounded-[1.75rem] bg-[#241329] text-white shadow-[0_24px_70px_rgba(52,31,59,.16)]">
       <div className="grid gap-7 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">{statusLabels[subscription.status] ?? "En revisión"}</span>{subscription.status === "TRIALING" && <span className="rounded-full bg-[#a56abd]/25 px-3 py-1 text-xs font-semibold">7 días de prueba total</span>}</div><h3 className="mt-4 text-3xl font-semibold">Plan {subscription.plan.name}</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">{subscription.status === "TRIALING" ? `Tu prueba finaliza el ${date(renewalDate)}. Después necesitás una suscripción activa para seguir operando.` : `El período actual termina el ${date(renewalDate)}.`}</p>{subscription.pendingPlan && <p className="mt-3 text-sm text-[#e2bdf0]">Cambio pendiente a {subscription.pendingPlan.name}.</p>}</div>
+        <div><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">{statusLabels[subscription.status] ?? "En revisión"}</span>{subscription.status === "TRIALING" && <span className="rounded-full bg-[#a56abd]/25 px-3 py-1 text-xs font-semibold">{trialDurationDays} días de prueba total</span>}</div><h3 className="mt-4 text-3xl font-semibold">Plan {subscription.plan.name}</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">{subscription.status === "TRIALING" ? `Tu prueba finaliza el ${date(renewalDate)}. Después necesitás una suscripción activa para seguir operando.` : `El período actual termina el ${date(renewalDate)}.`}</p>{subscription.pendingPlan && <p className="mt-3 text-sm text-[#e2bdf0]">Cambio pendiente a {subscription.pendingPlan.name}.</p>}</div>
         <div className="lg:text-right"><p className="text-3xl font-semibold">{money(subscription.plan.priceInCents, subscription.plan.currency)}</p><p className="mt-1 text-xs text-white/55">por mes</p></div>
       </div>
       {subscription.cancelAtPeriodEnd && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-amber-400/10 px-6 py-4 text-sm text-amber-100 sm:px-8"><span>La suscripción terminará al finalizar el período actual. Hasta entonces podés seguir usando el plan.</span>{canManage && <button disabled={busy} onClick={() => void action("/billing/resume", undefined, "La suscripción continuará activa.")} className="font-semibold underline" type="button">Mantener suscripción</button>}</div>}
@@ -143,7 +146,7 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
       <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6E3482]">Activación transparente</p><h3 className="mt-2 text-lg font-semibold">Probá primero. Pagá recién cuando corresponda.</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-[#66586a]">Autorizar Mercado Pago no significa que ya ingresó dinero. El alta confirma quién paga y con qué medio; el cobro real recién queda acreditado cuando aparece una factura pagada.</p></div><span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#6E3482] shadow-sm">Sin comisión por venta</span></div>
       <ol className="mt-5 grid gap-3 md:grid-cols-3">
         <ActivationStep number="1" title="Hoy" detail={trialIsActive ? "Vinculás Mercado Pago y pagás $0." : "Elegís tu cuenta y medio de pago."} />
-        <ActivationStep number="2" title={expectedFirstCharge ? date(expectedFirstCharge) : "Al confirmar"} detail="Mercado Pago intenta el primer cobro de $50.000 ARS." />
+        <ActivationStep number="2" title={expectedFirstCharge ? date(expectedFirstCharge) : "Al confirmar"} detail={`Mercado Pago intenta el primer cobro de ${money(subscription.plan.priceInCents, subscription.plan.currency)}.`} />
         <ActivationStep number="3" title="Acreditación" detail="La factura pagada confirma que InfinityShop recibió el dinero." />
       </ol>
     </section>}
@@ -154,7 +157,7 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
 
     <section><div><h3 className="text-lg font-semibold">Uso del plan actual</h3><p className="mt-1 text-sm text-[#807384]">Los límites se aplican a productos y personas del equipo. Los pedidos no tienen límite mensual.</p></div><div className="mt-4 grid gap-4 md:grid-cols-3"><Usage icon={Boxes} label="Productos" value={usage.products} limit={subscription.plan.maxProducts} help="Productos cargados, visibles u ocultos." /><Usage icon={UsersRound} label="Miembros" value={usage.members} limit={subscription.plan.maxMembers} help="Incluye al Propietario. Las invitaciones pendientes también reservan lugar." /><article className={styles.card}><div className="flex items-start justify-between"><div><p className="text-sm font-medium text-[#807384]">Pedidos este mes</p><p className="mt-3 text-3xl font-semibold">{usage.monthlyOrders}</p><p className="mt-2 text-xs leading-5 text-emerald-700">Sin límite por plan.</p></div><span className="rounded-lg bg-[#f5eff8] p-2 text-[#6E3482]"><CircleDollarSign size={18} /></span></div></article></div></section>
 
-    <section><div><h3 className="text-lg font-semibold">InfinityShop Pro</h3><p className="mt-1 text-sm text-[#807384]">Todas las funciones están incluidas por $50.000 ARS mensuales, sin comisión de InfinityShop por venta.</p></div>
+    <section><div><h3 className="text-lg font-semibold">InfinityShop Pro</h3><p className="mt-1 text-sm text-[#807384]">Todas las funciones están incluidas por {money(subscription.plan.priceInCents, subscription.plan.currency)} mensuales, sin comisión de InfinityShop por venta.</p></div>
       <div className="mt-5 grid gap-5">{data.plans.map((plan) => {
         const current = plan.id === subscription.plan.id;
         return <article className={`flex flex-col rounded-[1.5rem] border bg-white p-6 ${current ? "border-[#a56abd] ring-2 ring-[#eaddef]" : "border-[#e6dfe8]"}`} key={plan.id}>
@@ -162,7 +165,7 @@ export function PlanView({ role, onOpenStore }: { role: Role; onOpenStore: (sect
           <p className="mt-5 text-3xl font-semibold">{money(plan.priceInCents, plan.currency)}<span className="text-sm font-normal text-[#918495]"> / mes</span></p>
           <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-[#fbfafc] p-4 text-sm"><div><p className="text-xs text-[#918495]">Productos</p><p className="mt-1 font-semibold">Hasta {plan.maxProducts}</p></div><div><p className="text-xs text-[#918495]">Colaboradores</p><p className="mt-1 font-semibold">{Math.max(0, plan.maxMembers - 1)} + propietario</p></div></div>
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#6E3482]">Incluye</p><ul className="mt-3 grid gap-2 text-sm text-[#66586a] sm:grid-cols-2">{visibleFeatures(plan.features).map((feature) => <li className="flex gap-2" key={feature}><Check className="mt-0.5 shrink-0 text-[#6E3482]" size={15} /><span>{featureLabels[feature]}</span></li>)}</ul>
-          {canManage && (!current || !automaticBillingActive) && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const confirmed = await confirmAction({ title: "¿Vincular Mercado Pago?", description: trialIsActive ? `Hoy pagás $0. Vas a elegir la cuenta y el medio de pago para autorizar el cobro mensual de $50.000 ARS desde el ${date(subscription.trialEndsAt)}. Podés cancelar antes de esa fecha.` : "La prueba gratuita ya terminó. Vas a elegir la cuenta y el medio de pago; Mercado Pago puede cobrar $50.000 ARS al confirmar y luego cada mes.", confirmLabel: "Continuar de forma segura" }); if (confirmed) void choosePlan(plan.code); }} type="button">Vincular Mercado Pago <ArrowRight size={15} /></button><p className="mt-3 text-center text-xs leading-5 text-[#807384]">{trialIsActive ? `Hoy $0 · primer cobro el ${date(subscription.trialEndsAt)}` : "$50.000 ARS por mes · cancelá cuando quieras"}</p></div>}
+          {canManage && (!current || !automaticBillingActive) && <div className="mt-auto pt-6"><button className={`${styles.button} w-full`} disabled={busy || !data.billingConfigured} onClick={async () => { const planPrice = money(plan.priceInCents, plan.currency); const confirmed = await confirmAction({ title: "¿Vincular Mercado Pago?", description: trialIsActive ? `Hoy pagás $0. Vas a elegir la cuenta y el medio de pago para autorizar el cobro mensual de ${planPrice} desde el ${date(subscription.trialEndsAt)}. Podés cancelar antes de esa fecha.` : `La prueba gratuita ya terminó. Vas a elegir la cuenta y el medio de pago; Mercado Pago puede cobrar ${planPrice} al confirmar y luego cada mes.`, confirmLabel: "Continuar de forma segura" }); if (confirmed) void choosePlan(plan.code); }} type="button">Vincular Mercado Pago <ArrowRight size={15} /></button><p className="mt-3 text-center text-xs leading-5 text-[#807384]">{trialIsActive ? `Hoy $0 · primer cobro el ${date(subscription.trialEndsAt)}` : `${money(plan.priceInCents, plan.currency)} por mes · cancelá cuando quieras`}</p></div>}
         </article>;
       })}</div>
       {!data.billingConfigured && <Tip title="Cobro automático pendiente">Los planes se pueden consultar, pero InfinityShop todavía no tiene configuradas sus credenciales de cobro SaaS en Mercado Pago. Por eso el cambio de plan está deshabilitado.</Tip>}

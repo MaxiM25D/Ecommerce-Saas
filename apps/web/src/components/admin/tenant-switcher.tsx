@@ -17,10 +17,8 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { ApiError, apiRequest } from "@/lib/api";
-import {
-  marketingPlans,
-  type MarketingPlanCode,
-} from "@/lib/plan-catalog";
+import { type MarketingPlanCode } from "@/lib/plan-catalog";
+import { useMarketingPlans } from "@/lib/use-marketing-plans";
 import type { Role } from "./types";
 
 type TenantAccess = {
@@ -390,6 +388,8 @@ function CreateStoreForm({
   onSlugChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const marketingPlans = useMarketingPlans();
+  const selectedMarketingPlan = marketingPlans.find((plan) => plan.code === planCode) ?? marketingPlans[0];
   return (
     <form className="p-5 sm:p-7" onSubmit={onSubmit}>
       <button className="inline-flex items-center gap-2 text-sm font-medium text-[#796d7d]" onClick={onBack} type="button">
@@ -409,7 +409,7 @@ function CreateStoreForm({
 
       <div className="mt-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><p className="text-sm font-semibold text-[#3b2d3e]">InfinityShop Pro</p><p className="mt-1 text-xs text-[#918495]">Cada tienda tiene su propia suscripción y comienza con 7 días gratis.</p></div>
+          <div><p className="text-sm font-semibold text-[#3b2d3e]">InfinityShop Pro</p><p className="mt-1 text-xs text-[#918495]">Cada tienda tiene su propia suscripción{selectedMarketingPlan && selectedMarketingPlan.trialDays > 0 ? ` y comienza con ${selectedMarketingPlan.trialDays} días gratis` : ""}.</p></div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {marketingPlans.map((plan) => {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
 
-import { marketingPlans } from "@/lib/plan-catalog";
+import { loadMarketingPlans } from "@/lib/plan-catalog-server";
 import { BrandLogo } from "@/components/brand-logo";
 import styles from "./home.module.css";
 
@@ -29,7 +29,11 @@ const activity = [
   ["#1046", "Valentina S.", "$ 115.000", "Nuevo"],
 ];
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const marketingPlans = await loadMarketingPlans();
+  const activePlan = marketingPlans[0];
   return (
     <main className={styles.page}>
       <div className={`${styles.grid} pointer-events-none absolute inset-0`} />
@@ -95,7 +99,7 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-white/40">
-            <span>✓ 7 días gratis</span>
+            {activePlan.trialDays > 0 && <span>✓ {activePlan.trialDays} días gratis</span>}
             <span>✓ Sin tarjeta para crear tu tienda</span>
             <span>✓ Sin costo de instalación</span>
             <span>✓ Cancelá cuando quieras</span>
@@ -172,7 +176,7 @@ export default function HomePage() {
             Todo InfinityShop, sin funciones escondidas.
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/50 sm:text-base">
-            Creá tu tienda sin tarjeta. Tenés 7 días gratis y, si decidís continuar, vinculás Mercado Pago para pagar $50.000 ARS por mes. Cancelá cuando quieras.
+            {activePlan.trialDays > 0 ? `Creá tu tienda sin tarjeta. Tenés ${activePlan.trialDays} días gratis y, si decidís continuar, vinculás Mercado Pago para pagar ${activePlan.price} ${activePlan.currency} por mes.` : `Creá tu tienda sin tarjeta y, si decidís continuar, vinculás Mercado Pago para pagar ${activePlan.price} ${activePlan.currency} por mes.`} Cancelá cuando quieras.
           </p>
         </div>
         <div className="mx-auto grid max-w-3xl gap-5">

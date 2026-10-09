@@ -22,8 +22,12 @@ type Overview = {
 };
 type Plan = {
   id: string; code: string; name: string; priceInCents: number; currency: string;
-  maxProducts: number; maxMembers: number; maxOrdersPerMonth: number | null;
+  maxProducts: number; maxMembers: number; maxOrdersPerMonth: number | null; trialDays: number;
   active: boolean; _count: { subscriptions: number };
+};
+type PlanUpdateResult = {
+  plan: Plan;
+  synchronization: { requested: boolean; eligible: number; updated: number; failed: Array<{ tenantName: string; message: string }> };
 };
 type Tenant = {
   id: string; name: string; slug: string; status: "ACTIVE" | "SUSPENDED"; createdAt: string;
@@ -103,6 +107,29 @@ export function PlatformPanel({ initialSection = "overview" }: { initialSection?
     finally { setBusy(false); }
   }
 
+  async function updateCommercialPlan(plan: Plan, priceInCents: number, trialDays: number) {
+    if (!(await confirmAction({
+      title: "¿Aplicar la nueva configuración comercial?",
+      description: `Las nuevas tiendas tendrán ${trialDays} día${trialDays === 1 ? "" : "s"} de prueba. El precio mensual será ${money(priceInCents)} y se sincronizará con las suscripciones vigentes de Mercado Pago. Las facturas anteriores no cambian.`,
+      confirmLabel: "Guardar y sincronizar",
+    }))) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await apiRequest<PlanUpdateResult>(`/platform/plans/${plan.code}`, {
+        method: "PATCH",
+        body: JSON.stringify({ priceInCents, trialDays, syncExistingSubscriptions: true }),
+      });
+      await load();
+      if (result.synchronization.failed.length > 0) {
+        const names = result.synchronization.failed.map(({ tenantName }) => tenantName).join(", ");
+        setError(`La configuración quedó guardada, pero Mercado Pago no pudo actualizar ${result.synchronization.failed.length} suscripción(es): ${names}. Volvé a guardar para reintentar.`);
+      } else {
+        setNotice(`Plan actualizado. ${result.synchronization.updated} suscripción(es) sincronizada(s) con Mercado Pago.`);
+      }
+    } catch (caught) { handleError(caught); }
+    finally { setBusy(false); }
+  }
+
   const filteredTenants = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("es");
     return tenants.filter((tenant) => {
@@ -159,7 +186,7 @@ export function PlatformPanel({ initialSection = "overview" }: { initialSection?
         {filteredTenants.length === 0 ? <div className="mt-5"><EmptyState title="No encontramos tiendas">Probá otra búsqueda o limpiá los filtros.</EmptyState></div> : <div className="mt-5 overflow-hidden rounded-2xl border border-[#e6dfe8] bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[70rem] text-left text-sm"><caption className="sr-only">Tiendas, uso, plan, suscripción y acceso</caption><thead className="bg-[#fbfafc] text-xs uppercase tracking-wider text-[#918495]"><tr><th scope="col" className="px-5 py-3">Tienda</th><th scope="col" className="px-5 py-3">Uso</th><th scope="col" className="px-5 py-3">Plan</th><th scope="col" className="px-5 py-3">Suscripción</th><th scope="col" className="px-5 py-3">Acceso</th><th scope="col" className="px-5 py-3 text-right">Acción</th></tr></thead><tbody className="divide-y divide-[#eee9ef]">{filteredTenants.map((tenant) => <tr key={tenant.id}><td className="px-5 py-4"><Link className="inline-flex items-center gap-1.5 font-semibold text-[#49225B] hover:underline" href={`/tienda/${tenant.slug}`} target="_blank">{tenant.name}<ExternalLink size={12} /></Link><p className="mt-1 text-xs text-[#807384]">/{tenant.slug} · desde {new Date(tenant.createdAt).toLocaleDateString("es-AR")}</p></td><td className="px-5 py-4 text-xs leading-5 text-[#807384]">{tenant._count.products} productos<br />{tenant._count.memberships} miembros · {tenant._count.orders} pedidos</td><td className="px-5 py-4"><select aria-label={`Plan de ${tenant.name}`} className="rounded-xl border border-[#e6dfe8] bg-white px-3 py-2 text-xs" disabled={busy} onChange={(event) => void updateSubscription(tenant, { planCode: event.target.value })} value={tenant.subscription?.plan.code ?? "PRO"}>{plans.filter((plan) => plan.active).map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select></td><td className="px-5 py-4"><select aria-label={`Estado de suscripción de ${tenant.name}`} className="rounded-xl border border-[#e6dfe8] bg-white px-3 py-2 text-xs" disabled={busy} onChange={(event) => void updateSubscription(tenant, { status: event.target.value })} value={tenant.subscription?.status ?? "ACTIVE"}><option value="TRIALING">Prueba</option><option value="ACTIVE">Activa</option><option value="PAST_DUE">Pago pendiente</option><option value="CANCELED">Cancelada</option></select>{tenant.subscription?.cancelAtPeriodEnd && <p className="mt-1 text-[10px] text-amber-700">Cancela al final del período</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tenant.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{tenant.status === "ACTIVE" ? "Activa" : "Suspendida"}</span></td><td className="px-5 py-4 text-right"><button className={`rounded-xl px-3 py-2 text-xs font-semibold ${tenant.status === "ACTIVE" ? "text-red-600 hover:bg-red-50" : "text-emerald-700 hover:bg-emerald-50"}`} disabled={busy} onClick={() => void updateTenant(tenant)} type="button">{tenant.status === "ACTIVE" ? "Suspender" : "Reactivar"}</button></td></tr>)}</tbody></table></div></div>}
       </section>}
 
-      {section === "plans" && <section><div><h2 className="text-xl font-semibold">Plan comercial de InfinityShop</h2><p className="mt-1 text-sm text-[#807384]">Pro es la única oferta disponible. Starter se conserva únicamente para el historial.</p></div><div className="mt-5 grid gap-5 lg:grid-cols-2">{plans.map((plan) => <article className={`${styles.card} ${plan.active ? "border-[#a56abd]" : "opacity-70"}`} key={plan.id}><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-semibold">{plan.name}</h3><p className="mt-1 text-xs text-[#807384]">{plan.active ? "Oferta comercial activa · precio de lanzamiento" : "Archivado · solo historial"}</p></div><span className="rounded-full bg-[#f4eff7] px-2.5 py-1 text-xs font-semibold text-[#6E3482]">{plan._count.subscriptions} tienda{plan._count.subscriptions === 1 ? "" : "s"}</span></div><p className="mt-5 text-3xl font-semibold">{money(plan.priceInCents)}<span className="text-sm font-normal text-[#918495]"> / mes</span></p><div className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-[#fbfafc] p-4 text-sm"><div><p className="text-xs text-[#918495]">Productos</p><p className="mt-1 font-semibold">Hasta {plan.maxProducts}</p></div><div><p className="text-xs text-[#918495]">Equipo</p><p className="mt-1 font-semibold">{Math.max(0, plan.maxMembers - 1)} colaboradores</p></div></div><p className="mt-4 text-xs leading-5 text-[#807384]">Los pedidos no tienen límite mensual en este plan.</p></article>)}</div><Tip title="Historial preservado">Las facturas anteriores mantienen el nombre y el importe que tenían al momento del cobro. Las nuevas altas usan exclusivamente InfinityShop Pro.</Tip></section>}
+      {section === "plans" && <section><div><h2 className="text-xl font-semibold">Plan comercial de InfinityShop</h2><p className="mt-1 text-sm text-[#807384]">Controlá desde acá el precio público y la duración de la prueba. Starter se conserva únicamente para el historial.</p></div><div className="mt-5 grid gap-5 lg:grid-cols-2">{plans.map((plan) => plan.active ? <PlanEditor busy={busy} key={`${plan.id}-${plan.priceInCents}-${plan.trialDays}`} onSave={updateCommercialPlan} plan={plan} /> : <article className={`${styles.card} opacity-70`} key={plan.id}><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-semibold">{plan.name}</h3><p className="mt-1 text-xs text-[#807384]">Archivado · solo historial</p></div><span className="rounded-full bg-[#f4eff7] px-2.5 py-1 text-xs font-semibold text-[#6E3482]">{plan._count.subscriptions} tienda{plan._count.subscriptions === 1 ? "" : "s"}</span></div><p className="mt-5 text-3xl font-semibold">{money(plan.priceInCents)}<span className="text-sm font-normal text-[#918495]"> / mes</span></p></article>)}</div><Tip title="Qué cambia al guardar">El precio se publica en registro, landing y Plan y uso, y se envía a las suscripciones vigentes de Mercado Pago. Los días de prueba se aplican a tiendas creadas después del cambio; no se acortan ni extienden pruebas ya iniciadas. Las facturas emitidas conservan su importe histórico.</Tip></section>}
 
       {section === "operations" && <section className="space-y-6"><div><h2 className="text-xl font-semibold">Salud operativa</h2><p className="mt-1 text-sm text-[#807384]">Detectá rápidamente tareas que necesitan revisión antes de afectar a una tienda.</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><OperationalCard icon={MailCheck} label="Emails en cola" value={notificationCount("PENDING") + notificationCount("SENDING")} help="Pendientes o en proceso de envío." alert={notificationCount("FAILED")} alertLabel={`${notificationCount("FAILED")} fallidos`} /><OperationalCard icon={CreditCard} label="Cobros a revisar" value={invoiceCount("PENDING") + invoiceCount("FAILED")} help="Facturas SaaS pendientes o fallidas." alert={invoiceCount("FAILED")} alertLabel={`${invoiceCount("FAILED")} fallidos`} /><OperationalCard icon={Globe2} label="Dominios pendientes" value={domainCount("PENDING")} help="Esperando verificación DNS." alert={domainCount("FAILED")} alertLabel={`${domainCount("FAILED")} fallidos`} /><OperationalCard icon={ShieldCheck} label="Pruebas por vencer" value={overview.trialsEndingSoon} help="Finalizan dentro de los próximos 7 días." /></div><div className="grid gap-5 lg:grid-cols-2"><section className={styles.card}><h3 className="font-semibold">Crecimiento reciente</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Altas creadas durante los últimos 30 días.</p><p className="mt-5 text-4xl font-semibold text-[#49225B]">{overview.newTenantsLast30Days}</p><p className="mt-2 text-xs text-[#918495]">tienda{overview.newTenantsLast30Days === 1 ? "" : "s"} nueva{overview.newTenantsLast30Days === 1 ? "" : "s"}</p></section><section className={styles.card}><h3 className="font-semibold">Cómo actuar</h3><div className="mt-4 space-y-3 text-xs leading-5 text-[#807384]"><p><strong className="text-[#4b3a50]">Emails:</strong> los reintentos son automáticos; revisá Resend si aumentan los fallidos.</p><p><strong className="text-[#4b3a50]">Cobros:</strong> confirmá el estado en Mercado Pago antes de modificar una suscripción manualmente.</p><p><strong className="text-[#4b3a50]">Dominios:</strong> pedile al owner que revise los registros DNS indicados en Crecimiento.</p></div><button className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-[#6E3482]" onClick={() => selectSection("stores")} type="button">Ir a tiendas <span>→</span></button></section></div><Tip title="Lectura operativa">Estos indicadores muestran el estado registrado por InfinityShop. Para investigar un proveedor externo, compará también sus logs y paneles oficiales.</Tip></section>}
     </main>
@@ -172,4 +199,22 @@ function OperationalCard({ label, value, help, icon: Icon, alert = 0, alertLabel
 
 function Metric({ label, value, help, icon: Icon }: { label: string; value: string | number; help: string; icon: typeof Store }) {
   return <article className={styles.card}><div className="flex items-start justify-between gap-3"><div><p className="text-xs text-[#807384]">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-3 text-xs leading-5 text-[#918495]">{help}</p></div><span className="rounded-lg bg-[#f5eff8] p-2 text-[#6E3482]"><Icon size={18} /></span></div></article>;
+}
+
+function PlanEditor({ plan, busy, onSave }: { plan: Plan; busy: boolean; onSave: (plan: Plan, priceInCents: number, trialDays: number) => Promise<void> }) {
+  const [price, setPrice] = useState(String(plan.priceInCents / 100));
+  const [trialDays, setTrialDays] = useState(String(plan.trialDays));
+  const parsedPrice = Math.round(Number(price) * 100);
+  const parsedDays = Number(trialDays);
+  const valid = Number.isInteger(parsedPrice) && parsedPrice >= 100 && Number.isInteger(parsedDays) && parsedDays >= 0 && parsedDays <= 365;
+  return <article className={`${styles.card} border-[#a56abd]`}>
+    <div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-semibold">{plan.name}</h3><p className="mt-1 text-xs text-[#807384]">Oferta comercial activa</p></div><span className="rounded-full bg-[#f4eff7] px-2.5 py-1 text-xs font-semibold text-[#6E3482]">{plan._count.subscriptions} tienda{plan._count.subscriptions === 1 ? "" : "s"}</span></div>
+    <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <label><span className="text-sm font-semibold">Precio mensual</span><span className="mt-1 block text-xs leading-5 text-[#918495]">Ingresá pesos argentinos, sin separador de miles.</span><div className="relative mt-2"><span className="absolute left-3 top-3 text-sm text-[#807384]">$</span><input className="control pl-7!" min="1" onChange={(event) => setPrice(event.target.value)} step="0.01" type="number" value={price} /></div></label>
+      <label><span className="text-sm font-semibold">Días de prueba gratuita</span><span className="mt-1 block text-xs leading-5 text-[#918495]">Usá 0 si querés desactivar la prueba para nuevas tiendas.</span><input className="control mt-2" max="365" min="0" onChange={(event) => setTrialDays(event.target.value)} step="1" type="number" value={trialDays} /></label>
+    </div>
+    <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-[#fbfafc] p-4 text-sm"><div><p className="text-xs text-[#918495]">Productos</p><p className="mt-1 font-semibold">Hasta {plan.maxProducts}</p></div><div><p className="text-xs text-[#918495]">Equipo</p><p className="mt-1 font-semibold">{Math.max(0, plan.maxMembers - 1)} colaboradores</p></div></div>
+    <button className={`${styles.button} mt-5 w-full`} disabled={busy || !valid} onClick={() => void onSave(plan, parsedPrice, parsedDays)} type="button">{busy ? "Guardando y sincronizando…" : "Guardar configuración comercial"}</button>
+    {!valid && <p className="mt-2 text-xs text-red-600">Revisá el precio y usá entre 0 y 365 días de prueba.</p>}
+  </article>;
 }
