@@ -59,6 +59,42 @@ test("solo SUPERADMIN accede al panel global y Starter queda archivado", async (
   assert.deepEqual(plans.body.plans.map(({ active }: { active: boolean }) => active), [false, true]);
 });
 
+test("SUPERADMIN accede temporalmente como soporte sin obtener permisos sensibles", async () => {
+  const started = await superAgent
+    .post(`/api/platform/tenants/${ownerTenantId}/support-access`)
+    .send({ reason: "Completar configuración solicitada por el cliente" });
+  assert.equal(started.status, 200);
+
+  const supportSession = await superAgent.get("/api/auth/me");
+  assert.equal(supportSession.status, 200);
+  assert.equal(supportSession.body.tenant.slug, ownerSlug);
+  assert.equal(supportSession.body.role, "ADMIN");
+  assert.ok(supportSession.body.supportAccess);
+
+  assert.equal(
+    (await superAgent.post("/api/admin/integrations/mercadopago/authorize")).status,
+    403,
+  );
+
+  const ended = await superAgent.post("/api/platform/support-access/end");
+  assert.equal(ended.status, 200);
+  const restoredSession = await superAgent.get("/api/auth/me");
+  assert.equal(restoredSession.body.tenant.slug, superSlug);
+  assert.equal(restoredSession.body.supportAccess, null);
+
+  const accessLog = await database.supportAccessLog.findFirstOrThrow({
+    where: { tenantId: ownerTenantId },
+    orderBy: { startedAt: "desc" },
+  });
+  assert.ok(accessLog.endedAt);
+
+  const history = await superAgent.get("/api/platform/support-access-logs");
+  assert.equal(history.status, 200);
+  assert.equal(history.body.logs[0].tenant.slug, ownerSlug);
+  assert.equal(history.body.logs[0].user.email, superEmail);
+  assert.equal(history.body.logs[0].reason, "Completar configuración solicitada por el cliente");
+});
+
 test("SUPERADMIN modifica precio y prueba del plan comercial", async () => {
   assert.equal((await ownerAgent.patch("/api/platform/plans/PRO").send({ priceInCents: 5_500_000, trialDays: 10 })).status, 403);
   const updated = await superAgent.patch("/api/platform/plans/PRO").send({ priceInCents: 5_500_000, trialDays: 10, syncExistingSubscriptions: false });

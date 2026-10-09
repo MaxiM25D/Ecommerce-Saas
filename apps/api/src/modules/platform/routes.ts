@@ -11,6 +11,7 @@ import { updateProviderSubscription } from "../../services/saas-billing-provider
 import { getAuthContext, requireSession } from "../auth/session.js";
 import {
   planCodeSchema,
+  startSupportAccessSchema,
   tenantIdSchema,
   updateCommercialPlanSchema,
   updateSubscriptionSchema,
@@ -184,6 +185,111 @@ platformRouter.get("/tenants", async (_request, response) => {
     },
   });
   response.json({ tenants });
+});
+
+platformRouter.get("/support-access-logs", async (_request, response) => {
+  const logs = await database.supportAccessLog.findMany({
+    orderBy: { startedAt: "desc" },
+    take: 500,
+    select: {
+      id: true,
+      reason: true,
+      startedAt: true,
+      endedAt: true,
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+      tenant: { select: { id: true, name: true, slug: true } },
+    },
+  });
+  response.json({ logs });
+});
+
+platformRouter.post("/tenants/:id/support-access", async (request, response) => {
+  const auth = getAuthContext(request);
+  const tenantId = tenantIdSchema.parse(request.params.id);
+  const input = startSupportAccessSchema.parse(request.body);
+  if (auth.supportAccess) {
+    throw new HttpError(409, "Primero salí de la sesión de soporte actual");
+  }
+  if (tenantId === auth.tenant.id) {
+    throw new HttpError(409, "Ya estás administrando esta tienda");
+  }
+
+  const tenant = await database.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+  if (tenant.status !== "ACTIVE") {
+    throw new HttpError(409, "Reactivá la tienda antes de ingresar como soporte");
+  }
+
+  const startedAt = new Date();
+  await database.$transaction([
+    database.authSession.update({
+      where: { id: auth.sessionId },
+      data: {
+        activeTenantId: tenant.id,
+        supportOriginTenantId: auth.tenant.id,
+        supportStartedAt: startedAt,
+      },
+    }),
+    database.supportAccessLog.create({
+      data: {
+        userId: auth.user.id,
+        tenantId: tenant.id,
+        sessionId: auth.sessionId,
+        reason: input.reason,
+        startedAt,
+      },
+    }),
+  ]);
+
+  response.json({
+    tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+    supportAccess: { startedAt: startedAt.toISOString() },
+  });
+});
+
+platformRouter.post("/support-access/end", async (request, response) => {
+  const auth = getAuthContext(request);
+  if (!auth.supportAccess) {
+    throw new HttpError(409, "No hay una sesión de soporte activa");
+  }
+
+  const origin = await database.membership.findFirst({
+    where: {
+      userId: auth.user.id,
+      tenantId: auth.supportAccess.originTenantId,
+      tenant: { status: "ACTIVE" },
+    },
+    include: { tenant: true },
+  });
+  if (!origin) {
+    throw new HttpError(409, "La tienda de origen ya no está disponible");
+  }
+
+  const endedAt = new Date();
+  await database.$transaction([
+    database.authSession.update({
+      where: { id: auth.sessionId },
+      data: {
+        activeTenantId: origin.tenantId,
+        supportOriginTenantId: null,
+        supportStartedAt: null,
+      },
+    }),
+    database.supportAccessLog.updateMany({
+      where: { sessionId: auth.sessionId, endedAt: null },
+      data: { endedAt },
+    }),
+    database.user.update({
+      where: { id: auth.user.id },
+      data: { lastTenantId: origin.tenantId },
+    }),
+  ]);
+
+  response.json({
+    tenant: { id: origin.tenant.id, name: origin.tenant.name, slug: origin.tenant.slug },
+  });
 });
 
 platformRouter.patch("/tenants/:id", async (request, response) => {

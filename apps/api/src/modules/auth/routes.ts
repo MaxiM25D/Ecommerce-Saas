@@ -501,6 +501,7 @@ authRouter.get("/me", requireSession, (request, response) => {
     user: auth.user,
     tenant: { slug: auth.tenant.slug, name: auth.tenant.name },
     role: auth.role,
+    supportAccess: auth.supportAccess,
   });
 });
 
@@ -527,6 +528,8 @@ authRouter.get("/tenants", requireSession, async (request, response) => {
 
 authRouter.post("/tenants", requireSession, async (request, response) => {
   const auth = getAuthContext(request);
+  if (auth.supportAccess)
+    throw new HttpError(403, "Salí del modo soporte antes de crear otra tienda");
   if (!auth.user.emailVerified)
     throw new HttpError(403, "Verificá tu email antes de crear otra tienda");
   const input = createTenantSchema.parse(request.body);
@@ -573,6 +576,8 @@ authRouter.post("/tenants", requireSession, async (request, response) => {
 
 authRouter.post("/select-tenant", requireSession, async (request, response) => {
   const auth = getAuthContext(request);
+  if (auth.supportAccess)
+    throw new HttpError(403, "Salí del modo soporte antes de cambiar de tienda");
   const input = selectTenantSchema.parse(request.body);
   const membership = await database.membership.findFirst({
     where: {

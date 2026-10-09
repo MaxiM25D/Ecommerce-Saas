@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const tenantIdSchema = z.string().trim().min(1).max(64);
 
+export const startSupportAccessSchema = z.object({
+  reason: z.string().trim().min(5).max(200),
+}).strict();
+
 export const planCodeSchema = z.literal("PRO");
 
 export const updateCommercialPlanSchema = z

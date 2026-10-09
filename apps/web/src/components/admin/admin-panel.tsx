@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   PackageSearch,
+  ShieldCheck,
   ShoppingBag,
   Store,
   Tags,
@@ -60,6 +61,10 @@ type Session = {
   };
   tenant: { name: string; slug: string };
   role: Role;
+  supportAccess: {
+    originTenantId: string;
+    startedAt: string;
+  } | null;
 };
 
 type NavigationItem = {
@@ -120,6 +125,7 @@ export function AdminPanel({
   );
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [supportEnding, setSupportEnding] = useState(false);
   const [storeSection, setStoreSection] = useState<"identity" | "appearance" | "payments">(initialStoreSection ?? "identity");
 
   useEffect(() => {
@@ -159,6 +165,17 @@ export function AdminPanel({
   async function logout() {
     await apiRequest("/auth/logout", { method: "POST" });
     router.replace("/login");
+  }
+
+  async function endSupportAccess() {
+    setSupportEnding(true);
+    try {
+      await apiRequest("/platform/support-access/end", { method: "POST" });
+      router.push("/platform?section=stores");
+      router.refresh();
+    } catch {
+      setSupportEnding(false);
+    }
   }
 
   if (loading) {
@@ -219,19 +236,26 @@ export function AdminPanel({
           </button>
         </div>
 
-        <TenantSwitcher
-          current={session.tenant}
-          emailVerified={session.user.emailVerified}
-          key={session.tenant.slug}
-          onSelected={(selection) => {
-            setSession({
-              ...session,
-              tenant: selection.tenant,
-              role: selection.role,
-            });
-            selectTab("dashboard");
-          }}
-        />
+        {session.supportAccess ? (
+          <div className="mb-5 rounded-xl border border-[#a56abd]/40 bg-[#6E3482]/20 px-3 py-3">
+            <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#debfea]">Sesión de soporte</p>
+            <p className="mt-1 truncate text-sm font-semibold text-white">{session.tenant.name}</p>
+          </div>
+        ) : (
+          <TenantSwitcher
+            current={session.tenant}
+            emailVerified={session.user.emailVerified}
+            key={session.tenant.slug}
+            onSelected={(selection) => {
+              setSession({
+                ...session,
+                tenant: selection.tenant,
+                role: selection.role,
+              });
+              selectTab("dashboard");
+            }}
+          />
+        )}
 
         <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:#4b3b50_transparent]">
           {navigationGroups.map((group) => (
@@ -268,7 +292,11 @@ export function AdminPanel({
         </nav>
 
         <div className="mt-4 shrink-0 border-t border-white/10 pt-4">
-          {session.user.platformRole === "SUPERADMIN" && (
+          {session.supportAccess ? (
+            <button className="mb-4 w-full rounded-xl bg-[#6E3482] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-[#7d3d93] disabled:opacity-60" disabled={supportEnding} onClick={() => void endSupportAccess()} type="button">
+              {supportEnding ? "Saliendo…" : "Salir del soporte"}
+            </button>
+          ) : session.user.platformRole === "SUPERADMIN" && (
             <Link
               className="mb-4 block w-full rounded-xl bg-[#6E3482] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-[#7d3d93]"
               href="/platform"
@@ -310,7 +338,13 @@ export function AdminPanel({
       )}
 
       <main className="min-w-0 bg-[#f8f7f9]">
-        <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between gap-4 border-b border-[#e8e3ea] bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-8 lg:px-10">
+        {session.supportAccess && (
+          <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-violet-300 bg-violet-100 px-4 py-3 text-sm text-violet-950 sm:px-8 lg:px-10">
+            <p className="flex items-center gap-2"><ShieldCheck size={17} /><span><strong>Modo soporte:</strong> estás configurando {session.tenant.name}. Todos los cambios son reales y quedan asociados a tu usuario.</span></p>
+            <button className="rounded-lg bg-violet-800 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60" disabled={supportEnding} onClick={() => void endSupportAccess()} type="button">{supportEnding ? "Saliendo…" : "Volver al Panel SaaS"}</button>
+          </div>
+        )}
+        <header className={`${session.supportAccess ? "" : "sticky top-0"} z-20 flex min-h-20 items-center justify-between gap-4 border-b border-[#e8e3ea] bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-8 lg:px-10`}>
           <div className="flex items-center gap-3">
             <button
               aria-label="Abrir menú"

@@ -14,6 +14,10 @@ export type AuthContext = {
     name: string;
   };
   role: "OWNER" | "ADMIN" | "STAFF";
+  supportAccess: {
+    originTenantId: string;
+    startedAt: string;
+  } | null;
 };
 
 declare global {

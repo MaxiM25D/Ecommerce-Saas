@@ -57,7 +57,19 @@ export async function destroySession(request: Request, response: Response): Prom
   const token = request.cookies?.[sessionCookieName] as string | undefined;
 
   if (token) {
-    await database.authSession.deleteMany({ where: { tokenHash: hashSessionToken(token) } });
+    const session = await database.authSession.findUnique({
+      where: { tokenHash: hashSessionToken(token) },
+      select: { id: true },
+    });
+    if (session) {
+      await database.$transaction([
+        database.supportAccessLog.updateMany({
+          where: { sessionId: session.id, endedAt: null },
+          data: { endedAt: new Date() },
+        }),
+        database.authSession.delete({ where: { id: session.id } }),
+      ]);
+    }
   }
 
   response.clearCookie(sessionCookieName, {
@@ -84,7 +96,15 @@ export async function requireSession(
     });
 
     if (!session || session.expiresAt <= new Date()) {
-      if (session) await database.authSession.delete({ where: { id: session.id } });
+      if (session) {
+        await database.$transaction([
+          database.supportAccessLog.updateMany({
+            where: { sessionId: session.id, endedAt: null },
+            data: { endedAt: new Date() },
+          }),
+          database.authSession.delete({ where: { id: session.id } }),
+        ]);
+      }
       throw new HttpError(401, "La sesión venció o no es válida");
     }
 
@@ -94,8 +114,11 @@ export async function requireSession(
         tenantId_userId: { tenantId: session.activeTenantId, userId: session.userId },
       },
     });
+    const supportAccessActive =
+      session.user.platformRole === "SUPERADMIN" &&
+      Boolean(session.supportOriginTenantId && session.supportStartedAt);
 
-    if (!membership || activeTenant.status !== "ACTIVE") {
+    if ((!membership || activeTenant.status !== "ACTIVE") && !supportAccessActive) {
       const fallback = await database.membership.findFirst({
         where: { userId: session.userId, tenant: { status: "ACTIVE" } },
         include: { tenant: true },
@@ -125,7 +148,13 @@ export async function requireSession(
         slug: activeTenant.slug,
         name: activeTenant.name,
       },
-      role: membership.role,
+      role: supportAccessActive ? "ADMIN" : membership!.role,
+      supportAccess: supportAccessActive
+        ? {
+            originTenantId: session.supportOriginTenantId!,
+            startedAt: session.supportStartedAt!.toISOString(),
+          }
+        : null,
     };
 
     next();
@@ -159,6 +188,20 @@ export const requireVerifiedEmail: RequestHandler = (request, _response, next) =
   try {
     if (!getAuthContext(request).user.emailVerified) {
       throw new HttpError(403, "Verificá tu email para habilitar cobros, suscripciones e invitaciones");
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const requireDirectTenantAccess: RequestHandler = (request, _response, next) => {
+  try {
+    if (getAuthContext(request).supportAccess) {
+      throw new HttpError(
+        403,
+        "Esta acción sensible debe realizarla el propietario desde su propia sesión",
+      );
     }
     next();
   } catch (error) {
