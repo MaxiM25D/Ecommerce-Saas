@@ -137,6 +137,10 @@ export function ProductsView({ onOpenCategories, role }: { onOpenCategories: () 
           .filter(Boolean),
         featured: form.get("featured") === "on",
         featuredOrder: Number(form.get("featuredOrder") || 0),
+        weightInGrams: form.get("weightKg") ? Math.round(Number(form.get("weightKg")) * 1000) : null,
+        widthInMm: form.get("widthCm") ? Math.round(Number(form.get("widthCm")) * 10) : null,
+        heightInMm: form.get("heightCm") ? Math.round(Number(form.get("heightCm")) * 10) : null,
+        lengthInMm: form.get("lengthCm") ? Math.round(Number(form.get("lengthCm")) * 10) : null,
       };
 
       await apiRequest(editing ? `/admin/products/${editing.id}` : "/admin/products", {
@@ -191,7 +195,7 @@ export function ProductsView({ onOpenCategories, role }: { onOpenCategories: () 
     finally { setImportBusy(false); }
   }
   function downloadTemplate() {
-    const csv = "SKU;Nombre;Precio;Stock;Slug;Descripción;Categoría;Marca;Etiquetas;Imágenes;Activo;Destacado;Orden destacado\r\nREM-001;Remera clásica;25000;20;remera-clasica;Algodón peinado;Remeras;Mi marca;algodón|unisex;https://ejemplo.com/remera.jpg;Sí;No;0\r\n";
+    const csv = "SKU;Nombre;Precio;Stock;Slug;Descripción;Categoría;Marca;Etiquetas;Imágenes;Activo;Destacado;Orden destacado;Peso kg;Ancho cm;Alto cm;Largo cm\r\nREM-001;Remera clásica;25000;20;remera-clasica;Algodón peinado;Remeras;Mi marca;algodón|unisex;https://ejemplo.com/remera.jpg;Sí;No;0;0,3;25;3;35\r\n";
     const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "plantilla-productos-infinityshop.csv"; anchor.click(); URL.revokeObjectURL(url);
   }
@@ -336,7 +340,7 @@ export function ProductsView({ onOpenCategories, role }: { onOpenCategories: () 
 
             <fieldset className="mt-5"><legend className="text-sm font-semibold">Qué hacer con SKU existentes</legend><div className="mt-2 grid gap-3 sm:grid-cols-2"><label className={`rounded-xl border p-4 text-sm ${importMode === "CREATE_ONLY" ? "border-[#8f45a8] bg-[#fbf6fd]" : "border-[#e6dfe8]"}`}><input checked={importMode === "CREATE_ONLY"} className="mr-2 accent-[#6E3482]" name="importMode" onChange={() => { setImportMode("CREATE_ONLY"); setImportPreview(null); }} type="radio" />Solo crear nuevos<span className="mt-1 block pl-6 text-xs text-[#807384]">Los SKU existentes se informan como error.</span></label><label className={`rounded-xl border p-4 text-sm ${importMode === "UPSERT" ? "border-[#8f45a8] bg-[#fbf6fd]" : "border-[#e6dfe8]"}`}><input checked={importMode === "UPSERT"} className="mr-2 accent-[#6E3482]" name="importMode" onChange={() => { setImportMode("UPSERT"); setImportPreview(null); }} type="radio" />Crear y actualizar<span className="mt-1 block pl-6 text-xs text-[#807384]">Actualiza productos comparando el SKU.</span></label></div></fieldset>
 
-            <Tip title="Columnas y formato">Obligatorias: SKU, Nombre, Precio y Stock. Podés agregar categoría, marca, etiquetas, URLs de imágenes, visibilidad y destacados. Separá varias etiquetas o imágenes con |. Las categorías nuevas se crean al importar.</Tip>
+            <Tip title="Columnas y formato">Obligatorias: SKU, Nombre, Precio y Stock. Para cotizar por peso agregá Peso kg, Ancho cm, Alto cm y Largo cm. También podés incluir categoría, marca, etiquetas, URLs de imágenes, visibilidad y destacados. Separá varias etiquetas o imágenes con |.</Tip>
             {importError && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{importError}</p>}
 
             {importPreview && <ImportPreviewPanel preview={importPreview} />}
@@ -380,7 +384,17 @@ function ProductForm({ categories, editing, error, busy, imageFileNames, imagePr
       </div>
       </FormSection>
 
-      <FormSection title="3. Imágenes" help="La primera imagen se usa como portada del producto. Podés cargar hasta 8.">
+      <FormSection title="3. Datos para el envío" help="Cargá las medidas del producto ya embalado. Se usan para calcular tarifas y validar qué transportistas pueden llevarlo.">
+      <Tip title="Cómo medirlo">Indicá el peso real en kilogramos y las medidas exteriores del paquete en centímetros. Si el producto tiene variantes, más adelante podrás sobrescribir estos valores en cada variante.</Tip>
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <ProductField defaultValue={editing?.weightInGrams ? String(editing.weightInGrams / 1000) : undefined} label="Peso embalado (kg)" help="Incluí caja y protección." example="Ejemplo: 0,5" min="0.001" name="weightKg" placeholder="0.5" required={false} step="0.001" type="number" />
+        <ProductField defaultValue={editing?.lengthInMm ? String(editing.lengthInMm / 10) : undefined} label="Largo (cm)" help="Lado más largo del paquete." example="Ejemplo: 30" min="0.1" name="lengthCm" placeholder="30" required={false} step="0.1" type="number" />
+        <ProductField defaultValue={editing?.widthInMm ? String(editing.widthInMm / 10) : undefined} label="Ancho (cm)" help="Medida exterior del paquete." example="Ejemplo: 20" min="0.1" name="widthCm" placeholder="20" required={false} step="0.1" type="number" />
+        <ProductField defaultValue={editing?.heightInMm ? String(editing.heightInMm / 10) : undefined} label="Alto (cm)" help="Medida exterior del paquete." example="Ejemplo: 10" min="0.1" name="heightCm" placeholder="10" required={false} step="0.1" type="number" />
+      </div>
+      </FormSection>
+
+      <FormSection title="4. Imágenes" help="La primera imagen se usa como portada del producto. Podés cargar hasta 8.">
       <Tip title="Forma recomendada">Usá el botón para subir imágenes desde tu equipo. El campo de URL queda como alternativa si una imagen ya está publicada en Internet.</Tip>
       <div>
         <span className="mb-1.5 block text-sm font-semibold text-[#4b3a50]">1. Subir imágenes desde tu equipo</span>
@@ -397,7 +411,7 @@ function ProductForm({ categories, editing, error, busy, imageFileNames, imagePr
       <div className="border-t border-[#eee9ef] pt-5"><GuidedField label="2. URLs de imágenes (opcional)" help="Alternativa para imágenes que ya están publicadas. Pegá una URL completa por línea." example="Ejemplo: https://misitio.com/cinturon.jpg"><textarea defaultValue={editing?.images.join("\n")} name="images" placeholder="https://.../producto.jpg" /></GuidedField></div>
       </FormSection>
 
-      <FormSection title="4. Publicación" help="Elegí si ya puede verse y si querés mostrarlo en lugares destacados.">
+      <FormSection title="5. Publicación" help="Elegí si ya puede verse y si querés mostrarlo en lugares destacados.">
       <div className="grid gap-4 sm:grid-cols-2">
         <ProductField defaultValue={String(editing?.featuredOrder ?? 0)} label="Orden entre destacados" help="Los números menores aparecen primero. 0 es la primera posición." example="Ejemplo: 0" min="0" name="featuredOrder" placeholder="0" type="number" />
         <label className="flex items-center justify-between rounded-xl border border-[#e6dfe8] bg-[#fdfcfe] px-4 py-3">

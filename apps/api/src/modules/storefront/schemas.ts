@@ -36,6 +36,21 @@ export const customerOrdersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(25).default(10),
 });
 
+export const shippingQuoteSchema = z.object({
+  destination: z.object({
+    countryCode: z.string().trim().toUpperCase().length(2).default("AR"),
+    province: z.string().trim().min(2).max(100),
+    city: z.string().trim().min(2).max(100),
+    postalCode: z.string().trim().min(2).max(12),
+  }).strict(),
+  items: z.array(z.object({
+    productId: z.string().trim().min(1).max(64),
+    variantId: z.string().trim().min(1).max(64).nullable().optional(),
+    quantity: z.number().int().min(1).max(999),
+  }).strict()).min(1).max(50),
+  discountInCents: z.number().int().min(0).max(2_000_000_000).default(0),
+}).strict();
+
 export const checkoutSchema = z
   .object({
     customer: z

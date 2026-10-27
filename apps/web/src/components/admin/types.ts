@@ -22,6 +22,10 @@ export type Product = {
   tags: string[];
   featured: boolean;
   featuredOrder: number;
+  weightInGrams: number | null;
+  widthInMm: number | null;
+  heightInMm: number | null;
+  lengthInMm: number | null;
   category: Pick<Category, "id" | "name" | "slug"> | null;
 };
 

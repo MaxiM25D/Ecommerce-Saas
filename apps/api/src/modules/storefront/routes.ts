@@ -16,6 +16,7 @@ import {
   customerOrdersQuerySchema,
   customerLoginSchema,
   customerRegisterSchema,
+  shippingQuoteSchema,
   storefrontProductsQuerySchema,
 } from "./schemas.js";
 import { createCheckoutPreference } from "../../services/mercado-pago.js";
@@ -34,28 +35,9 @@ import {
   hashAccountToken,
 } from "../../services/account-tokens.js";
 import { requireCustomerSession } from "../../services/customer-auth.js";
+import { calculateShippingQuotes } from "../../services/shipping-quotes.js";
 
 export const storefrontRouter = Router();
-
-function normalizePostalCode(value: string) {
-  return value.replace(/\s+/g, "").toUpperCase();
-}
-
-function postalCandidates(value: string) {
-  const normalized = normalizePostalCode(value);
-  return normalized.match(/^[A-Z]\d/) ? [normalized, normalized.slice(1)] : [normalized];
-}
-
-function postalPrefixSpecificity(postalCode: string, prefixes: string[]) {
-  const candidates = postalCandidates(postalCode);
-  return prefixes.reduce((best, prefix) => {
-    const normalizedPrefix = normalizePostalCode(prefix);
-    if (!normalizedPrefix) return best;
-    return candidates.some((candidate) => candidate.startsWith(normalizedPrefix))
-      ? Math.max(best, normalizedPrefix.length)
-      : best;
-  }, 0);
-}
 
 const productSelection = {
   id: true,
@@ -148,6 +130,13 @@ const checkoutLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: { error: "RATE_LIMITED", message: "Demasiados intentos de compra. Esperá unos minutos y volvé a intentar." },
+});
+const shippingQuoteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED", message: "Realizaste demasiadas consultas de envío. Esperá unos minutos y volvé a intentar." },
 });
 
 storefrontRouter.get("/:slug", async (request, response) => {
@@ -641,6 +630,56 @@ storefrontRouter.post("/:slug/events", async (request, response) => {
   response.status(204).send();
 });
 
+storefrontRouter.post("/:slug/shipping-quotes", shippingQuoteLimiter, async (request, response) => {
+  const slug = tenantSlug.parse(request.params.slug);
+  const input = shippingQuoteSchema.parse(request.body);
+  const tenant = await database.tenant.findFirst({ where: { slug, status: "ACTIVE" }, select: { id: true } });
+  if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+  const productIds = [...new Set(input.items.map(({ productId }) => productId))];
+  const variantIds = [...new Set(input.items.flatMap(({ variantId }) => variantId ? [variantId] : []))];
+  const [products, variants, zones] = await Promise.all([
+    database.product.findMany({
+      where: { tenantId: tenant.id, id: { in: productIds }, active: true },
+      select: { id: true, categoryId: true, priceInCents: true, weightInGrams: true, widthInMm: true, heightInMm: true, lengthInMm: true },
+    }),
+    variantIds.length ? database.productVariant.findMany({
+      where: { tenantId: tenant.id, id: { in: variantIds }, active: true },
+      select: { id: true, productId: true, priceInCents: true, weightInGrams: true, widthInMm: true, heightInMm: true, lengthInMm: true },
+    }) : [],
+    database.shippingZone.findMany({
+      where: { tenantId: tenant.id, active: true },
+      include: { methods: { where: { active: true } } },
+    }),
+  ]);
+  if (products.length !== productIds.length || variants.length !== variantIds.length) throw new HttpError(409, "Uno o más productos ya no están disponibles");
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+  let subtotalInCents = 0;
+  const lines = input.items.map((item) => {
+    const product = productById.get(item.productId)!;
+    const variant = item.variantId ? variantById.get(item.variantId) : null;
+    if (variant && variant.productId !== product.id) throw new HttpError(409, "La variante no pertenece al producto");
+    subtotalInCents += (variant?.priceInCents ?? product.priceInCents) * item.quantity;
+    return {
+      productId: product.id,
+      categoryId: product.categoryId,
+      quantity: item.quantity,
+      weightInGrams: variant?.weightInGrams ?? product.weightInGrams,
+      widthInMm: variant?.widthInMm ?? product.widthInMm,
+      heightInMm: variant?.heightInMm ?? product.heightInMm,
+      lengthInMm: variant?.lengthInMm ?? product.lengthInMm,
+    };
+  });
+  const result = calculateShippingQuotes({
+    zones,
+    lines,
+    destination: input.destination,
+    merchandiseInCents: Math.max(0, subtotalInCents - Math.min(subtotalInCents, input.discountInCents)),
+  });
+  response.set("Cache-Control", "no-store");
+  response.json(result);
+});
+
 storefrontRouter.get("/:slug/coupons/:code", async (request, response) => {
   const slug = tenantSlug.parse(request.params.slug);
   const code = String(request.params.code).trim().toUpperCase();
@@ -809,8 +848,13 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             id: true,
             sku: true,
             name: true,
+            categoryId: true,
             priceInCents: true,
             stock: true,
+            weightInGrams: true,
+            widthInMm: true,
+            heightInMm: true,
+            lengthInMm: true,
           },
         });
         if (products.length !== new Set(productIds).size) {
@@ -837,6 +881,10 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
                 name: true,
                 priceInCents: true,
                 stock: true,
+                weightInGrams: true,
+                widthInMm: true,
+                heightInMm: true,
+                lengthInMm: true,
               },
             })
           : [];
@@ -980,44 +1028,33 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
           : null;
         if (input.shippingMethodId && !shipping)
           throw new HttpError(409, "El método de envío ya no está disponible");
-        if (shipping) {
-          const postalCode = input.customer.postalCode ?? "";
-          const activeZones = await transaction.shippingZone.findMany({
-            where: {
-              tenantId: tenant.id,
-              active: true,
-              methods: { some: { active: true } },
-            },
-            select: { id: true, postalPrefixes: true },
-          });
-          const zonesWithSpecificity = activeZones.map((zone) => ({
-            ...zone,
-            specificity: postalPrefixSpecificity(postalCode, zone.postalPrefixes),
-          }));
-          const bestSpecificity = Math.max(
-            0,
-            ...zonesWithSpecificity.map(({ specificity }) => specificity),
-          );
-          const eligibleZoneIds = new Set(
-            zonesWithSpecificity
-              .filter((zone) => bestSpecificity > 0
-                ? zone.specificity === bestSpecificity
-                : zone.postalPrefixes.length === 0)
-              .map(({ id }) => id),
-          );
-          if (!eligibleZoneIds.has(shipping.zone.id))
-            throw new HttpError(
-              409,
-              "El método de envío no corresponde a ese código postal",
-            );
-        }
         const merchandiseAfterDiscount = Math.max(0, subtotalInCents - discountInCents);
-        const qualifiesForFreeShipping = Boolean(
-          shipping?.freeShippingThresholdInCents
-          && merchandiseAfterDiscount >= shipping.freeShippingThresholdInCents,
-        );
+        const shippingQuoteResult = shipping ? calculateShippingQuotes({
+          zones: await transaction.shippingZone.findMany({
+            where: { tenantId: tenant.id, active: true },
+            include: { methods: { where: { active: true } } },
+          }),
+          lines: lines.map(({ product, variant, quantity }) => ({
+            productId: product.id,
+            categoryId: product.categoryId,
+            quantity,
+            weightInGrams: variant?.weightInGrams ?? product.weightInGrams,
+            widthInMm: variant?.widthInMm ?? product.widthInMm,
+            heightInMm: variant?.heightInMm ?? product.heightInMm,
+            lengthInMm: variant?.lengthInMm ?? product.lengthInMm,
+          })),
+          destination: {
+            countryCode: "AR",
+            province: input.customer.province ?? "",
+            city: input.customer.city ?? "",
+            postalCode: input.customer.postalCode ?? "",
+          },
+          merchandiseInCents: merchandiseAfterDiscount,
+        }) : null;
+        const selectedShippingQuote = shippingQuoteResult?.quotes.find(({ id }) => id === shipping?.id) ?? null;
+        if (shipping && !selectedShippingQuote) throw new HttpError(409, "El método de envío no está disponible para este carrito, localidad o código postal");
         const shippingInCents = input.fulfillmentType === "DELIVERY"
-          ? qualifiesForFreeShipping ? 0 : shipping?.priceInCents ?? 0
+          ? selectedShippingQuote?.priceInCents ?? 0
           : 0;
         const shippingAddress = input.fulfillmentType === "DELIVERY"
           ? input.customer.shippingAddress ?? [
@@ -1064,12 +1101,15 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             shippingMethod: shipping?.name,
             shippingPostalCode: input.fulfillmentType === "DELIVERY" ? input.customer.postalCode?.replace(/\s+/g, "").toUpperCase() : null,
             shippingZoneName: shipping?.zone.name ?? null,
-            shippingEstimatedDaysMin: shipping?.estimatedDaysMin ?? shipping?.estimatedDays ?? null,
-            shippingEstimatedDaysMax: shipping?.estimatedDaysMax ?? shipping?.estimatedDays ?? null,
+            shippingEstimatedDaysMin: selectedShippingQuote?.estimatedDaysMin ?? null,
+            shippingEstimatedDaysMax: selectedShippingQuote?.estimatedDaysMax ?? null,
             shippingFreeThresholdInCents: shipping?.freeShippingThresholdInCents ?? null,
             shippingCarrierCode: shipping?.carrierCode ?? null,
             shippingCarrierName: shipping?.carrierName ?? null,
             shippingTrackingUrlTemplate: shipping?.trackingUrlTemplate ?? null,
+            shippingPricingType: selectedShippingQuote?.pricingType ?? null,
+            shippingChargeableWeightGrams: selectedShippingQuote?.chargeableWeightInGrams ?? null,
+            shippingQuoteSnapshot: selectedShippingQuote ?? undefined,
             shippingPolicySnapshot: tenant.settings?.shippingPolicy ?? null,
             returnPolicySnapshot: tenant.settings?.returnPolicy ?? null,
             fulfillmentType: input.fulfillmentType,
@@ -1224,6 +1264,8 @@ storefrontRouter.get("/:slug/orders/:orderId", async (request, response) => {
       } : null,
       items: order.items.map((item) => ({
         id: item.id,
+        productId: item.productId,
+        variantId: item.variantId,
         productName: item.productName,
         variantName: item.variantName,
         quantity: item.quantity,
@@ -1268,6 +1310,7 @@ storefrontRouter.get("/:slug/orders/:orderId", async (request, response) => {
 
 storefrontRouter.post(
   "/:slug/orders/:orderId/mercadopago",
+  checkoutLimiter,
   async (request, response) => {
     const slug = tenantSlug.parse(request.params.slug);
     const tenant = await database.tenant.findFirst({
@@ -1286,6 +1329,56 @@ storefrontRouter.post(
     response.json({
       payment: await createCheckoutPreference(order.id, tenant.id),
     });
+  },
+);
+
+storefrontRouter.post(
+  "/:slug/orders/:orderId/cancel",
+  checkoutLimiter,
+  async (request, response) => {
+    const slug = tenantSlug.parse(request.params.slug);
+    const tenant = await database.tenant.findFirst({
+      where: { slug, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!tenant) throw new HttpError(404, "Tienda no encontrada");
+    const order = await requirePublicOrder(
+      tenant.id,
+      String(request.params.orderId),
+      request.get("x-order-token"),
+      request.get("x-customer-session"),
+    );
+    if (order.status !== "PENDING" || order.paymentStatus === "APPROVED")
+      throw new HttpError(409, "El pedido ya no se puede cancelar desde el checkout");
+    if (order.stockStatus !== "RESERVED")
+      throw new HttpError(409, "La reserva del pedido ya no está activa");
+    if (order.stockExpiresAt && order.stockExpiresAt <= new Date()) {
+      const released = await releaseReservedOrder(
+        tenant.id,
+        order.id,
+        "Reserva vencida antes de reconstruir la compra",
+      );
+      if (!released)
+        throw new HttpError(409, "El estado del pedido cambió. Actualizalo antes de continuar");
+      await database.paymentAttempt.updateMany({
+        where: { tenantId: tenant.id, orderId: order.id, status: "PENDING" },
+        data: { status: "CANCELLED", externalStatus: "reservation_expired" },
+      });
+      response.json({ cancelled: true, expired: true });
+      return;
+    }
+    const cancelled = await releaseReservedOrder(
+      tenant.id,
+      order.id,
+      "Cancelado por el comprador para elegir otro medio de pago",
+    );
+    if (!cancelled)
+      throw new HttpError(409, "El estado del pedido cambió. Actualizalo antes de continuar");
+    await database.paymentAttempt.updateMany({
+      where: { tenantId: tenant.id, orderId: order.id, status: "PENDING" },
+      data: { status: "CANCELLED", externalStatus: "cancelled_by_customer" },
+    });
+    response.json({ cancelled: true });
   },
 );
 

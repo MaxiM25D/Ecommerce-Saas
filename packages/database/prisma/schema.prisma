@@ -103,6 +103,14 @@ enum StockStatus {
   RELEASED
 }
 
+enum ShippingPricingType {
+  FIXED
+  FREE
+  TO_AGREE
+  WEIGHT_TABLE
+  ORDER_TOTAL_TABLE
+}
+
 enum StorageProvider {
   LOCAL
   CLOUDINARY
@@ -169,6 +177,7 @@ model Tenant {
   customDomains          CustomDomain[]
   coupons                Coupon[]
   shippingZones          ShippingZone[]
+  shippingOrigins        ShippingOrigin[]
   pickupLocations        PickupLocation[]
   notificationRules      NotificationRule[]
   notificationLogs       NotificationLog[]
@@ -409,6 +418,10 @@ model Product {
   tags           String[]         @default([])
   featured       Boolean          @default(false)
   featuredOrder  Int              @default(0)
+  weightInGrams  Int?
+  widthInMm      Int?
+  heightInMm     Int?
+  lengthInMm     Int?
   tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   category       Category?        @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
   cartItems      CartItem[]
@@ -435,6 +448,10 @@ model ProductVariant {
   priceInCents   Int
   stock          Int             @default(0)
   active         Boolean         @default(true)
+  weightInGrams  Int?
+  widthInMm      Int?
+  heightInMm     Int?
+  lengthInMm     Int?
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   product        Product         @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade)
   cartItems      CartItem[]
@@ -556,62 +573,65 @@ model CartItem {
 }
 
 model Order {
-  id                           String               @id @default(cuid())
-  tenantId                     String
-  customerId                   String?
-  number                       Int
-  channel                      SalesChannel         @default(ONLINE)
-  soldByUserId                 String?
-  localSaleKey                 String?              @unique
-  status                       OrderStatus          @default(PENDING)
-  paymentStatus                PaymentStatus        @default(PENDING)
-  paymentMethod                PaymentMethod        @default(BANK_TRANSFER)
-  stockStatus                  StockStatus          @default(RESERVED)
-  stockExpiresAt               DateTime?
-  publicTokenHash              String?              @unique
-  customerEmail                String
-  customerName                 String
-  customerPhone                String?
-  shippingAddress              String?
-  notes                        String?
-  currency                     String               @default("ARS")
-  subtotalInCents              Int
-  discountInCents              Int                  @default(0)
-  couponCode                   String?
-  shippingInCents              Int                  @default(0)
-  shippingMethod               String?
-  shippingPostalCode           String?
-  shippingZoneName             String?
-  shippingEstimatedDaysMin     Int?
-  shippingEstimatedDaysMax     Int?
-  shippingFreeThresholdInCents Int?
-  shippingCarrierCode          String?
-  shippingCarrierName          String?
-  shippingTrackingUrlTemplate  String?
-  shippingPolicySnapshot       String?
-  returnPolicySnapshot         String?
-  fulfillmentType              FulfillmentType      @default(DELIVERY)
-  pickupLocationName           String?
-  pickupAddress                String?
-  pickupMapsUrl                String?
-  pickupOpeningHours           String?
-  pickupInstructions           String?
-  pickupPhone                  String?
-  pickupReadyAt                DateTime?
-  pickupCompletedAt            DateTime?
-  totalInCents                 Int
-  tenant                       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer                     Customer?            @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
-  items                        OrderItem[]
-  paymentAttempts              PaymentAttempt[]
-  paymentReceipt               PaymentReceipt?
-  shipment                     Shipment?
-  notificationLogs             NotificationLog[]
-  statusHistory                OrderStatusHistory[]
-  soldBy                       User?                @relation("LocalSaleSeller", fields: [soldByUserId], references: [id], onDelete: SetNull)
-  stockMovements               StockMovement[]
-  createdAt                    DateTime             @default(now())
-  updatedAt                    DateTime             @updatedAt
+  id                            String               @id @default(cuid())
+  tenantId                      String
+  customerId                    String?
+  number                        Int
+  channel                       SalesChannel         @default(ONLINE)
+  soldByUserId                  String?
+  localSaleKey                  String?              @unique
+  status                        OrderStatus          @default(PENDING)
+  paymentStatus                 PaymentStatus        @default(PENDING)
+  paymentMethod                 PaymentMethod        @default(BANK_TRANSFER)
+  stockStatus                   StockStatus          @default(RESERVED)
+  stockExpiresAt                DateTime?
+  publicTokenHash               String?              @unique
+  customerEmail                 String
+  customerName                  String
+  customerPhone                 String?
+  shippingAddress               String?
+  notes                         String?
+  currency                      String               @default("ARS")
+  subtotalInCents               Int
+  discountInCents               Int                  @default(0)
+  couponCode                    String?
+  shippingInCents               Int                  @default(0)
+  shippingMethod                String?
+  shippingPostalCode            String?
+  shippingZoneName              String?
+  shippingEstimatedDaysMin      Int?
+  shippingEstimatedDaysMax      Int?
+  shippingFreeThresholdInCents  Int?
+  shippingCarrierCode           String?
+  shippingCarrierName           String?
+  shippingTrackingUrlTemplate   String?
+  shippingPricingType           String?
+  shippingChargeableWeightGrams Int?
+  shippingQuoteSnapshot         Json?
+  shippingPolicySnapshot        String?
+  returnPolicySnapshot          String?
+  fulfillmentType               FulfillmentType      @default(DELIVERY)
+  pickupLocationName            String?
+  pickupAddress                 String?
+  pickupMapsUrl                 String?
+  pickupOpeningHours            String?
+  pickupInstructions            String?
+  pickupPhone                   String?
+  pickupReadyAt                 DateTime?
+  pickupCompletedAt             DateTime?
+  totalInCents                  Int
+  tenant                        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer                      Customer?            @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Restrict)
+  items                         OrderItem[]
+  paymentAttempts               PaymentAttempt[]
+  paymentReceipt                PaymentReceipt?
+  shipment                      Shipment?
+  notificationLogs              NotificationLog[]
+  statusHistory                 OrderStatusHistory[]
+  soldBy                        User?                @relation("LocalSaleSeller", fields: [soldByUserId], references: [id], onDelete: SetNull)
+  stockMovements                StockMovement[]
+  createdAt                     DateTime             @default(now())
+  updatedAt                     DateTime             @updatedAt
 
   @@unique([tenantId, number])
   @@unique([tenantId, id])
@@ -825,6 +845,10 @@ model ShippingZone {
   tenantId       String
   name           String
   postalPrefixes String[]         @default([])
+  countryCode    String           @default("AR")
+  provinces      String[]         @default([])
+  cities         String[]         @default([])
+  postalRanges   Json?
   active         Boolean          @default(true)
   tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   methods        ShippingMethod[]
@@ -837,11 +861,21 @@ model ShippingZone {
 }
 
 model ShippingMethod {
-  id                           String       @id @default(cuid())
+  id                           String              @id @default(cuid())
   tenantId                     String
   shippingZoneId               String
   name                         String
   priceInCents                 Int
+  pricingType                  ShippingPricingType @default(FIXED)
+  rateRules                    Json?
+  minimumOrderInCents          Int?
+  maximumOrderInCents          Int?
+  minimumWeightInGrams         Int?
+  maximumWeightInGrams         Int?
+  excludedProductIds           String[]            @default([])
+  excludedCategoryIds          String[]            @default([])
+  preparationDaysMin           Int                 @default(0)
+  preparationDaysMax           Int                 @default(0)
   estimatedDays                Int?
   estimatedDaysMin             Int?
   estimatedDaysMax             Int?
@@ -849,13 +883,33 @@ model ShippingMethod {
   carrierCode                  String?
   carrierName                  String?
   trackingUrlTemplate          String?
-  active                       Boolean      @default(true)
-  zone                         ShippingZone @relation(fields: [tenantId, shippingZoneId], references: [tenantId, id], onDelete: Cascade)
-  createdAt                    DateTime     @default(now())
-  updatedAt                    DateTime     @updatedAt
+  active                       Boolean             @default(true)
+  zone                         ShippingZone        @relation(fields: [tenantId, shippingZoneId], references: [tenantId, id], onDelete: Cascade)
+  createdAt                    DateTime            @default(now())
+  updatedAt                    DateTime            @updatedAt
 
   @@unique([tenantId, id])
   @@index([tenantId, shippingZoneId, active])
+}
+
+model ShippingOrigin {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  address     String
+  city        String
+  province    String
+  postalCode  String
+  countryCode String   @default("AR")
+  active      Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, active, isDefault])
 }
 
 model PickupLocation {

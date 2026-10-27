@@ -61,6 +61,10 @@ const variantSchema = z
     options: z.record(z.string(), z.string().trim().min(1).max(80)),
     priceInCents: z.number().int().min(0).max(2_000_000_000),
     stock: z.number().int().min(0).max(2_000_000_000),
+    weightInGrams: z.number().int().positive().max(10_000_000).nullable().optional(),
+    widthInMm: z.number().int().positive().max(1_000_000).nullable().optional(),
+    heightInMm: z.number().int().positive().max(1_000_000).nullable().optional(),
+    lengthInMm: z.number().int().positive().max(1_000_000).nullable().optional(),
     active: z.boolean().default(true),
   })
   .strict();
@@ -71,6 +75,13 @@ const shippingZoneSchema = z
       .array(z.string().trim().toUpperCase().min(1).max(12))
       .max(100)
       .default([]),
+    countryCode: z.string().trim().toUpperCase().length(2).default("AR"),
+    provinces: z.array(z.string().trim().min(2).max(100)).max(50).default([]),
+    cities: z.array(z.string().trim().min(2).max(100)).max(200).default([]),
+    postalRanges: z.array(z.object({
+      from: z.string().trim().toUpperCase().min(4).max(12),
+      to: z.string().trim().toUpperCase().min(4).max(12).nullable().optional(),
+    }).strict()).max(100).optional(),
     active: z.boolean().default(true),
   })
   .strict();
@@ -78,6 +89,20 @@ const shippingMethodBaseSchema = z
   .object({
     name: z.string().trim().min(2).max(100),
     priceInCents: z.number().int().min(0).max(2_000_000_000),
+    pricingType: z.enum(["FIXED", "FREE", "TO_AGREE", "WEIGHT_TABLE", "ORDER_TOTAL_TABLE"]).default("FIXED"),
+    rateRules: z.array(z.object({
+      from: z.number().int().min(0).max(2_000_000_000),
+      to: z.number().int().positive().max(2_000_000_000).nullable().optional(),
+      priceInCents: z.number().int().min(0).max(2_000_000_000),
+    }).strict()).max(50).optional(),
+    minimumOrderInCents: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+    maximumOrderInCents: z.number().int().positive().max(2_000_000_000).nullable().optional(),
+    minimumWeightInGrams: z.number().int().min(0).max(10_000_000).nullable().optional(),
+    maximumWeightInGrams: z.number().int().positive().max(10_000_000).nullable().optional(),
+    excludedProductIds: z.array(idSchema).max(500).default([]),
+    excludedCategoryIds: z.array(idSchema).max(200).default([]),
+    preparationDaysMin: z.number().int().min(0).max(365).default(0),
+    preparationDaysMax: z.number().int().min(0).max(365).default(0),
     estimatedDays: z.number().int().positive().max(365).nullable().optional(),
     estimatedDaysMin: z.number().int().positive().max(365).nullable().optional(),
     estimatedDaysMax: z.number().int().positive().max(365).nullable().optional(),
@@ -93,7 +118,17 @@ const shippingMethodSchema = shippingMethodBaseSchema
   .refine(({ estimatedDaysMin, estimatedDaysMax }) => !estimatedDaysMin || !estimatedDaysMax || estimatedDaysMin <= estimatedDaysMax, {
     message: "El plazo mínimo no puede superar al máximo",
     path: ["estimatedDaysMax"],
-  });
+  })
+  .refine(({ preparationDaysMin, preparationDaysMax }) => preparationDaysMin <= preparationDaysMax, { message: "La preparación mínima no puede superar a la máxima", path: ["preparationDaysMax"] })
+  .refine(({ minimumOrderInCents, maximumOrderInCents }) => minimumOrderInCents === null || minimumOrderInCents === undefined || maximumOrderInCents === null || maximumOrderInCents === undefined || minimumOrderInCents <= maximumOrderInCents, { message: "El monto mínimo no puede superar al máximo", path: ["maximumOrderInCents"] })
+  .refine(({ minimumWeightInGrams, maximumWeightInGrams }) => minimumWeightInGrams === null || minimumWeightInGrams === undefined || maximumWeightInGrams === null || maximumWeightInGrams === undefined || minimumWeightInGrams <= maximumWeightInGrams, { message: "El peso mínimo no puede superar al máximo", path: ["maximumWeightInGrams"] })
+  .refine(({ pricingType, rateRules }) => !["WEIGHT_TABLE", "ORDER_TOTAL_TABLE"].includes(pricingType) || Boolean(rateRules?.length), { message: "Agregá al menos un tramo de tarifa", path: ["rateRules"] })
+  .refine(({ rateRules }) => !rateRules?.some(({ from, to }) => to !== null && to !== undefined && from > to), { message: "El inicio de un tramo no puede superar su final", path: ["rateRules"] })
+  .refine(({ rateRules }) => {
+    if (!rateRules?.length) return true;
+    const sorted = [...rateRules].sort((left, right) => left.from - right.from);
+    return sorted.every((rule, index) => index === 0 || sorted[index - 1]!.to === null || sorted[index - 1]!.to === undefined || rule.from > sorted[index - 1]!.to!);
+  }, { message: "Los tramos de tarifa no pueden superponerse", path: ["rateRules"] });
 const updateShippingMethodSchema = shippingMethodBaseSchema.partial().refine(
   (input) => Object.keys(input).length > 0,
   "Enviá al menos un campo",
@@ -161,6 +196,17 @@ const updatePickupLocationSchema = pickupLocationSchema.partial().refine(
   (input) => Object.keys(input).length > 0,
   "Enviá al menos un campo",
 );
+const shippingOriginSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  address: z.string().trim().min(5).max(240),
+  city: z.string().trim().min(2).max(100),
+  province: z.string().trim().min(2).max(100),
+  postalCode: z.string().trim().toUpperCase().regex(/^(?:[A-Z]?\d{4}(?:[A-Z]{3})?)$/, "Ingresá un CP o CPA válido"),
+  countryCode: z.string().trim().toUpperCase().length(2).default("AR"),
+  active: z.boolean().default(true),
+  isDefault: z.boolean().default(false),
+}).strict();
+const updateShippingOriginSchema = shippingOriginSchema.partial().refine((input) => Object.keys(input).length > 0, "Enviá al menos un campo");
 const notificationRuleSchema = z
   .object({
     event: z.enum([
@@ -206,6 +252,7 @@ growthRouter.get("/overview", async (request, response) => {
     coupons,
     variants,
     shippingZones,
+    shippingOrigins,
     pickupLocations,
     storeSettings,
     notificationRules,
@@ -237,6 +284,10 @@ growthRouter.get("/overview", async (request, response) => {
       where: { tenantId: tenant.id },
       include: { methods: { orderBy: { priceInCents: "asc" } } },
       orderBy: { name: "asc" },
+    }),
+    database.shippingOrigin.findMany({
+      where: { tenantId: tenant.id },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     }),
     database.pickupLocation.findMany({
       where: { tenantId: tenant.id },
@@ -295,6 +346,7 @@ growthRouter.get("/overview", async (request, response) => {
     coupons: features.includes("COUPONS_PROMOTIONS") ? coupons : [],
     variants: features.includes("PRODUCT_VARIANTS") ? variants : [],
     shippingZones,
+    shippingOrigins,
     pickupLocations,
     deliveryPolicies: {
       shippingPolicy: storeSettings?.shippingPolicy ?? null,
@@ -400,6 +452,16 @@ growthRouter.patch("/shipping-methods/:id", canManage, async (request, response)
   shippingMethodSchema.parse({
     name: input.name ?? current.name,
     priceInCents: input.priceInCents ?? current.priceInCents,
+    pricingType: input.pricingType ?? current.pricingType,
+    rateRules: input.rateRules === undefined ? current.rateRules ?? undefined : input.rateRules,
+    minimumOrderInCents: input.minimumOrderInCents === undefined ? current.minimumOrderInCents : input.minimumOrderInCents,
+    maximumOrderInCents: input.maximumOrderInCents === undefined ? current.maximumOrderInCents : input.maximumOrderInCents,
+    minimumWeightInGrams: input.minimumWeightInGrams === undefined ? current.minimumWeightInGrams : input.minimumWeightInGrams,
+    maximumWeightInGrams: input.maximumWeightInGrams === undefined ? current.maximumWeightInGrams : input.maximumWeightInGrams,
+    excludedProductIds: input.excludedProductIds ?? current.excludedProductIds,
+    excludedCategoryIds: input.excludedCategoryIds ?? current.excludedCategoryIds,
+    preparationDaysMin: input.preparationDaysMin ?? current.preparationDaysMin,
+    preparationDaysMax: input.preparationDaysMax ?? current.preparationDaysMax,
     estimatedDays: input.estimatedDays === undefined ? current.estimatedDays : input.estimatedDays,
     estimatedDaysMin: input.estimatedDaysMin === undefined ? current.estimatedDaysMin : input.estimatedDaysMin,
     estimatedDaysMax: input.estimatedDaysMax === undefined ? current.estimatedDaysMax : input.estimatedDaysMax,
@@ -649,6 +711,53 @@ growthRouter.delete(
     response.status(204).send();
   },
 );
+
+growthRouter.post("/shipping-origins", canManage, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const input = shippingOriginSchema.parse(request.body);
+  const origin = await database.$transaction(async (transaction) => {
+    const existingCount = await transaction.shippingOrigin.count({ where: { tenantId: tenant.id } });
+    const makeDefault = input.isDefault || existingCount === 0;
+    if (makeDefault) await transaction.shippingOrigin.updateMany({ where: { tenantId: tenant.id }, data: { isDefault: false } });
+    return transaction.shippingOrigin.create({ data: { ...input, isDefault: makeDefault, tenantId: tenant.id } });
+  });
+  response.status(201).json({ origin });
+});
+
+growthRouter.patch("/shipping-origins/:id", canManage, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const id = idSchema.parse(request.params.id);
+  const input = updateShippingOriginSchema.parse(request.body);
+  const existing = await database.shippingOrigin.findFirst({ where: { id, tenantId: tenant.id } });
+  if (!existing) throw new HttpError(404, "Origen de despacho no encontrado");
+  const origin = await database.$transaction(async (transaction) => {
+    if (input.isDefault) {
+      await transaction.shippingOrigin.updateMany({ where: { tenantId: tenant.id, id: { not: id } }, data: { isDefault: false } });
+      return transaction.shippingOrigin.update({ where: { id }, data: { ...input, active: true, isDefault: true } });
+    }
+    const deactivatingDefault = existing.isDefault && input.active === false;
+    const updated = await transaction.shippingOrigin.update({ where: { id }, data: deactivatingDefault ? { ...input, isDefault: false } : input });
+    if (deactivatingDefault) {
+      const fallback = await transaction.shippingOrigin.findFirst({ where: { tenantId: tenant.id, id: { not: id }, active: true }, orderBy: { createdAt: "asc" } });
+      if (fallback) await transaction.shippingOrigin.update({ where: { id: fallback.id }, data: { isDefault: true } });
+    }
+    return updated;
+  });
+  response.json({ origin });
+});
+
+growthRouter.delete("/shipping-origins/:id", canManage, async (request, response) => {
+  const { tenant } = getAuthContext(request);
+  const id = idSchema.parse(request.params.id);
+  const existing = await database.shippingOrigin.findFirst({ where: { id, tenantId: tenant.id } });
+  if (!existing) throw new HttpError(404, "Origen de despacho no encontrado");
+  await database.shippingOrigin.delete({ where: { id } });
+  if (existing.isDefault) {
+    const fallback = await database.shippingOrigin.findFirst({ where: { tenantId: tenant.id, active: true }, orderBy: { createdAt: "asc" } });
+    if (fallback) await database.shippingOrigin.update({ where: { id: fallback.id }, data: { isDefault: true } });
+  }
+  response.status(204).send();
+});
 
 growthRouter.post("/pickup-locations", canManage, async (request, response) => {
   const { tenant } = getAuthContext(request);

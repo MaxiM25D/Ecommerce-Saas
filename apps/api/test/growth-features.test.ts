@@ -174,6 +174,21 @@ test("PRO administra variantes, cupones y envíos sin aceptar tenantId", async (
     .post("/api/admin/growth/shipping-zones")
     .send({ name: "Argentina", postalPrefixes: [], active: true });
   assert.equal(zone.status, 201);
+  const invalidTable = await agent
+    .post(`/api/admin/growth/shipping-zones/${zone.body.zone.id}/methods`)
+    .send({
+      name: "Tarifa solapada",
+      pricingType: "WEIGHT_TABLE",
+      priceInCents: 0,
+      rateRules: [
+        { from: 0, to: 2000, priceInCents: 15000 },
+        { from: 1500, to: 4000, priceInCents: 25000 },
+      ],
+      estimatedDaysMin: 2,
+      estimatedDaysMax: 4,
+      active: true,
+    });
+  assert.equal(invalidTable.status, 400);
   const method = await agent
     .post(`/api/admin/growth/shipping-zones/${zone.body.zone.id}/methods`)
     .send({
@@ -215,6 +230,17 @@ test("PRO administra variantes, cupones y envíos sin aceptar tenantId", async (
     });
   assert.equal(pickup.status, 201);
   pickupLocationId = pickup.body.location.id;
+  const firstOrigin = await agent.post("/api/admin/growth/shipping-origins").send({
+    name: "Depósito principal", address: "Av. Siempre Viva 123", city: "La Rioja", province: "La Rioja", postalCode: "5300", active: true,
+  });
+  assert.equal(firstOrigin.status, 201);
+  const secondOrigin = await agent.post("/api/admin/growth/shipping-origins").send({
+    name: "Depósito secundario", address: "Ruta 5 km 2", city: "Córdoba", province: "Córdoba", postalCode: "5000", active: true, isDefault: true,
+  });
+  assert.equal(secondOrigin.status, 201);
+  assert.equal((await agent.patch(`/api/admin/growth/shipping-origins/${secondOrigin.body.origin.id}`).send({ active: false })).status, 200);
+  const overview = await agent.get("/api/admin/growth/overview");
+  assert.equal(overview.body.shippingOrigins.find((origin: { id: string }) => origin.id === firstOrigin.body.origin.id).isDefault, true);
   assert.equal(
     (await otherAgent.delete(`/api/admin/growth/coupons/${couponId}`)).status,
     404,

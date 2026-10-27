@@ -24,6 +24,10 @@ type ParsedProduct = {
     tags: string[];
     featured: boolean;
     featuredOrder: number;
+    weightInGrams: number | null;
+    widthInMm: number | null;
+    heightInMm: number | null;
+    lengthInMm: number | null;
   };
 };
 
@@ -57,6 +61,10 @@ const headerAliases: Record<string, string> = {
   activo: "active", active: "active",
   destacado: "featured", featured: "featured",
   orden_destacado: "featuredOrder", featured_order: "featuredOrder",
+  peso_kg: "weightKg", peso: "weightKg", weight_kg: "weightKg",
+  ancho_cm: "widthCm", width_cm: "widthCm",
+  alto_cm: "heightCm", height_cm: "heightCm",
+  largo_cm: "lengthCm", length_cm: "lengthCm",
 };
 
 function text(value: Cell | undefined): string {
@@ -180,6 +188,10 @@ async function parseProducts(file: Express.Multer.File): Promise<{ products: Par
     const images = splitList(source.images);
     const tags = splitList(source.tags);
     const featuredOrder = parseDecimal(source.featuredOrder) ?? 0;
+    const weightKg = parseDecimal(source.weightKg);
+    const widthCm = parseDecimal(source.widthCm);
+    const heightCm = parseDecimal(source.heightCm);
+    const lengthCm = parseDecimal(source.lengthCm);
     const candidate = {
       sku, slug, name,
       description: text(source.description) || null,
@@ -189,6 +201,10 @@ async function parseProducts(file: Express.Multer.File): Promise<{ products: Par
       brand: text(source.brand) || null,
       tags, featured: featured ?? false,
       featuredOrder,
+      weightInGrams: weightKg === null ? null : Math.round(weightKg * 1000),
+      widthInMm: widthCm === null ? null : Math.round(widthCm * 10),
+      heightInMm: heightCm === null ? null : Math.round(heightCm * 10),
+      lengthInMm: lengthCm === null ? null : Math.round(lengthCm * 10),
     };
     const result = createProductSchema.safeParse(candidate);
     if (!result.success) {
@@ -219,6 +235,10 @@ async function parseProducts(file: Express.Multer.File): Promise<{ products: Par
         tags: result.data.tags,
         featured: result.data.featured,
         featuredOrder: result.data.featuredOrder,
+        weightInGrams: result.data.weightInGrams ?? null,
+        widthInMm: result.data.widthInMm ?? null,
+        heightInMm: result.data.heightInMm ?? null,
+        lengthInMm: result.data.lengthInMm ?? null,
       },
     });
   }

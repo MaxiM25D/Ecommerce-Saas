@@ -398,7 +398,7 @@ export async function processMercadoPagoWebhook(
   }
   const status = normalizePaymentStatus(payment.status);
 
-  await database.$transaction(async (transaction) => {
+  const paymentOutcome = await database.$transaction(async (transaction) => {
     await transaction.$queryRaw`SELECT id FROM "Order" WHERE id = ${attempt.orderId} AND "tenantId" = ${attempt.tenantId} FOR UPDATE`;
     const current = await transaction.order.findFirst({
       where: { id: attempt.orderId, tenantId: attempt.tenantId },
@@ -416,6 +416,22 @@ export async function processMercadoPagoWebhook(
     });
 
     if (status === "APPROVED") {
+      if (current.status === "CANCELLED" || current.stockStatus === "RELEASED") {
+        await transaction.order.update({
+          where: { id: current.id },
+          data: { paymentStatus: "APPROVED", stockExpiresAt: null },
+        });
+        await transaction.orderStatusHistory.create({
+          data: {
+            tenantId: current.tenantId,
+            orderId: current.id,
+            status: "CANCELLED",
+            note: "Mercado Pago aprobó el pago después de cancelarse la reserva. Requiere revisión y posible devolución.",
+          },
+        });
+        return "LATE_APPROVAL" as const;
+      }
+      const paymentBecameApproved = current.paymentStatus !== "APPROVED";
       const statusChanged = current.status === "PENDING";
       await transaction.order.update({
         where: { id: current.id },
@@ -435,16 +451,17 @@ export async function processMercadoPagoWebhook(
             note: "Pago aprobado por Mercado Pago",
           },
         });
-      return;
+      return paymentBecameApproved ? "APPROVED" as const : "UNCHANGED" as const;
     }
 
     await transaction.order.update({
       where: { id: current.id },
       data: { paymentStatus: status },
     });
+    return "UNCHANGED" as const;
   });
 
-  if (status === "APPROVED") {
+  if (paymentOutcome === "APPROVED") {
     await dispatchTenantNotification({
       tenantId: attempt.tenantId,
       event: "ORDER_PAID",

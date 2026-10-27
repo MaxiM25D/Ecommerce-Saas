@@ -81,6 +81,10 @@ export const createProductSchema = z
     tags: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
     featured: z.boolean().default(false),
     featuredOrder: z.number().int().min(0).max(10_000).default(0),
+    weightInGrams: z.number().int().positive().max(10_000_000).nullable().optional(),
+    widthInMm: z.number().int().positive().max(100_000).nullable().optional(),
+    heightInMm: z.number().int().positive().max(100_000).nullable().optional(),
+    lengthInMm: z.number().int().positive().max(100_000).nullable().optional(),
   })
   .strict();
 

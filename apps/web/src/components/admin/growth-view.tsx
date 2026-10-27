@@ -59,15 +59,38 @@ type GrowthData = {
     stock: number;
     product: { name: string };
   }>;
+  shippingOrigins: Array<{
+    id: string;
+    name: string;
+    address: string;
+    city: string;
+    province: string;
+    postalCode: string;
+    countryCode: string;
+    active: boolean;
+    isDefault: boolean;
+  }>;
   shippingZones: Array<{
     id: string;
     name: string;
+    countryCode: string;
+    provinces: string[];
+    cities: string[];
     postalPrefixes: string[];
+    postalRanges: Array<{ from: string; to?: string | null }> | null;
     active: boolean;
     methods: Array<{
       id: string;
       name: string;
+      pricingType: "FIXED" | "FREE" | "TO_AGREE" | "WEIGHT_TABLE" | "ORDER_TOTAL_TABLE";
       priceInCents: number;
+      rateRules: Array<{ from: number; to?: number | null; priceInCents: number }> | null;
+      minimumOrderInCents: number | null;
+      maximumOrderInCents: number | null;
+      minimumWeightInGrams: number | null;
+      maximumWeightInGrams: number | null;
+      preparationDaysMin: number;
+      preparationDaysMax: number;
       estimatedDays: number | null;
       estimatedDaysMin: number | null;
       estimatedDaysMax: number | null;
@@ -181,7 +204,9 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
   const pro = (feature: string) => data.features.includes(feature);
   const pickupLocations = data.pickupLocations ?? [];
   const shippingPreviewZones = selectShippingZones(data.shippingZones, shippingTestPostalCode);
-  const suggestedOriginPostalCode = pickupLocations.find(({ active, postalCode }) => active && postalCode)?.postalCode ?? "";
+  const suggestedOriginPostalCode = data.shippingOrigins.find(({ active, isDefault }) => active && isDefault)?.postalCode
+    ?? pickupLocations.find(({ active, postalCode }) => active && postalCode)?.postalCode
+    ?? "";
   const hasAssistedShippingZones = data.shippingZones.some(({ name }) => name === "Entrega local" || name === "Resto del país");
 
   return (
@@ -445,6 +470,27 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
             </article>)}
           </div>
         </div>
+        <div className="mt-6 rounded-2xl border border-stone-200 bg-white p-5">
+          <div className="flex items-start gap-3"><span className="rounded-xl bg-[#fbf8fc] p-2.5 text-[#6E3482]"><MapPin size={18} /></span><div><h3 className="font-semibold">Origen de los envíos</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Es el lugar desde donde despachás. Lo usaremos para calcular tarifas por distancia al conectar transportistas y para identificar cada sucursal de despacho.</p></div></div>
+          <form className={`${styles.form} mt-5`} onSubmit={async (event) => {
+            event.preventDefault();
+            const element = event.currentTarget;
+            const form = new FormData(element);
+            const saved = await mutate("/admin/growth/shipping-origins", { method: "POST", body: JSON.stringify({
+              name: form.get("originName"), address: form.get("originAddress"), city: form.get("originCity"), province: form.get("originProvince"),
+              postalCode: form.get("originPostalCode"), countryCode: "AR", active: true, isDefault: data.shippingOrigins.length === 0,
+            }) });
+            if (saved) element.reset();
+          }}>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2"><Input name="originName" label="Nombre del origen" placeholder="Depósito principal" /><Input name="originAddress" label="Dirección de despacho" placeholder="Av. San Martín 1234" /></div>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3"><Input name="originCity" label="Localidad" placeholder="La Rioja" /><Input name="originProvince" label="Provincia" placeholder="La Rioja" /><Input name="originPostalCode" label="Código postal" help="Será la referencia para futuras tarifas automáticas." placeholder="5300 o F5300ABC" /></div>
+            <div className={styles.footer}><Button disabled={!canManage}>Agregar origen</Button></div>
+          </form>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {data.shippingOrigins.length === 0 && <EmptyState title="Todavía no cargaste un origen">Podés continuar con tarifas manuales, pero conviene registrar desde dónde salen los paquetes.</EmptyState>}
+            {data.shippingOrigins.map((origin) => <article className="rounded-xl border border-stone-200 bg-stone-50 p-4" key={origin.id}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{origin.name}</strong>{origin.isDefault && <span className="rounded-full bg-[#efe4f3] px-2 py-0.5 text-[10px] font-bold text-[#6E3482]">Principal</span>}{!origin.active && <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-600">Pausado</span>}</div><p className="mt-2 text-xs leading-5 text-[#807384]">{origin.address}<br />{origin.city}, {origin.province} · {origin.postalCode}</p></div>{canManage && <div className="flex flex-col items-end gap-2">{!origin.isDefault && <button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-origins/${origin.id}`, { method: "PATCH", body: JSON.stringify({ isDefault: true, active: true }) })}>Hacer principal</button>}<button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-origins/${origin.id}`, { method: "PATCH", body: JSON.stringify({ active: !origin.active }) })}>{origin.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-origins/${origin.id}`, { method: "DELETE" })}>Eliminar</button></div>}</div></article>)}
+          </div>
+        </div>
         <div className="mt-8"><h3 className="font-semibold">Envíos a domicilio</h3><p className="mt-1 text-xs leading-5 text-[#807384]">Configurá zonas por código postal y las alternativas disponibles para cada una.</p></div>
         <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-950">
           <h4 className="font-semibold">Cómo se calcula el envío</h4>
@@ -505,6 +551,10 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
                   .split(",")
                   .map((value) => value.trim())
                   .filter(Boolean),
+                provinces: commaSeparatedValues(form.get("provinces")),
+                cities: commaSeparatedValues(form.get("cities")),
+                postalRanges: parsePostalRanges(String(form.get("postalRanges") || "")),
+                countryCode: "AR",
                 active: true,
               }),
             });
@@ -512,16 +562,19 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
           }}
         >
           <Input name="name" label="1. Nombre interno de la zona" help="Usá un nombre que te permita reconocer el alcance, por ejemplo Entrega local, Zona cercana o Resto del país." placeholder="La Rioja capital" />
-          <Input name="prefixes" label="2. Códigos postales o prefijos cubiertos" help="Separalos con comas. 5300 cubre códigos que empiezan con 5300; 53 abarca una región más amplia. Dejalo vacío únicamente para crear el respaldo Resto del país." placeholder="5300, 5301, 5302" required={false} />
+          <Input name="provinces" label="2. Provincias (opcional)" help="Separalas con comas. Si queda vacío, la zona puede aplicar a cualquier provincia." placeholder="La Rioja, Córdoba" required={false} />
+          <Input name="cities" label="3. Localidades (opcional)" help="Usalas cuando necesites limitar la zona a ciudades puntuales." placeholder="La Rioja, Chilecito" required={false} />
+          <Input name="prefixes" label="4. Códigos postales o prefijos (opcional)" help="Separalos con comas. 5300 es específico; 53 cubre todos los códigos que comienzan así." placeholder="5300, 5301, 5302" required={false} />
+          <Input name="postalRanges" label="5. Rangos postales (opcional)" help="Formato desde-hasta, separados con comas. Dejá todas las restricciones vacías únicamente para Resto del país." placeholder="1000-1499, 5000-5999" required={false} />
           <div className={styles.footer}><Button disabled={!canManage}>Crear zona</Button></div>
         </form>
         <Tip title="3. Agregá una forma de entrega">Crear una zona no alcanza: agregale abajo un método como Correo estándar o Moto mensajería, con la tarifa y el plazo que correspondan a esa zona.</Tip>
         <div className="mt-5 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
-          <h4 className="font-semibold">Probá un código postal</h4>
-          <p className="mt-1 text-xs leading-5 text-[#807384]">Ingresá un CP como lo haría un comprador. Verás exactamente qué zona, precios y plazos aparecerán en el checkout.</p>
+          <h4 className="font-semibold">Comprobación rápida de código postal</h4>
+          <p className="mt-1 text-xs leading-5 text-[#807384]">Sirve para revisar prefijos. La cotización definitiva del checkout también considera provincia, localidad, carrito, peso y condiciones del método.</p>
           <div className="mt-4 max-w-sm"><Input name="shippingTestPostalCode" label="Código postal de prueba" placeholder="5300 o F5300ABC" value={shippingTestPostalCode} onChange={setShippingTestPostalCode} required={false} /></div>
           {shippingTestPostalCode.trim() && shippingPreviewZones.length === 0 && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No hay una zona activa que cubra este código postal. Creá una zona específica o una zona sin prefijos para “Resto del país”.</p>}
-          {shippingTestPostalCode.trim() && shippingPreviewZones.length > 0 && <div className="mt-3 grid gap-3">{shippingPreviewZones.map((zone) => <div className="rounded-xl border border-[#e6dfe8] bg-white p-4" key={zone.id}><p className="text-sm font-semibold">Zona aplicada: {zone.name}</p>{zone.methods.filter(({ active }) => active).length ? <div className="mt-2 grid gap-1">{zone.methods.filter(({ active }) => active).map((method) => <p className="text-xs text-[#807384]" key={method.id}>{method.name}: <strong>{money(method.priceInCents)}</strong> · {formatDeliveryRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}</p>)}</div> : <p className="mt-2 text-xs text-amber-700">La zona coincide, pero no tiene métodos activos.</p>}</div>)}</div>}
+          {shippingTestPostalCode.trim() && shippingPreviewZones.length > 0 && <div className="mt-3 grid gap-3">{shippingPreviewZones.map((zone) => <div className="rounded-xl border border-[#e6dfe8] bg-white p-4" key={zone.id}><p className="text-sm font-semibold">Zona candidata: {zone.name}</p>{zone.methods.filter(({ active }) => active).length ? <div className="mt-2 grid gap-1">{zone.methods.filter(({ active }) => active).map((method) => <p className="text-xs text-[#807384]" key={method.id}>{method.name}: <strong>{shippingMethodPriceLabel(method)}</strong> · {formatDeliveryRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}</p>)}</div> : <p className="mt-2 text-xs text-amber-700">La zona coincide, pero no tiene métodos activos.</p>}</div>)}</div>}
         </div>
         <div className="mt-5 grid gap-4">
           {data.shippingZones.length === 0 && <EmptyState title="Todavía no hay zonas">Creá una zona y después agregá sus métodos de entrega.</EmptyState>}
@@ -533,19 +586,17 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
               <div className="flex flex-wrap justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2"><p className="font-semibold">{zone.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${zone.active ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{zone.active ? "Publicada" : "No publicada"}</span></div>
-                  <p className="text-xs text-stone-400">
-                    {zone.postalPrefixes.join(", ") || "Todo el país"}
-                  </p>
+                  <p className="text-xs text-stone-400">{describeShippingZone(zone)}</p>
                 </div>
                 {canManage && (
                   <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ active: !zone.active }) })}>{zone.active ? "Pausar" : "Publicar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "DELETE" })}>Eliminar</button></div>
                 )}
               </div>
-              {canManage && <details className="mt-4 border-t border-stone-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar zona</summary><form className={`${styles.form} mt-3`} onSubmit={async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("zoneName"), postalPrefixes: String(form.get("zonePrefixes") ?? "").split(",").map((value) => value.trim()).filter(Boolean) }) }); }}><Input name="zoneName" label="Nombre interno" placeholder="La Rioja capital" defaultValue={zone.name} /><Input name="zonePrefixes" label="Códigos postales o prefijos" help="Separalos con comas. Vacío significa Resto del país." placeholder="5300, 5301" defaultValue={zone.postalPrefixes.join(", ")} required={false} /><div className={styles.footer}><Button>Guardar zona</Button></div></form></details>}
+              {canManage && <details className="mt-4 border-t border-stone-100 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar zona</summary><form className={`${styles.form} mt-3`} onSubmit={async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await mutate(`/admin/growth/shipping-zones/${zone.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("zoneName"), provinces: commaSeparatedValues(form.get("zoneProvinces")), cities: commaSeparatedValues(form.get("zoneCities")), postalPrefixes: commaSeparatedValues(form.get("zonePrefixes")), postalRanges: parsePostalRanges(String(form.get("zonePostalRanges") || "")) }) }); }}><Input name="zoneName" label="Nombre interno" placeholder="La Rioja capital" defaultValue={zone.name} /><Input name="zoneProvinces" label="Provincias" placeholder="La Rioja" defaultValue={zone.provinces.join(", ")} required={false} /><Input name="zoneCities" label="Localidades" placeholder="La Rioja, Chilecito" defaultValue={zone.cities.join(", ")} required={false} /><Input name="zonePrefixes" label="Códigos postales o prefijos" placeholder="5300, 5301" defaultValue={zone.postalPrefixes.join(", ")} required={false} /><Input name="zonePostalRanges" label="Rangos postales" placeholder="5000-5999" defaultValue={formatPostalRanges(zone.postalRanges)} required={false} /><div className={styles.footer}><Button>Guardar zona</Button></div></form></details>}
               <div className="mt-4 grid gap-3">
                 {zone.methods.map((method) => (
                   <article className="rounded-xl border border-stone-100 bg-stone-50 p-4" key={method.id}>
-                    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{method.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${method.active ? "bg-emerald-50 text-emerald-700" : "bg-white text-stone-500"}`}>{method.active ? "Activo" : "Pausado"}</span></div><p className="mt-1 text-xs text-[#807384]">Precio final: <strong>{money(method.priceInCents)}</strong> · {formatDeliveryRange(method.estimatedDaysMin ?? method.estimatedDays, method.estimatedDaysMax ?? method.estimatedDays)}{method.freeShippingThresholdInCents ? ` · Gratis desde ${money(method.freeShippingThresholdInCents)}` : ""}</p>{method.carrierName && <p className="mt-1 text-xs text-[#918495]">Transportista: {method.carrierName}</p>}</div>{canManage && <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify({ active: !method.active }) })}>{method.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "DELETE" })}>Eliminar</button></div>}</div>
+                    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{method.name}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${method.active ? "bg-emerald-50 text-emerald-700" : "bg-white text-stone-500"}`}>{method.active ? "Activo" : "Pausado"}</span><span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-[#6E3482]">{shippingPricingLabel(method.pricingType)}</span></div><p className="mt-1 text-xs text-[#807384]">{shippingMethodPriceLabel(method)} · {formatDeliveryRange((method.estimatedDaysMin ?? method.estimatedDays ?? 0) + method.preparationDaysMin, (method.estimatedDaysMax ?? method.estimatedDays ?? 0) + method.preparationDaysMax)}{method.freeShippingThresholdInCents ? ` · Gratis desde ${money(method.freeShippingThresholdInCents)}` : ""}</p>{method.carrierName && <p className="mt-1 text-xs text-[#918495]">Transportista: {method.carrierName}</p>}</div>{canManage && <div className="flex gap-3"><button className="text-xs font-semibold text-[#6E3482]" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify({ active: !method.active }) })}>{method.active ? "Pausar" : "Activar"}</button><button className="text-xs font-semibold text-red-600" type="button" onClick={() => void mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "DELETE" })}>Eliminar</button></div>}</div>
                     {canManage && <details className="mt-3 border-t border-stone-200 pt-3"><summary className="cursor-pointer text-xs font-semibold text-[#6E3482]">Editar método</summary><ShippingMethodForm buttonLabel="Guardar método" defaults={method} onSubmit={(payload) => mutate(`/admin/growth/shipping-methods/${method.id}`, { method: "PATCH", body: JSON.stringify(payload) })} /></details>}
                   </article>
                 ))}
@@ -738,6 +789,9 @@ function ShippingMethodForm({
   disabled?: boolean;
   onSubmit: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
+  const [pricingType, setPricingType] = useState<ShippingMethodDefaults["pricingType"]>(
+    defaults?.pricingType ?? "FIXED",
+  );
   const [offersFreeShipping, setOffersFreeShipping] = useState(
     Boolean(defaults?.freeShippingThresholdInCents),
   );
@@ -758,9 +812,18 @@ function ShippingMethodForm({
     const carrierCode = String(form.get("carrierCode") || "CUSTOM");
     const preset = carriers.find(({ code }) => code === carrierCode);
     const customTrackingUrl = String(form.get("trackingUrlTemplate") || "").trim();
+    const rateRules = parseRateRules(String(form.get("rateRules") || ""), pricingType);
     const saved = await onSubmit({
       name: form.get("methodName"),
-      priceInCents: Math.round(finalShippingPrice * 100),
+      pricingType,
+      priceInCents: pricingType === "FIXED" ? Math.round(finalShippingPrice * 100) : 0,
+      rateRules,
+      minimumOrderInCents: optionalPesosToCents(form.get("minimumOrder")),
+      maximumOrderInCents: optionalPesosToCents(form.get("maximumOrder")),
+      minimumWeightInGrams: optionalKgToGrams(form.get("minimumWeight")),
+      maximumWeightInGrams: optionalKgToGrams(form.get("maximumWeight")),
+      preparationDaysMin: Number(form.get("preparationDaysMin") || 0),
+      preparationDaysMax: Number(form.get("preparationDaysMax") || 0),
       estimatedDaysMin: Number(form.get("estimatedDaysMin")),
       estimatedDaysMax: Number(form.get("estimatedDaysMax")),
       freeShippingThresholdInCents: offersFreeShipping && form.get("freeShippingThreshold")
@@ -776,13 +839,15 @@ function ShippingMethodForm({
       setPackagingCost("");
       setOperatingMargin("");
       setOffersFreeShipping(false);
+      setPricingType("FIXED");
     }
   }}>
     <Input name="methodName" label="Nombre del método" help="Es la opción que verá el comprador dentro de esta zona." placeholder="Envío estándar" defaultValue={defaults?.name} />
+    <Field label="Cómo se calcula el precio" help="Elegí una tarifa fija, gratis, a coordinar o una tabla que cambie según el peso o el total." example="Las tablas permiten cobrar un valor distinto en cada tramo."><select name="pricingType" value={pricingType} onChange={(event) => setPricingType(event.target.value as ShippingMethodDefaults["pricingType"])}><option value="FIXED">Precio fijo</option><option value="FREE">Siempre gratis</option><option value="TO_AGREE">A convenir con el comprador</option><option value="WEIGHT_TABLE">Tabla por peso</option><option value="ORDER_TOTAL_TABLE">Tabla por total de compra</option></select></Field>
     <Field label="Transportista" help="Estas opciones solo completan el nombre y su página de seguimiento; no cotizan el precio. Elegí Otro para agregar cualquier empresa o mensajería propia." example="Ejemplo: Correo Argentino"><select defaultValue={defaults?.carrierCode ?? "CORREO_ARGENTINO"} name="carrierCode"><option value="CORREO_ARGENTINO">Correo Argentino</option><option value="ANDREANI">Andreani</option><option value="OCA">OCA</option><option value="VIA_CARGO">Vía Cargo</option><option value="CUSTOM">Otro / mensajería propia</option></select></Field>
     <Input name="carrierName" label="Nombre personalizado del transportista (opcional)" help="Completalo solo si elegiste Otro o querés cambiar el nombre visible." placeholder="Moto Express" defaultValue={defaults?.carrierName ?? undefined} required={false} />
     <Input name="trackingUrlTemplate" label="URL de seguimiento personalizada (opcional)" help="Usá {code} donde debe insertarse el código. Si elegís una empresa conocida podés dejarla vacía." placeholder="https://envios.ejemplo.com/seguimiento/{code}" defaultValue={defaults?.trackingUrlTemplate ?? undefined} required={false} />
-    <div className="sm:col-span-2 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
+    {pricingType === "FIXED" && <div className="sm:col-span-2 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start"><div><h5 className="text-sm font-semibold text-[#382d3b]">Calculadora del precio de envío</h5><p className="mt-1 max-w-2xl text-xs leading-5 text-[#807384]">Consultá una tarifa representativa para esta zona y sumá únicamente los costos que quieras trasladar al comprador.</p></div><span className="shrink-0 rounded-full bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#6E3482] shadow-sm">Tarifa manual</span></div>
       {defaults && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong>Al editar:</strong> cargamos el precio final actual como tarifa base porque el desglose anterior no se guardaba. Corregilo antes de sumar embalaje o margen.</p>}
       <div className="mt-5 grid gap-4 sm:grid-cols-3">
@@ -794,15 +859,75 @@ function ShippingMethodForm({
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><p className="text-xs font-medium">Precio final que verá el comprador</p><p className="mt-1 text-2xl font-semibold tracking-tight">{formatShippingPesos(finalShippingPrice)}</p></div><p className="text-xs leading-5 text-emerald-800">{formatShippingPesos(carrierRateValue)} tarifa + {formatShippingPesos(packagingCostValue)} embalaje + {formatShippingPesos(operatingMarginValue)} gestión</p></div>
       </div>
       <p className="mt-3 text-[11px] leading-5 text-[#918495]">El comprador verá un único precio de envío. Por ahora InfinityShop guarda el total final, no el desglose, y lo suma automáticamente al pedido.</p>
-    </div>
-    <div className="grid gap-4 sm:grid-cols-2"><Input name="estimatedDaysMin" label="Plazo mínimo (días hábiles)" placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Plazo máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
-    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-[#e6dfe8] bg-[#fbf8fc] p-4">
+    </div>}
+    {(pricingType === "WEIGHT_TABLE" || pricingType === "ORDER_TOTAL_TABLE") && <Field label={pricingType === "WEIGHT_TABLE" ? "Tabla de tarifas por peso" : "Tabla de tarifas por total"} help={pricingType === "WEIGHT_TABLE" ? "Una línea por tramo: peso mínimo, peso máximo y precio. Usá kilogramos." : "Una línea por tramo: compra mínima, compra máxima y precio. Usá pesos."} example={pricingType === "WEIGHT_TABLE" ? "0-1=3500\n1.01-3=5200\n3.01-10=8500" : "0-50000=6000\n50000.01-100000=3500\n100000.01-*=0"}><textarea name="rateRules" required rows={5} defaultValue={formatRateRules(defaults?.rateRules, pricingType)} placeholder={pricingType === "WEIGHT_TABLE" ? "0-1=3500\n1.01-3=5200" : "0-50000=6000\n50000.01-*=0"} /></Field>}
+    {pricingType === "TO_AGREE" && <p className="sm:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><strong>El pedido se crea sin costo de envío.</strong> El checkout mostrará “A convenir” y el vendedor deberá acordar el importe con el comprador antes de despachar.</p>}
+    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2"><Input name="preparationDaysMin" label="Preparación mínima (días hábiles)" help="Tiempo interno antes de entregar el paquete al transportista." placeholder="0" type="number" min={0} defaultValue={String(defaults?.preparationDaysMin ?? 0)} /><Input name="preparationDaysMax" label="Preparación máxima (días hábiles)" placeholder="1" type="number" min={0} defaultValue={String(defaults?.preparationDaysMax ?? 0)} /></div>
+    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2"><Input name="estimatedDaysMin" label="Tránsito mínimo (días hábiles)" help="Tiempo estimado del transportista. El checkout suma la preparación." placeholder="2" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMin ?? defaults.estimatedDays ?? 1) : undefined} /><Input name="estimatedDaysMax" label="Tránsito máximo (días hábiles)" placeholder="4" type="number" min={1} defaultValue={defaults ? String(defaults.estimatedDaysMax ?? defaults.estimatedDays ?? 1) : undefined} /></div>
+    <details className="sm:col-span-2 rounded-2xl border border-stone-200 bg-white p-4"><summary className="cursor-pointer text-sm font-semibold text-[#6E3482]">Condiciones para mostrar este método (opcional)</summary><div className="mt-4 grid gap-4 sm:grid-cols-2"><Input name="minimumOrder" label="Compra mínima" placeholder="Sin mínimo" type="number" min={0} step="0.01" defaultValue={defaults?.minimumOrderInCents !== null && defaults?.minimumOrderInCents !== undefined ? String(defaults.minimumOrderInCents / 100) : undefined} required={false} /><Input name="maximumOrder" label="Compra máxima" placeholder="Sin máximo" type="number" min={0} step="0.01" defaultValue={defaults?.maximumOrderInCents ? String(defaults.maximumOrderInCents / 100) : undefined} required={false} /><Input name="minimumWeight" label="Peso mínimo (kg)" placeholder="Sin mínimo" type="number" min={0} step="0.001" defaultValue={defaults?.minimumWeightInGrams !== null && defaults?.minimumWeightInGrams !== undefined ? String(defaults.minimumWeightInGrams / 1000) : undefined} required={false} /><Input name="maximumWeight" label="Peso máximo (kg)" placeholder="Sin máximo" type="number" min={0} step="0.001" defaultValue={defaults?.maximumWeightInGrams ? String(defaults.maximumWeightInGrams / 1000) : undefined} required={false} /></div></details>
+    {pricingType !== "FREE" && pricingType !== "TO_AGREE" && <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-[#e6dfe8] bg-[#fbf8fc] p-4">
       <span><strong className="block text-sm text-[#382d3b]">Ofrecer envío gratis</strong><span className="mt-1 block text-xs leading-5 text-[#807384]">Activá esta opción para bonificar el precio final cuando la compra alcance un monto mínimo.</span></span>
       <input aria-label="Ofrecer envío gratis" checked={offersFreeShipping} className="h-5 w-5 accent-[#6E3482]" onChange={(event) => setOffersFreeShipping(event.target.checked)} type="checkbox" />
-    </label>
-    {offersFreeShipping && <Input name="freeShippingThreshold" label="Compra mínima para envío gratis" help="Se calcula sobre los productos después de aplicar descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} />}
+    </label>}
+    {pricingType !== "FREE" && pricingType !== "TO_AGREE" && offersFreeShipping && <Input name="freeShippingThreshold" label="Compra mínima para envío gratis" help="Se calcula sobre los productos después de aplicar descuentos." placeholder="50000" type="number" min={1} step="0.01" defaultValue={defaults?.freeShippingThresholdInCents ? String(defaults.freeShippingThresholdInCents / 100) : undefined} />}
     <div className={styles.footer}><Button disabled={disabled}>{buttonLabel}</Button></div>
   </form>;
+}
+
+function optionalPesosToCents(value: FormDataEntryValue | null) {
+  if (value === null || String(value).trim() === "") return null;
+  return Math.round(Number(value) * 100);
+}
+
+function optionalKgToGrams(value: FormDataEntryValue | null) {
+  if (value === null || String(value).trim() === "") return null;
+  return Math.round(Number(value) * 1000);
+}
+
+function parseRateRules(value: string, pricingType: ShippingMethodDefaults["pricingType"]) {
+  if (pricingType !== "WEIGHT_TABLE" && pricingType !== "ORDER_TOTAL_TABLE") return [];
+  const factor = pricingType === "WEIGHT_TABLE" ? 1000 : 100;
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).flatMap((line) => {
+    const match = line.match(/^([\d.,]+)\s*-\s*(\*|[\d.,]+)\s*=\s*([\d.,]+)$/);
+    if (!match) return [];
+    const parse = (part: string) => Number(part.replace(",", "."));
+    const from = parse(match[1]);
+    const to = match[2] === "*" ? null : parse(match[2]);
+    const price = parse(match[3]);
+    if (![from, price, ...(to === null ? [] : [to])].every(Number.isFinite)) return [];
+    return [{ from: Math.round(from * factor), to: to === null ? null : Math.round(to * factor), priceInCents: Math.round(price * 100) }];
+  });
+}
+
+function formatRateRules(rules: ShippingMethodDefaults["rateRules"] | undefined, pricingType: ShippingMethodDefaults["pricingType"]) {
+  if (!rules?.length) return "";
+  const factor = pricingType === "WEIGHT_TABLE" ? 1000 : 100;
+  return rules.map(({ from, to, priceInCents }) => `${from / factor}-${to === null || to === undefined ? "*" : to / factor}=${priceInCents / 100}`).join("\n");
+}
+
+function commaSeparatedValues(value: FormDataEntryValue | null) {
+  return String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function parsePostalRanges(value: string) {
+  return value.split(",").map((item) => item.trim()).filter(Boolean).flatMap((item) => {
+    const [from, to] = item.split("-").map((part) => part.trim().toUpperCase());
+    return from ? [{ from, to: to || from }] : [];
+  });
+}
+
+function formatPostalRanges(ranges: GrowthData["shippingZones"][number]["postalRanges"]) {
+  return ranges?.map(({ from, to }) => `${from}-${to ?? from}`).join(", ") ?? "";
+}
+
+function describeShippingZone(zone: GrowthData["shippingZones"][number]) {
+  const parts = [
+    zone.provinces.length ? `Provincias: ${zone.provinces.join(", ")}` : "",
+    zone.cities.length ? `Localidades: ${zone.cities.join(", ")}` : "",
+    zone.postalPrefixes.length ? `CP: ${zone.postalPrefixes.join(", ")}` : "",
+    zone.postalRanges?.length ? `Rangos: ${formatPostalRanges(zone.postalRanges)}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ") || "Resto del país";
 }
 
 function parseShippingAmount(value: string) {
@@ -817,6 +942,17 @@ function formatShippingPesos(value: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function shippingPricingLabel(type: ShippingMethodDefaults["pricingType"]) {
+  return ({ FIXED: "Precio fijo", FREE: "Gratis", TO_AGREE: "A convenir", WEIGHT_TABLE: "Por peso", ORDER_TOTAL_TABLE: "Por total" })[type];
+}
+
+function shippingMethodPriceLabel(method: ShippingMethodDefaults) {
+  if (method.pricingType === "FREE") return "Sin costo";
+  if (method.pricingType === "TO_AGREE") return "Precio a convenir";
+  if (method.pricingType === "FIXED") return `Precio final: ${money(method.priceInCents)}`;
+  return `${method.rateRules?.length ?? 0} tramos configurados`;
 }
 
 function formatDeliveryRange(minimum: number | null, maximum: number | null) {

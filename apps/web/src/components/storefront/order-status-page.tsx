@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { ApiError, apiRequest } from "@/lib/api";
 import { ReceiptUploader } from "./receipt-uploader";
 import { formatMoney, ProductImage, StorefrontShell } from "./storefront-shell";
-import type { PublicStore } from "./types";
+import type { CartItem, PublicStore, StorefrontProduct } from "./types";
 
 type PublicOrder = {
   id: string;
@@ -34,6 +34,8 @@ type PublicOrder = {
   pickup: { name: string | null; address: string | null; mapsUrl: string | null; openingHours: string | null; instructions: string | null; phone: string | null; readyAt: string | null; completedAt: string | null } | null;
   items: Array<{
     id: string;
+    productId: string | null;
+    variantId: string | null;
     productName: string;
     variantName: string | null;
     quantity: number;
@@ -85,6 +87,9 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
   const [orderToken, setOrderToken] = useState("");
   const [customerSessionToken, setCustomerSessionToken] = useState("");
   const [error, setError] = useState("");
+  const [paymentAction, setPaymentAction] = useState<"refresh" | "retry" | "cancel" | "">("");
+  const [paymentActionError, setPaymentActionError] = useState("");
+  const [confirmCancellation, setConfirmCancellation] = useState(false);
 
   useEffect(() => {
     const storedOrderToken = localStorage.getItem(`infinityshop:order:${slug}:${orderId}`);
@@ -113,8 +118,104 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
 
   async function refreshOrder() {
     if (!orderToken && !customerSessionToken) return;
-    const response = await fetchOrder(slug, orderId, orderToken, customerSessionToken);
-    setOrder(response.order);
+    setPaymentAction("refresh");
+    setPaymentActionError("");
+    try {
+      const response = await fetchOrder(slug, orderId, orderToken, customerSessionToken);
+      setOrder(response.order);
+    } catch (caught) {
+      setPaymentActionError(caught instanceof ApiError ? caught.message : "No pudimos actualizar el pedido");
+    } finally {
+      setPaymentAction("");
+    }
+  }
+
+  function accessHeaders() {
+    return {
+      ...(orderToken ? { "x-order-token": orderToken } : {}),
+      ...(customerSessionToken ? { "x-customer-session": customerSessionToken } : {}),
+    };
+  }
+
+  async function continueMercadoPago() {
+    setPaymentAction("retry");
+    setPaymentActionError("");
+    try {
+      const response = await apiRequest<{ payment: { checkoutUrl: string } }>(
+        `/storefront/${slug}/orders/${orderId}/mercadopago`,
+        { method: "POST", headers: accessHeaders() },
+      );
+      window.location.assign(response.payment.checkoutUrl);
+    } catch (caught) {
+      const message = caught instanceof ApiError ? caught.message : "No pudimos retomar el pago";
+      try {
+        const response = await fetchOrder(slug, orderId, orderToken, customerSessionToken);
+        setOrder(response.order);
+      } catch {
+        // El mensaje original explica mejor por qué no se pudo reabrir el pago.
+      }
+      setPaymentActionError(message);
+    } finally {
+      setPaymentAction("");
+    }
+  }
+
+  async function cancelAndRestoreCart() {
+    if (!order) return;
+    setPaymentAction("cancel");
+    setPaymentActionError("");
+    try {
+      await apiRequest<{ cancelled: true }>(`/storefront/${slug}/orders/${orderId}/cancel`, {
+        method: "POST",
+        headers: accessHeaders(),
+      });
+
+      const productSlugs = [...new Set(order.items.map((item) => item.productSlug).filter(Boolean))] as string[];
+      const products = await Promise.all(
+        productSlugs.map(async (productSlug) =>
+          (await apiRequest<{ product: StorefrontProduct }>(`/storefront/${slug}/products/${productSlug}`)).product,
+        ),
+      );
+      const productsById = new Map(products.map((product) => [product.id, product]));
+      const restoredCart = order.items.flatMap<CartItem>((item) => {
+        const product = item.productId ? productsById.get(item.productId) : undefined;
+        if (!product) return [];
+        const selectedVariant = item.variantId
+          ? product.variants.find((variant) => variant.id === item.variantId)
+          : undefined;
+        if (item.variantId && !selectedVariant) return [];
+        const availableStock = selectedVariant?.stock ?? product.stock;
+        if (availableStock < 1) return [];
+        const purchasable = selectedVariant
+          ? {
+              ...product,
+              sku: selectedVariant.sku,
+              priceInCents: selectedVariant.priceInCents,
+              stock: selectedVariant.stock,
+              selectedVariant,
+            }
+          : product;
+        return [{
+          ...purchasable,
+          cartKey: selectedVariant ? `${product.id}:${selectedVariant.id}` : product.id,
+          quantity: Math.min(item.quantity, availableStock),
+        }];
+      });
+      localStorage.setItem(`infinityshop:cart:${slug}`, JSON.stringify(restoredCart));
+      window.location.assign(restoredCart.length ? `/tienda/${slug}/checkout` : `/tienda/${slug}/productos`);
+    } catch (caught) {
+      const message = caught instanceof ApiError ? caught.message : "No pudimos cambiar el medio de pago";
+      setPaymentActionError(message);
+      setConfirmCancellation(false);
+      try {
+        const response = await fetchOrder(slug, orderId, orderToken, customerSessionToken);
+        setOrder(response.order);
+      } catch {
+        // Conservamos el pedido visible para que el comprador pueda volver a intentar.
+      }
+    } finally {
+      setPaymentAction("");
+    }
   }
 
   if (error) return (
@@ -138,6 +239,11 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
     mode: order.customer.hasAccount ? "login" : "register",
   });
   const ordersHref = customerSessionToken ? `/tienda/${slug}/mis-pedidos` : `/tienda/${slug}/mis-pedidos?${accountQuery.toString()}`;
+  const reservationExpired = Boolean(order.stockExpiresAt && new Date(order.stockExpiresAt) <= new Date());
+  const showMercadoPagoRecovery = order.paymentMethod === "MERCADO_PAGO"
+    && order.status === "PENDING"
+    && ["PENDING", "REJECTED"].includes(order.paymentStatus);
+  const canContinueMercadoPago = showMercadoPagoRecovery && !reservationExpired;
 
   return (
     <StorefrontShell store={store}>
@@ -156,6 +262,81 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
 
         <OrderProgress accentColor={accentColor} fulfillmentType={order.fulfillmentType} status={order.status} />
 
+        {showMercadoPagoRecovery && (
+          <section className="mt-6 rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5 sm:p-7">
+            <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
+              <div className="max-w-2xl">
+                <h2 className="text-lg font-semibold text-amber-950">
+                  {reservationExpired
+                    ? "La reserva de stock venció"
+                    : order.paymentStatus === "REJECTED"
+                      ? "El pago no pudo completarse"
+                      : "Tu pago todavía está pendiente"}
+                </h2>
+                <p className="mt-1.5 text-sm leading-6 text-amber-800">
+                  {reservationExpired
+                    ? "Para evitar vender productos sin stock, esta reserva ya no se puede pagar. Podés reconstruir el carrito con la disponibilidad actual y volver al checkout."
+                    : "Podés volver a Mercado Pago para terminarlo o actualizar el estado si ya pagaste. No se creará otro pedido ni se descontará nuevamente el stock."}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                {canContinueMercadoPago && (
+                  <button
+                    className="inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-xs font-bold text-white disabled:cursor-wait disabled:opacity-60"
+                    disabled={Boolean(paymentAction)}
+                    onClick={() => void continueMercadoPago()}
+                    style={{ backgroundColor: accentColor }}
+                    type="button"
+                  >
+                    {paymentAction === "retry" ? "Abriendo…" : "Continuar pago"} <ArrowRight size={14} />
+                  </button>
+                )}
+                <button
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-amber-300 bg-white px-5 py-3 text-xs font-bold text-amber-950 disabled:cursor-wait disabled:opacity-60"
+                  disabled={Boolean(paymentAction)}
+                  onClick={() => void (reservationExpired ? cancelAndRestoreCart() : refreshOrder())}
+                  type="button"
+                >
+                  {reservationExpired ? (
+                    <>{paymentAction === "cancel" ? "Preparando carrito…" : "Volver al checkout"} <ArrowRight size={14} /></>
+                  ) : (
+                    <><RefreshCw className={paymentAction === "refresh" ? "animate-spin" : ""} size={14} /> Actualizar estado</>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {!reservationExpired && (!confirmCancellation ? (
+              <button className="mt-4 text-xs font-semibold text-amber-900 underline underline-offset-4" disabled={Boolean(paymentAction)} onClick={() => setConfirmCancellation(true)} type="button">
+                Elegir otro medio de pago
+              </button>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-white p-4">
+                <p className="text-sm font-semibold text-stone-900">¿Querés cancelar este intento de compra?</p>
+                <p className="mt-1 text-xs leading-5 text-stone-600">Devolveremos el stock reservado y reconstruiremos tu carrito para que puedas revisar la compra y elegir otro medio de pago.</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button className="rounded-full bg-stone-950 px-4 py-2.5 text-xs font-bold text-white disabled:cursor-wait disabled:opacity-60" disabled={Boolean(paymentAction)} onClick={() => void cancelAndRestoreCart()} type="button">
+                    {paymentAction === "cancel" ? "Preparando carrito…" : "Sí, cambiar medio de pago"}
+                  </button>
+                  <button className="rounded-full border border-stone-200 px-4 py-2.5 text-xs font-bold" disabled={Boolean(paymentAction)} onClick={() => setConfirmCancellation(false)} type="button">Mantener este pedido</button>
+                </div>
+              </div>
+            ))}
+            {paymentActionError && <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-medium text-red-700">{paymentActionError}</p>}
+          </section>
+        )}
+
+        {order.status === "CANCELLED" && order.paymentStatus === "APPROVED" && (
+          <section className="mt-6 rounded-[1.75rem] border border-red-200 bg-red-50 p-5 text-sm leading-6 text-red-800 sm:p-6">
+            <strong className="block text-red-950">El pago fue informado después de cancelarse la reserva.</strong>
+            No vuelvas a pagar. Contactá a la tienda para que revise la acreditación y coordine la entrega o devolución.
+          </section>
+        )}
+
+        {!showMercadoPagoRecovery && paymentActionError && (
+          <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{paymentActionError}</p>
+        )}
+
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_0.82fr] lg:items-start">
           <div className="space-y-6">
             {order.receipt && (
@@ -168,7 +349,7 @@ export function OrderStatusPage({ slug, orderId, accessToken }: { slug: string; 
             <section className="rounded-[1.75rem] border border-black/[0.07] bg-white p-6 shadow-[0_18px_60px_rgba(28,20,30,0.06)] sm:p-8">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-2xl bg-stone-100"><Clock3 size={18} /></span><div><h2 className="font-semibold">Historial del pedido</h2><p className="mt-0.5 text-xs text-stone-400">Últimas actualizaciones</p></div></div>
-                <button aria-label="Actualizar pedido" className="grid h-9 w-9 place-items-center rounded-xl border border-stone-200 text-stone-500 hover:text-stone-950" onClick={() => void refreshOrder()} type="button"><RefreshCw size={15} /></button>
+                <button aria-label="Actualizar pedido" className="grid h-9 w-9 place-items-center rounded-xl border border-stone-200 text-stone-500 hover:text-stone-950 disabled:cursor-wait disabled:opacity-60" disabled={Boolean(paymentAction)} onClick={() => void refreshOrder()} type="button"><RefreshCw className={paymentAction === "refresh" ? "animate-spin" : ""} size={15} /></button>
               </div>
               <ol className="mt-7">
                 {order.statusHistory.map((item, index) => (

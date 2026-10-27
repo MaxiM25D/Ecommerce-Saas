@@ -295,3 +295,94 @@ test("el checkout aplica la zona postal más específica y usa la zona general c
     0,
   );
 });
+
+test("el comprador puede retomar Mercado Pago o cancelar para elegir otro medio", async () => {
+  const tenant = await database.tenant.findUniqueOrThrow({ where: { slug } });
+  const category = await database.category.findFirstOrThrow({ where: { tenantId: tenant.id } });
+  const recoverableProduct = await database.product.create({
+    data: {
+      tenantId: tenant.id,
+      categoryId: category.id,
+      sku: "RECOVERY-001",
+      slug: "producto-recuperacion-pago",
+      name: "Producto recuperación de pago",
+      priceInCents: 450000,
+      stock: 2,
+      active: true,
+    },
+  });
+  const checkout = await request(app).post(`/api/storefront/${slug}/orders`).send({
+    customer: {
+      email: "recuperacion@checkout.test",
+      firstName: "Pago",
+      lastName: "Pendiente",
+      phone: "3804000001",
+      street: "San Martín",
+      streetNumber: "250",
+      city: "La Rioja",
+      province: "La Rioja",
+      postalCode: "9999",
+    },
+    items: [{ productId: recoverableProduct.id, quantity: 1 }],
+    paymentMethod: "BANK_TRANSFER",
+    shippingMethodId,
+  });
+  assert.equal(checkout.status, 201);
+  const recoverableOrderId = checkout.body.order.id as string;
+  const recoverableOrderToken = checkout.body.orderToken as string;
+  const checkoutUrl = "https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=recovery-test";
+  await database.order.update({
+    where: { id: recoverableOrderId },
+    data: { paymentMethod: "MERCADO_PAGO" },
+  });
+  await database.paymentAttempt.create({
+    data: {
+      tenantId: tenant.id,
+      orderId: recoverableOrderId,
+      provider: "MERCADO_PAGO",
+      idempotencyKey: "checkout-recovery-test",
+      preferenceId: "checkout-recovery-preference",
+      checkoutUrl,
+      amountInCents: 450000,
+      currency: "ARS",
+    },
+  });
+
+  const resumed = await request(app)
+    .post(`/api/storefront/${slug}/orders/${recoverableOrderId}/mercadopago`)
+    .set("x-order-token", recoverableOrderToken);
+  assert.equal(resumed.status, 200);
+  assert.equal(resumed.body.payment.checkoutUrl, checkoutUrl);
+  assert.equal(
+    (await request(app).post(`/api/storefront/${slug}/orders/${recoverableOrderId}/cancel`)).status,
+    404,
+  );
+
+  const cancelled = await request(app)
+    .post(`/api/storefront/${slug}/orders/${recoverableOrderId}/cancel`)
+    .set("x-order-token", recoverableOrderToken);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.body.cancelled, true);
+  const [cancelledOrder, restoredProduct, paymentAttempt] = await Promise.all([
+    database.order.findUniqueOrThrow({ where: { id: recoverableOrderId } }),
+    database.product.findUniqueOrThrow({ where: { id: recoverableProduct.id } }),
+    database.paymentAttempt.findFirstOrThrow({ where: { orderId: recoverableOrderId } }),
+  ]);
+  assert.equal(cancelledOrder.status, "CANCELLED");
+  assert.equal(cancelledOrder.paymentStatus, "CANCELLED");
+  assert.equal(cancelledOrder.stockStatus, "RELEASED");
+  assert.equal(restoredProduct.stock, 2);
+  assert.equal(paymentAttempt.status, "CANCELLED");
+  assert.equal(
+    (await request(app)
+      .post(`/api/storefront/${slug}/orders/${recoverableOrderId}/cancel`)
+      .set("x-order-token", recoverableOrderToken)).status,
+    409,
+  );
+  assert.equal(
+    (await request(app)
+      .post(`/api/storefront/${slug}/orders/${recoverableOrderId}/mercadopago`)
+      .set("x-order-token", recoverableOrderToken)).status,
+    404,
+  );
+});
