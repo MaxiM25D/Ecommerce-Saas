@@ -259,12 +259,19 @@ export function OrdersView({ role }: { role: Role }) {
                     <div>
                       <p className="text-sm font-semibold">{item.productName}</p>
                       <p className="text-xs text-stone-400">
-                        {item.quantity} × {money(item.unitPriceInCents, selected.currency)}
+                        {item.quantity} × {item.listUnitPriceInCents > item.unitPriceInCents && <span className="mr-1 line-through">{money(item.listUnitPriceInCents, selected.currency)}</span>}{money(item.unitPriceInCents, selected.currency)}
                       </p>
                     </div>
                     <strong className="text-sm">{money(item.subtotalInCents, selected.currency)}</strong>
                   </div>
                 ))}
+              </div>
+              <div className="mt-4 space-y-2 border-t border-stone-100 pt-4 text-sm">
+                <div className="flex justify-between"><span className="text-stone-500">Precio de lista</span><span>{money(selected.subtotalInCents, selected.currency)}</span></div>
+                {selected.paymentDiscountInCents > 0 && <div className="flex justify-between text-emerald-700"><span>Beneficio por medio de pago</span><span>− {money(selected.paymentDiscountInCents, selected.currency)}</span></div>}
+                {selected.discountInCents > 0 && <div className="flex justify-between text-emerald-700"><span>Descuento adicional</span><span>− {money(selected.discountInCents, selected.currency)}</span></div>}
+                {selected.shippingInCents > 0 && <div className="flex justify-between"><span className="text-stone-500">Envío</span><span>{money(selected.shippingInCents, selected.currency)}</span></div>}
+                <div className="flex justify-between border-t border-stone-100 pt-2 font-bold"><span>Total</span><span>{money(selected.totalInCents, selected.currency)}</span></div>
               </div>
             </Section>
             {selected.paymentReceipt && (

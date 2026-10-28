@@ -56,6 +56,8 @@ type GrowthData = {
     sku: string;
     name: string;
     priceInCents: number;
+    bankTransferPriceInCents: number | null;
+    cashPriceInCents: number | null;
     stock: number;
     product: { name: string };
   }>;
@@ -373,6 +375,8 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
                     name: form.get("name"),
                     options: { opción: form.get("name") },
                     priceInCents: Math.round(Number(form.get("price")) * 100),
+                    bankTransferPriceInCents: form.get("bankTransferPrice") ? Math.round(Number(form.get("bankTransferPrice")) * 100) : null,
+                    cashPriceInCents: form.get("cashPrice") ? Math.round(Number(form.get("cashPrice")) * 100) : null,
                     stock: Number(form.get("stock")),
                     active: true,
                   }),
@@ -390,7 +394,9 @@ export function GrowthView({ onNavigate, role }: { onNavigate: (tab: "plan" | "p
               </select></Field>
               <Input name="sku" label="Código interno (SKU)" help="Identificador único para distinguir esta variante en tu inventario." placeholder="REM-NEG-M" />
               <Input name="name" label="Nombre de la variante" help="La opción que verá el cliente al elegir el producto." placeholder="Negro / M" />
-              <Input name="price" label="Precio en pesos" help="Precio completo de esta variante, no un recargo." placeholder="15000" type="number" step="0.01" />
+              <Input name="price" label="Precio de lista" help="Precio completo de esta variante para Mercado Pago y tarjetas." placeholder="15000" type="number" step="0.01" />
+              <Input name="bankTransferPrice" label="Precio por transferencia (opcional)" help="Dejalo vacío para usar el porcentaje general." placeholder="13500" type="number" min={0} step="0.01" required={false} />
+              <Input name="cashPrice" label="Precio en efectivo (opcional)" help="Se usa en Gestión y al retirar." placeholder="13000" type="number" min={0} step="0.01" required={false} />
               <Input name="stock" label="Unidades disponibles" help="Cantidad que tenés de esta opción. Usá 0 si no hay stock." placeholder="12" type="number" />
               <div className={styles.footer}><Button disabled={!canManage || !data.products.length}>Crear variante</Button></div>
             </form>

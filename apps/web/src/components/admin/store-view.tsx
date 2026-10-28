@@ -21,6 +21,7 @@ type Draft = {
   instagramUrl: string; facebookUrl: string; tiktokUrl: string; xUrl: string; youtubeUrl: string;
   logoUrl: string; bannerUrl: string; primaryColor: string; secondaryColor: string; fontFamily: string; borderRadius: string; announcement: string;
   bankTransferEnabled: boolean; bankName: string; bankAlias: string; bankHolder: string; bankCvu: string; bankCuit: string; bankReservationHours: string;
+  bankTransferDiscountPercentage: string; cashOnPickupEnabled: boolean; cashDiscountPercentage: string; paymentDiscountsCombinableWithCoupons: boolean;
 };
 type UpdateDraft = <Key extends keyof Draft>(key: Key, value: Draft[Key]) => void;
 
@@ -110,7 +111,19 @@ export function StoreView({ role, onOpenPlan, onStoreUpdated, onSectionChange, i
         body = { logoUrl, bannerUrl, primaryColor: draft.primaryColor };
         if (canAdvanced) body = { ...body, secondaryColor: draft.secondaryColor, fontFamily: draft.fontFamily, borderRadius: draft.borderRadius, announcement: draft.announcement || null };
       } else {
-        body = { bankTransferEnabled: draft.bankTransferEnabled, bankName: draft.bankName || null, bankAlias: draft.bankAlias || null, bankHolder: draft.bankHolder || null, bankCvu: draft.bankCvu || null, bankCuit: draft.bankCuit || null, bankReservationHours: Number(draft.bankReservationHours) };
+        body = {
+          bankTransferEnabled: draft.bankTransferEnabled,
+          bankName: draft.bankName || null,
+          bankAlias: draft.bankAlias || null,
+          bankHolder: draft.bankHolder || null,
+          bankCvu: draft.bankCvu || null,
+          bankCuit: draft.bankCuit || null,
+          bankReservationHours: Number(draft.bankReservationHours),
+          bankTransferDiscountPercentage: Number(draft.bankTransferDiscountPercentage || 0),
+          cashOnPickupEnabled: draft.cashOnPickupEnabled,
+          cashDiscountPercentage: Number(draft.cashDiscountPercentage || 0),
+          paymentDiscountsCombinableWithCoupons: draft.paymentDiscountsCombinableWithCoupons,
+        };
       }
       setSaveStage("saving");
       const response = await apiRequest<{ store: Store; features: string[] }>("/admin/store", { method: "PATCH", body: JSON.stringify(body) });
@@ -222,8 +235,13 @@ function PaymentsSection({ busy, canManage, draft, mercadoPago, onConnect, onDis
         <Field label="CVU o CBU" help="Número completo de la cuenta; es opcional si usás alias." example="Ejemplo: 0000003100012345678901"><input inputMode="numeric" value={draft.bankCvu} onChange={(event) => onUpdate("bankCvu", event.target.value)} /></Field>
         <Field label="CUIT" help="Identificación fiscal del titular." example="Ejemplo: 20-12345678-9"><input value={draft.bankCuit} onChange={(event) => onUpdate("bankCuit", event.target.value)} /></Field>
         <Field label="Tiempo para pagar" help="Horas durante las que se reserva el stock." example="Recomendado: 24 horas"><input min="1" max="168" type="number" value={draft.bankReservationHours} onChange={(event) => onUpdate("bankReservationHours", event.target.value)} /></Field>
+        <Field className="sm:col-span-2" label="Descuento general por transferencia" help="Se aplica cuando un producto no tiene un precio especial propio." example="Ingresá 10 para ofrecer 10% menos."><input min="0" max="90" type="number" value={draft.bankTransferDiscountPercentage} onChange={(event) => onUpdate("bankTransferDiscountPercentage", event.target.value)} /></Field>
       </div>}
     </div>
+    <div className="mt-5 rounded-2xl border border-[#e5dfe7] p-5"><div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><Landmark className="h-5 w-5" /></span><div className="flex-1"><p className="text-sm font-semibold text-[#302433]">Efectivo al retirar</p><p className="mt-1 text-xs leading-5 text-[#8c7f90]">Solo aparece cuando el comprador elige retiro en un local. El pedido queda pendiente hasta que registres el cobro.</p></div><button aria-pressed={draft.cashOnPickupEnabled} className={`relative h-6 w-11 shrink-0 rounded-full transition ${draft.cashOnPickupEnabled ? "bg-[#6E3482]" : "bg-[#d8d0da]"}`} onClick={() => onUpdate("cashOnPickupEnabled", !draft.cashOnPickupEnabled)} type="button"><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${draft.cashOnPickupEnabled ? "left-6" : "left-1"}`} /></button></div>
+      {draft.cashOnPickupEnabled && <div className="mt-6 border-t border-[#eee9ef] pt-6"><Field label="Descuento general en efectivo" help="Se usa cuando el producto no tiene un precio en efectivo personalizado." example="Ingresá 15 para ofrecer 15% menos."><input min="0" max="90" type="number" value={draft.cashDiscountPercentage} onChange={(event) => onUpdate("cashDiscountPercentage", event.target.value)} /></Field></div>}
+    </div>
+    <label className="mt-5 flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-[#e5dfe7] bg-[#fbfafc] p-5"><span><strong className="block text-sm text-[#302433]">Combinar precios especiales con cupones</strong><span className="mt-1 block text-xs leading-5 text-[#8c7f90]">Si lo desactivás, un pedido con cupón utilizará precios de lista y solamente el descuento del cupón.</span></span><input checked={draft.paymentDiscountsCombinableWithCoupons} className="mt-1 h-5 w-5 accent-[#6E3482]" onChange={(event) => onUpdate("paymentDiscountsCombinableWithCoupons", event.target.checked)} type="checkbox" /></label>
   </div>;
 }
 
@@ -237,5 +255,5 @@ function Field({ label, help, example, className = "", children }: { label: stri
 }
 function createDraft(store: Store): Draft {
   const settings = store.settings;
-  return { name: store.name, description: settings?.description ?? "", contactEmail: settings?.contactEmail ?? "", emailFromName: settings?.emailFromName ?? "", whatsapp: settings?.whatsapp ?? "", instagramUrl: settings?.instagramUrl ?? "", facebookUrl: settings?.facebookUrl ?? "", tiktokUrl: settings?.tiktokUrl ?? "", xUrl: settings?.xUrl ?? "", youtubeUrl: settings?.youtubeUrl ?? "", currency: settings?.currency ?? "ARS", logoUrl: settings?.logoUrl ?? "", bannerUrl: settings?.bannerUrl ?? "", primaryColor: settings?.primaryColor ?? "#6E3482", secondaryColor: settings?.secondaryColor ?? "#49225B", fontFamily: settings?.fontFamily ?? "SYSTEM", borderRadius: settings?.borderRadius ?? "MEDIUM", announcement: settings?.announcement ?? "", bankTransferEnabled: settings?.bankTransferEnabled ?? false, bankName: settings?.bankName ?? "", bankAlias: settings?.bankAlias ?? "", bankHolder: settings?.bankHolder ?? "", bankCvu: settings?.bankCvu ?? "", bankCuit: settings?.bankCuit ?? "", bankReservationHours: String(settings?.bankReservationHours ?? 24) };
+  return { name: store.name, description: settings?.description ?? "", contactEmail: settings?.contactEmail ?? "", emailFromName: settings?.emailFromName ?? "", whatsapp: settings?.whatsapp ?? "", instagramUrl: settings?.instagramUrl ?? "", facebookUrl: settings?.facebookUrl ?? "", tiktokUrl: settings?.tiktokUrl ?? "", xUrl: settings?.xUrl ?? "", youtubeUrl: settings?.youtubeUrl ?? "", currency: settings?.currency ?? "ARS", logoUrl: settings?.logoUrl ?? "", bannerUrl: settings?.bannerUrl ?? "", primaryColor: settings?.primaryColor ?? "#6E3482", secondaryColor: settings?.secondaryColor ?? "#49225B", fontFamily: settings?.fontFamily ?? "SYSTEM", borderRadius: settings?.borderRadius ?? "MEDIUM", announcement: settings?.announcement ?? "", bankTransferEnabled: settings?.bankTransferEnabled ?? false, bankName: settings?.bankName ?? "", bankAlias: settings?.bankAlias ?? "", bankHolder: settings?.bankHolder ?? "", bankCvu: settings?.bankCvu ?? "", bankCuit: settings?.bankCuit ?? "", bankReservationHours: String(settings?.bankReservationHours ?? 24), bankTransferDiscountPercentage: String(settings?.bankTransferDiscountPercentage ?? 0), cashOnPickupEnabled: settings?.cashOnPickupEnabled ?? false, cashDiscountPercentage: String(settings?.cashDiscountPercentage ?? 0), paymentDiscountsCombinableWithCoupons: settings?.paymentDiscountsCombinableWithCoupons ?? true };
 }

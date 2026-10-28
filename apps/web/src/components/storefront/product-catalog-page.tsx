@@ -173,7 +173,7 @@ export function ProductCatalogPage({
         ) : (
           <div className="mt-8 grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 lg:grid-cols-3 xl:grid-cols-4">
             {catalog.products.map((product) => (
-              <ProductCard currency={store.settings?.currency ?? "ARS"} key={product.id} primaryColor={primaryColor} product={product} storeSlug={store.slug} />
+              <ProductCard currency={store.settings?.currency ?? "ARS"} key={product.id} primaryColor={primaryColor} product={product} settings={store.settings} storeSlug={store.slug} />
             ))}
           </div>
         )}

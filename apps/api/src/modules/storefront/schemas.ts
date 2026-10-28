@@ -82,7 +82,7 @@ export const checkoutSchema = z
       .min(1)
       .max(50),
     paymentMethod: z
-      .enum(["BANK_TRANSFER", "MERCADO_PAGO"])
+      .enum(["BANK_TRANSFER", "MERCADO_PAGO", "CASH"])
       .default("BANK_TRANSFER"),
     couponCode: z
       .string()

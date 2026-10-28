@@ -21,6 +21,7 @@ type PublicOrder = {
   currency: string;
   subtotalInCents: number;
   discountInCents: number;
+  paymentDiscountInCents: number;
   shippingInCents: number;
   totalInCents: number;
   shippingAddress: string | null;
@@ -39,7 +40,9 @@ type PublicOrder = {
     productName: string;
     variantName: string | null;
     quantity: number;
+    listUnitPriceInCents: number;
     unitPriceInCents: number;
+    paymentDiscountInCents: number;
     subtotalInCents: number;
     image: string | null;
     productSlug: string | null;
@@ -527,7 +530,7 @@ function OrderSummary({ order, slug }: { order: PublicOrder; slug: string }) {
                 </p>
                 <p className="mt-1 text-xs text-stone-400">
                   {item.variantName ? `${item.variantName} · ` : ""}
-                  {item.quantity} × {formatMoney(item.unitPriceInCents, order.currency)}
+                  {item.quantity} × {item.listUnitPriceInCents > item.unitPriceInCents && <span className="mr-1 line-through">{formatMoney(item.listUnitPriceInCents, order.currency)}</span>}{formatMoney(item.unitPriceInCents, order.currency)}
                 </p>
               </div>
               <p className="text-sm font-semibold">
@@ -560,6 +563,12 @@ function OrderSummary({ order, slug }: { order: PublicOrder; slug: string }) {
           <SummaryRow
             label="Descuento"
             value={`− ${formatMoney(order.discountInCents, order.currency)}`}
+          />
+        )}
+        {order.paymentDiscountInCents > 0 && (
+          <SummaryRow
+            label="Beneficio por medio de pago"
+            value={`− ${formatMoney(order.paymentDiscountInCents, order.currency)}`}
           />
         )}
         <SummaryRow

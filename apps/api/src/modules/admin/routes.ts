@@ -315,9 +315,21 @@ async function ensureCategoryBelongsToTenant(
     throw new HttpError(400, "La categoría no pertenece a la tienda activa");
 }
 
+function assertSpecialPrices(input: {
+  priceInCents: number;
+  bankTransferPriceInCents?: number | null;
+  cashPriceInCents?: number | null;
+}) {
+  if (input.bankTransferPriceInCents !== null && input.bankTransferPriceInCents !== undefined && input.bankTransferPriceInCents > input.priceInCents)
+    throw new HttpError(400, "El precio por transferencia no puede superar al precio de lista");
+  if (input.cashPriceInCents !== null && input.cashPriceInCents !== undefined && input.cashPriceInCents > input.priceInCents)
+    throw new HttpError(400, "El precio en efectivo no puede superar al precio de lista");
+}
+
 adminRouter.post("/products", canManage, async (request, response) => {
   const { tenant } = getAuthContext(request);
   const input = createProductSchema.parse(request.body);
+  assertSpecialPrices(input);
   await ensureCategoryBelongsToTenant(tenant.id, input.categoryId);
 
   try {
@@ -365,6 +377,11 @@ adminRouter.patch("/products/:id", canManage, async (request, response) => {
     where: { id, tenantId: tenant.id },
   });
   if (!existing) throw new HttpError(404, "Producto no encontrado");
+  assertSpecialPrices({
+    priceInCents: input.priceInCents ?? existing.priceInCents,
+    bankTransferPriceInCents: input.bankTransferPriceInCents === undefined ? existing.bankTransferPriceInCents : input.bankTransferPriceInCents,
+    cashPriceInCents: input.cashPriceInCents === undefined ? existing.cashPriceInCents : input.cashPriceInCents,
+  });
   await ensureCategoryBelongsToTenant(tenant.id, input.categoryId);
 
   try {

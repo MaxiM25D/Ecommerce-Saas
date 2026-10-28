@@ -261,7 +261,7 @@ test("gestión registra una venta local, descuenta stock y lo repone al anular",
   const tenant = await database.tenant.findUniqueOrThrow({ where: { slug: ownerSlug } });
   const product = await database.product.create({ data: {
     tenantId: tenant.id, sku: "LOCAL-001", slug: "producto-local", name: "Producto del local",
-    priceInCents: 100_000, stock: 8, active: true,
+    priceInCents: 100_000, cashPriceInCents: 90_000, stock: 8, active: true,
   } });
 
   const created = await staffAgent.post("/api/admin/management/sales").send({
@@ -273,7 +273,12 @@ test("gestión registra una venta local, descuenta stock y lo repone al anular",
   });
   assert.equal(created.status, 201);
   assert.equal(created.body.sale.channel, "LOCAL");
-  assert.equal(created.body.sale.totalInCents, 180_000);
+  assert.equal(created.body.sale.subtotalInCents, 200_000);
+  assert.equal(created.body.sale.paymentDiscountInCents, 20_000);
+  assert.equal(created.body.sale.discountInCents, 18_000);
+  assert.equal(created.body.sale.totalInCents, 162_000);
+  assert.equal(created.body.sale.items[0].listUnitPriceInCents, 100_000);
+  assert.equal(created.body.sale.items[0].unitPriceInCents, 90_000);
   assert.equal((await database.product.findUniqueOrThrow({ where: { id: product.id } })).stock, 6);
   assert.equal(await database.stockMovement.count({ where: { orderId: created.body.sale.id, type: "LOCAL_SALE" } }), 1);
 

@@ -36,6 +36,7 @@ import {
 } from "../../services/account-tokens.js";
 import { requireCustomerSession } from "../../services/customer-auth.js";
 import { calculateShippingQuotes } from "../../services/shipping-quotes.js";
+import { applyPaymentPricing } from "../../services/payment-pricing.js";
 
 export const storefrontRouter = Router();
 
@@ -47,6 +48,8 @@ const productSelection = {
   description: true,
   images: true,
   priceInCents: true,
+  bankTransferPriceInCents: true,
+  cashPriceInCents: true,
   stock: true,
   brand: true,
   tags: true,
@@ -60,6 +63,8 @@ const productSelection = {
       name: true,
       options: true,
       priceInCents: true,
+      bankTransferPriceInCents: true,
+      cashPriceInCents: true,
       stock: true,
     },
   },
@@ -83,6 +88,10 @@ const publicSettingsSelection = {
   youtubeUrl: true,
   currency: true,
   bankTransferEnabled: true,
+  bankTransferDiscountPercentage: true,
+  cashOnPickupEnabled: true,
+  cashDiscountPercentage: true,
+  paymentDiscountsCombinableWithCoupons: true,
   shippingPolicy: true,
   returnPolicy: true,
 } as const;
@@ -223,6 +232,7 @@ storefrontRouter.get("/:slug", async (request, response) => {
         mercadoPago: Boolean(
           ownerVerified && mercadoPagoConnection && store.settings?.currency === "ARS",
         ),
+        cashOnPickup: ownerVerified && Boolean(store.settings?.cashOnPickupEnabled),
       },
     },
   });
@@ -602,6 +612,7 @@ storefrontRouter.get(
           mercadoPago: Boolean(
             ownerVerified && mercadoPagoConnection && store.settings?.currency === "ARS",
           ),
+          cashOnPickup: ownerVerified && Boolean(store.settings?.cashOnPickupEnabled),
         },
       },
       product,
@@ -828,6 +839,14 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             "Mercado Pago está disponible solamente para pedidos en ARS",
           );
         }
+        if (
+          input.paymentMethod === "CASH" &&
+          (!tenant.settings?.cashOnPickupEnabled || input.fulfillmentType !== "PICKUP")
+        )
+          throw new HttpError(
+            409,
+            "El pago en efectivo está disponible solamente para retiro en local",
+          );
 
         await transaction.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenant.id} FOR UPDATE`;
 
@@ -850,6 +869,8 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             name: true,
             categoryId: true,
             priceInCents: true,
+            bankTransferPriceInCents: true,
+            cashPriceInCents: true,
             stock: true,
             weightInGrams: true,
             widthInMm: true,
@@ -880,6 +901,8 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
                 sku: true,
                 name: true,
                 priceInCents: true,
+                bankTransferPriceInCents: true,
+                cashPriceInCents: true,
                 stock: true,
                 weightInGrams: true,
                 widthInMm: true,
@@ -908,7 +931,7 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
           if (variant && variant.productId !== product.id)
             throw new HttpError(409, "La variante no pertenece al producto");
           const availableStock = variant?.stock ?? product.stock;
-          const priceInCents = variant?.priceInCents ?? product.priceInCents;
+          const listUnitPriceInCents = variant?.priceInCents ?? product.priceInCents;
           if (availableStock < item.quantity) {
             throw new HttpError(
               409,
@@ -919,9 +942,15 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             product,
             variant,
             sku: variant?.sku ?? product.sku,
-            priceInCents,
+            listUnitPriceInCents,
+            bankTransferPriceInCents: variant
+              ? variant.bankTransferPriceInCents ?? product.bankTransferPriceInCents
+              : product.bankTransferPriceInCents,
+            cashPriceInCents: variant
+              ? variant.cashPriceInCents ?? product.cashPriceInCents
+              : product.cashPriceInCents,
             quantity: item.quantity,
-            subtotalInCents: priceInCents * item.quantity,
+            subtotalInCents: listUnitPriceInCents * item.quantity,
           };
         });
 
@@ -998,11 +1027,29 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
               coupon.usedCount >= coupon.maximumUses))
         )
           throw new HttpError(409, "El cupón ya no está disponible");
-        const discountInCents = coupon
+        const couponDiscountInCents = coupon
           ? coupon.type === "PERCENTAGE"
             ? Math.floor((subtotalInCents * coupon.value) / 100)
             : Math.min(subtotalInCents, coupon.value)
           : 0;
+        const pricedLines = applyPaymentPricing({
+          lines,
+          paymentMethod: input.paymentMethod,
+          settings: {
+            bankTransferDiscountPercentage: tenant.settings?.bankTransferDiscountPercentage ?? 0,
+            cashDiscountPercentage: tenant.settings?.cashDiscountPercentage ?? 0,
+            paymentDiscountsCombinableWithCoupons: tenant.settings?.paymentDiscountsCombinableWithCoupons ?? true,
+          },
+          hasCoupon: Boolean(coupon),
+        });
+        const paymentDiscountInCents = Math.min(
+          subtotalInCents,
+          pricedLines.reduce((total, line) => total + line.paymentDiscountInCents, 0),
+        );
+        const discountInCents = Math.min(
+          couponDiscountInCents,
+          Math.max(0, subtotalInCents - paymentDiscountInCents),
+        );
         const pickupLocation = input.fulfillmentType === "PICKUP"
           ? await transaction.pickupLocation.findFirst({
               where: { id: input.pickupLocationId!, tenantId: tenant.id, active: true },
@@ -1028,7 +1075,10 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
           : null;
         if (input.shippingMethodId && !shipping)
           throw new HttpError(409, "El método de envío ya no está disponible");
-        const merchandiseAfterDiscount = Math.max(0, subtotalInCents - discountInCents);
+        const merchandiseAfterDiscount = Math.max(
+          0,
+          subtotalInCents - discountInCents - paymentDiscountInCents,
+        );
         const shippingQuoteResult = shipping ? calculateShippingQuotes({
           zones: await transaction.shippingZone.findMany({
             where: { tenantId: tenant.id, active: true },
@@ -1066,7 +1116,7 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
           : null;
         const totalInCents = Math.max(
           0,
-          subtotalInCents - discountInCents + shippingInCents,
+          subtotalInCents - discountInCents - paymentDiscountInCents + shippingInCents,
         );
         if (coupon)
           await transaction.coupon.update({
@@ -1074,7 +1124,7 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             data: { usedCount: { increment: 1 } },
           });
         const reservationMinutes =
-          input.paymentMethod === "BANK_TRANSFER"
+          input.paymentMethod === "BANK_TRANSFER" || input.paymentMethod === "CASH"
             ? (tenant.settings?.bankReservationHours ?? 24) * 60
             : 30;
     const order = await transaction.order.create({
@@ -1096,6 +1146,13 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             currency: tenant.settings?.currency ?? "ARS",
             subtotalInCents,
             discountInCents,
+            paymentDiscountInCents,
+            paymentPricingSnapshot: {
+              method: input.paymentMethod,
+              bankTransferDiscountPercentage: tenant.settings?.bankTransferDiscountPercentage ?? 0,
+              cashDiscountPercentage: tenant.settings?.cashDiscountPercentage ?? 0,
+              combinableWithCoupons: tenant.settings?.paymentDiscountsCombinableWithCoupons ?? true,
+            },
             couponCode: coupon?.code,
             shippingInCents,
             shippingMethod: shipping?.name,
@@ -1132,7 +1189,7 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
     });
     await transaction.cart.updateMany({ where: { tenantId: tenant.id, recoveryEmail: customer.email, status: "ABANDONED" }, data: { status: "CONVERTED", recoveredAt: new Date() } });
         await transaction.orderItem.createMany({
-          data: lines.map((line) => ({
+          data: pricedLines.map((line) => ({
             tenantId: tenant.id,
             orderId: order.id,
             productId: line.product.id,
@@ -1141,8 +1198,10 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
             productName: line.product.name,
             variantName: line.variant?.name,
             quantity: line.quantity,
-            unitPriceInCents: line.priceInCents,
-            subtotalInCents: line.subtotalInCents,
+            listUnitPriceInCents: line.listUnitPriceInCents,
+            unitPriceInCents: line.unitPriceInCents,
+            paymentDiscountInCents: line.paymentDiscountInCents,
+            subtotalInCents: line.unitPriceInCents * line.quantity,
           })),
         });
         await transaction.paymentAttempt.create({
@@ -1178,7 +1237,12 @@ storefrontRouter.post("/:slug/orders", checkoutLimiter, async (request, response
                   cuit: tenant.settings?.bankCuit ?? null,
                   reservationHours: tenant.settings?.bankReservationHours ?? 24,
                 }
-              : { method: "MERCADO_PAGO" as const },
+              : input.paymentMethod === "CASH"
+                ? {
+                    method: "CASH" as const,
+                    reservationHours: tenant.settings?.bankReservationHours ?? 24,
+                  }
+                : { method: "MERCADO_PAGO" as const },
         };
       },
       { isolationLevel: "Serializable" },
@@ -1242,6 +1306,7 @@ storefrontRouter.get("/:slug/orders/:orderId", async (request, response) => {
       currency: order.currency,
       subtotalInCents: order.subtotalInCents,
       discountInCents: order.discountInCents,
+      paymentDiscountInCents: order.paymentDiscountInCents,
       shippingInCents: order.shippingInCents,
       totalInCents: order.totalInCents,
       shippingAddress: order.shippingAddress,
@@ -1269,7 +1334,9 @@ storefrontRouter.get("/:slug/orders/:orderId", async (request, response) => {
         productName: item.productName,
         variantName: item.variantName,
         quantity: item.quantity,
+        listUnitPriceInCents: item.listUnitPriceInCents,
         unitPriceInCents: item.unitPriceInCents,
+        paymentDiscountInCents: item.paymentDiscountInCents,
         subtotalInCents: item.subtotalInCents,
         image: item.product?.images[0] ?? null,
         productSlug: item.product?.slug ?? null,

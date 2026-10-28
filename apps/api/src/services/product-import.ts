@@ -17,6 +17,8 @@ type ParsedProduct = {
     name: string;
     description: string | null;
     priceInCents: number;
+    bankTransferPriceInCents: number | null;
+    cashPriceInCents: number | null;
     stock: number;
     images: string[];
     active: boolean;
@@ -52,7 +54,9 @@ const headerAliases: Record<string, string> = {
   nombre: "name", name: "name", producto: "name",
   slug: "slug", url: "slug",
   descripcion: "description", description: "description",
-  precio: "price", price: "price",
+  precio: "price", precio_lista: "price", price: "price", list_price: "price",
+  precio_transferencia: "bankTransferPrice", bank_transfer_price: "bankTransferPrice",
+  precio_efectivo: "cashPrice", cash_price: "cashPrice",
   stock: "stock", inventario: "stock",
   categoria: "category", category: "category",
   marca: "brand", brand: "brand",
@@ -182,6 +186,8 @@ async function parseProducts(file: Express.Multer.File): Promise<{ products: Par
     const name = text(source.name);
     const slug = slugify(text(source.slug) || name);
     const price = parseDecimal(source.price);
+    const bankTransferPrice = parseDecimal(source.bankTransferPrice);
+    const cashPrice = parseDecimal(source.cashPrice);
     const stock = parseDecimal(source.stock);
     const active = parseBoolean(source.active, true);
     const featured = parseBoolean(source.featured, false);
@@ -196,6 +202,8 @@ async function parseProducts(file: Express.Multer.File): Promise<{ products: Par
       sku, slug, name,
       description: text(source.description) || null,
       priceInCents: price === null ? -1 : Math.round(price * 100),
+      bankTransferPriceInCents: bankTransferPrice === null ? null : Math.round(bankTransferPrice * 100),
+      cashPriceInCents: cashPrice === null ? null : Math.round(cashPrice * 100),
       stock: stock === null ? -1 : stock,
       images, active: active ?? true,
       brand: text(source.brand) || null,
@@ -212,6 +220,8 @@ async function parseProducts(file: Express.Multer.File): Promise<{ products: Par
     }
     if (active === null) errors.push({ row: rowNumber, field: "activo", message: "Usá Sí/No, True/False o 1/0" });
     if (featured === null) errors.push({ row: rowNumber, field: "destacado", message: "Usá Sí/No, True/False o 1/0" });
+    if (price !== null && bankTransferPrice !== null && bankTransferPrice > price) errors.push({ row: rowNumber, field: "precio_transferencia", message: "No puede superar al precio de lista" });
+    if (price !== null && cashPrice !== null && cashPrice > price) errors.push({ row: rowNumber, field: "precio_efectivo", message: "No puede superar al precio de lista" });
     if (stock !== null && !Number.isInteger(stock)) errors.push({ row: rowNumber, field: "stock", message: "El stock debe ser un número entero" });
     if (!Number.isInteger(featuredOrder)) errors.push({ row: rowNumber, field: "orden_destacado", message: "El orden debe ser un número entero" });
     if (seenSkus.has(sku)) errors.push({ row: rowNumber, field: "sku", message: "El SKU está repetido dentro del archivo" });
@@ -228,6 +238,8 @@ async function parseProducts(file: Express.Multer.File): Promise<{ products: Par
         name: result.data.name,
         description: result.data.description ?? null,
         priceInCents: result.data.priceInCents,
+        bankTransferPriceInCents: result.data.bankTransferPriceInCents ?? null,
+        cashPriceInCents: result.data.cashPriceInCents ?? null,
         stock: result.data.stock,
         images: result.data.images,
         active: result.data.active,

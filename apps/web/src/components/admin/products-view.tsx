@@ -127,6 +127,8 @@ export function ProductsView({ onOpenCategories, role }: { onOpenCategories: () 
         name,
         description: form.get("description") || null,
         priceInCents: Math.round(Number(form.get("price")) * 100),
+        bankTransferPriceInCents: form.get("bankTransferPrice") ? Math.round(Number(form.get("bankTransferPrice")) * 100) : null,
+        cashPriceInCents: form.get("cashPrice") ? Math.round(Number(form.get("cashPrice")) * 100) : null,
         stock: Number(form.get("stock")),
         images: [...images, ...uploadedImages].slice(0, 8),
         active: form.get("active") === "on",
@@ -195,7 +197,7 @@ export function ProductsView({ onOpenCategories, role }: { onOpenCategories: () 
     finally { setImportBusy(false); }
   }
   function downloadTemplate() {
-    const csv = "SKU;Nombre;Precio;Stock;Slug;Descripción;Categoría;Marca;Etiquetas;Imágenes;Activo;Destacado;Orden destacado;Peso kg;Ancho cm;Alto cm;Largo cm\r\nREM-001;Remera clásica;25000;20;remera-clasica;Algodón peinado;Remeras;Mi marca;algodón|unisex;https://ejemplo.com/remera.jpg;Sí;No;0;0,3;25;3;35\r\n";
+    const csv = "SKU;Nombre;Precio lista;Precio transferencia;Precio efectivo;Stock;Slug;Descripción;Categoría;Marca;Etiquetas;Imágenes;Activo;Destacado;Orden destacado;Peso kg;Ancho cm;Alto cm;Largo cm\r\nREM-001;Remera clásica;25000;22500;21500;20;remera-clasica;Algodón peinado;Remeras;Mi marca;algodón|unisex;https://ejemplo.com/remera.jpg;Sí;No;0;0,3;25;3;35\r\n";
     const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "plantilla-productos-infinityshop.csv"; anchor.click(); URL.revokeObjectURL(url);
   }
@@ -375,12 +377,20 @@ function ProductForm({ categories, editing, error, busy, imageFileNames, imagePr
 
       <FormSection title="2. Precio e inventario" help="Indicá cuánto cuesta y cuántas unidades hay disponibles.">
       <div className="grid gap-5 sm:grid-cols-2">
-        <ProductField defaultValue={editing ? String(editing.priceInCents / 100) : undefined} label="Precio en pesos" help="Ingresá el precio final que verá el cliente, sin puntos de miles." example="Ejemplo: 45000" min="0" name="price" placeholder="45000" step="0.01" type="number" />
+        <ProductField defaultValue={editing ? String(editing.priceInCents / 100) : undefined} label="Precio de lista" help="Se usa para Mercado Pago, tarjetas y como precio principal." example="Ejemplo: 45000" min="0" name="price" placeholder="45000" step="0.01" type="number" />
         <ProductField defaultValue={editing ? String(editing.stock) : undefined} label="Unidades disponibles" help="El sistema descuenta stock cuando se reserva o confirma una compra." example="Ejemplo: 10" min="0" name="stock" placeholder="10" step="1" type="number" />
       </div>
       <div className="grid gap-5 sm:grid-cols-2">
         <ProductField defaultValue={editing?.brand ?? ""} label="Marca (opcional)" help="Permite identificar el fabricante o la línea del producto." example="Ejemplo: InfinityDev" name="brand" placeholder="InfinityDev" required={false} />
         <ProductField defaultValue={editing?.tags.join(", ") ?? ""} label="Etiquetas (opcional)" help="Separalas con comas. Sirven para destacar características." example="Ejemplo: cuero, negro, artesanal" name="tags" placeholder="cuero, negro, artesanal" required={false} />
+      </div>
+      <div className="mt-5 rounded-2xl border border-[#ddcfe3] bg-[#fbf8fc] p-5">
+        <h4 className="text-sm font-semibold text-[#4b3a50]">Precios especiales opcionales</h4>
+        <p className="mt-1 text-xs leading-5 text-[#807384]">Dejalos vacíos para usar el porcentaje general configurado en Mi tienda → Cobros.</p>
+        <div className="mt-4 grid gap-5 sm:grid-cols-2">
+          <ProductField defaultValue={editing?.bankTransferPriceInCents !== null && editing?.bankTransferPriceInCents !== undefined ? String(editing.bankTransferPriceInCents / 100) : undefined} label="Precio por transferencia" help="Debe ser igual o menor al precio de lista." example="Ejemplo: 42000" min="0" name="bankTransferPrice" placeholder="Usar descuento general" required={false} step="0.01" type="number" />
+          <ProductField defaultValue={editing?.cashPriceInCents !== null && editing?.cashPriceInCents !== undefined ? String(editing.cashPriceInCents / 100) : undefined} label="Precio en efectivo" help="Se aplica en Gestión y al retirar, si está habilitado." example="Ejemplo: 40000" min="0" name="cashPrice" placeholder="Usar descuento general" required={false} step="0.01" type="number" />
+        </div>
       </div>
       </FormSection>
 

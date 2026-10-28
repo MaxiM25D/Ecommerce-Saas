@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Store,
   Truck,
+  WalletCards,
 } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
@@ -21,6 +22,7 @@ import { StorefrontError, StorefrontLoading } from "./catalog-page";
 import { ReceiptUploader } from "./receipt-uploader";
 import { formatMoney, ProductImage, StorefrontShell } from "./storefront-shell";
 import type { CheckoutResult, PublicStore, StorefrontCustomer } from "./types";
+import { cartPaymentDiscount, type CheckoutPaymentMethod } from "./payment-pricing";
 
 type ShippingQuote = {
   id: string;
@@ -97,9 +99,13 @@ function Checkout({ store }: { store: PublicStore }) {
   const [savedCartEmail, setSavedCartEmail] = useState("");
   const [customer, setCustomer] = useState<StorefrontCustomer | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<
-    "BANK_TRANSFER" | "MERCADO_PAGO"
-  >(store.paymentMethods.mercadoPago ? "MERCADO_PAGO" : "BANK_TRANSFER");
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>(
+    store.paymentMethods.mercadoPago
+      ? "MERCADO_PAGO"
+      : store.paymentMethods.bankTransfer
+        ? "BANK_TRANSFER"
+        : "CASH",
+  );
   const currency = store.settings?.currency ?? "ARS";
   const selectedShippingMethod = shippingQuotes.find(({ id }) => id === shippingMethodId);
   const shippingAddress = [
@@ -111,9 +117,17 @@ function Checkout({ store }: { store: PublicStore }) {
   const shippingInCents = fulfillmentType === "DELIVERY"
     ? selectedShippingMethod?.priceInCents ?? 0
     : 0;
+  const paymentDiscountInCents = Math.min(
+    subtotalInCents,
+    cartPaymentDiscount(items, paymentMethod, store.settings, discountInCents > 0),
+  );
+  const appliedCouponDiscountInCents = Math.min(
+    discountInCents,
+    Math.max(0, subtotalInCents - paymentDiscountInCents),
+  );
   const finalTotalInCents = Math.max(
     0,
-    subtotalInCents - discountInCents + shippingInCents,
+    subtotalInCents - appliedCouponDiscountInCents - paymentDiscountInCents + shippingInCents,
   );
 
   useEffect(() => {
@@ -151,7 +165,7 @@ function Checkout({ store }: { store: PublicStore }) {
             variantId: item.selectedVariant?.id ?? null,
             quantity: item.quantity,
           })),
-          discountInCents,
+          discountInCents: appliedCouponDiscountInCents + paymentDiscountInCents,
         }),
       })
         .then(({ quotes }) => {
@@ -173,7 +187,7 @@ function Checkout({ store }: { store: PublicStore }) {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [city, discountInCents, fulfillmentType, items, postalCode, province, store.slug]);
+  }, [appliedCouponDiscountInCents, city, fulfillmentType, items, paymentDiscountInCents, postalCode, province, store.slug]);
 
   function updatePostalCode(value: string) {
     setPostalCode(value);
@@ -308,7 +322,8 @@ function Checkout({ store }: { store: PublicStore }) {
       />
     );
   const hasPaymentMethod =
-    store.paymentMethods.bankTransfer || store.paymentMethods.mercadoPago;
+    store.paymentMethods.bankTransfer || store.paymentMethods.mercadoPago ||
+    (fulfillmentType === "PICKUP" && store.paymentMethods.cashOnPickup);
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-10 sm:px-6 sm:py-14 lg:px-8">
@@ -382,8 +397,8 @@ function Checkout({ store }: { store: PublicStore }) {
               <FormCard description="Elegí la alternativa que te resulte más cómoda." step="02" title="Cómo querés recibir tu compra">
                 <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${fulfillmentType === "DELIVERY" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} disabled={!deliveryAvailable} onClick={() => { setFulfillmentType("DELIVERY"); setPickupLocationId(""); setShippingMethodId((current) => shippingQuotes.some(({ id }) => id === current) ? current : shippingQuotes[0]?.id ?? ""); }} type="button"><Truck className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Envío a domicilio</strong><span className="mt-1 block text-xs leading-5 text-stone-500">{deliveryAvailable ? "Consultá opciones, precio y plazo antes de pagar." : "La tienda todavía no configuró entregas a domicilio."}</span></span></button>
-                    {pickupLocations.length > 0 && <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${fulfillmentType === "PICKUP" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} onClick={() => { setFulfillmentType("PICKUP"); setShippingMethodId(""); setShippingQuotes([]); setShippingQuoteError(""); setPickupLocationId(pickupLocations[0]?.id ?? ""); }} type="button"><Store className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Retiro en local</strong><span className="mt-1 block text-xs leading-5 text-stone-500">Sin costo de envío. Te avisamos cuando esté listo.</span></span></button>}
+                    <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${fulfillmentType === "DELIVERY" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} disabled={!deliveryAvailable} onClick={() => { setFulfillmentType("DELIVERY"); if (paymentMethod === "CASH") setPaymentMethod(store.paymentMethods.mercadoPago ? "MERCADO_PAGO" : "BANK_TRANSFER"); setPickupLocationId(""); setShippingMethodId((current) => shippingQuotes.some(({ id }) => id === current) ? current : shippingQuotes[0]?.id ?? ""); }} type="button"><Truck className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Envío a domicilio</strong><span className="mt-1 block text-xs leading-5 text-stone-500">{deliveryAvailable ? "Consultá opciones, precio y plazo antes de pagar." : "La tienda todavía no configuró entregas a domicilio."}</span></span></button>
+                    {pickupLocations.length > 0 && <button className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${fulfillmentType === "PICKUP" ? "border-stone-950 bg-stone-50" : "border-stone-200 bg-white"}`} onClick={() => { setFulfillmentType("PICKUP"); if (!store.paymentMethods.mercadoPago && !store.paymentMethods.bankTransfer && store.paymentMethods.cashOnPickup) setPaymentMethod("CASH"); setShippingMethodId(""); setShippingQuotes([]); setShippingQuoteError(""); setPickupLocationId(pickupLocations[0]?.id ?? ""); }} type="button"><Store className="mt-0.5 shrink-0" size={20} /><span><strong className="block text-sm">Retiro en local</strong><span className="mt-1 block text-xs leading-5 text-stone-500">Sin costo de envío. Te avisamos cuando esté listo.</span></span></button>}
                   </div>
                   {fulfillmentType === "DELIVERY" ? <>
                     <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(7rem,1fr)]">
@@ -458,7 +473,7 @@ function Checkout({ store }: { store: PublicStore }) {
                 </div>
                 {discountInCents > 0 && (
                   <p className="mt-3 text-sm font-semibold text-emerald-700">
-                    Descuento aplicado: {formatMoney(discountInCents, currency)}
+                    Descuento aplicado: {formatMoney(appliedCouponDiscountInCents, currency)}
                   </p>
                 )}
               </FormCard>
@@ -478,6 +493,14 @@ function Checkout({ store }: { store: PublicStore }) {
                       description="Recibí los datos bancarios y adjuntá el comprobante."
                       label="Transferencia bancaria"
                       onChange={() => setPaymentMethod("BANK_TRANSFER")}
+                    />
+                  )}
+                  {fulfillmentType === "PICKUP" && store.paymentMethods.cashOnPickup && (
+                    <PaymentOption
+                      checked={paymentMethod === "CASH"}
+                      description="Pagá cuando retires. La tienda confirmará el cobro en el local."
+                      label="Efectivo al retirar"
+                      onChange={() => setPaymentMethod("CASH")}
                     />
                   )}
                   {!hasPaymentMethod && (
@@ -507,7 +530,8 @@ function Checkout({ store }: { store: PublicStore }) {
         </section>
         <OrderSummary
           currency={currency}
-          discountInCents={discountInCents}
+          discountInCents={appliedCouponDiscountInCents}
+          paymentDiscountInCents={paymentDiscountInCents}
           shippingInCents={shippingInCents}
           fulfillmentType={fulfillmentType}
           shippingAddress={shippingAddress}
@@ -673,6 +697,7 @@ function PaymentOption({
 function OrderSummary({
   currency,
   discountInCents,
+  paymentDiscountInCents,
   shippingInCents,
   fulfillmentType,
   shippingAddress,
@@ -680,6 +705,7 @@ function OrderSummary({
 }: {
   currency: string;
   discountInCents: number;
+  paymentDiscountInCents: number;
   shippingInCents: number;
   fulfillmentType: "DELIVERY" | "PICKUP";
   shippingAddress: string;
@@ -725,6 +751,12 @@ function OrderSummary({
             <span>− {formatMoney(discountInCents, currency)}</span>
           </div>
         )}
+        {paymentDiscountInCents > 0 && (
+          <div className="flex justify-between text-emerald-700">
+            <span>Beneficio por medio de pago</span>
+            <span>− {formatMoney(paymentDiscountInCents, currency)}</span>
+          </div>
+        )}
         {(fulfillmentType === "DELIVERY" || fulfillmentType === "PICKUP") && (
           <div className="flex justify-between">
             <span className="text-stone-500">{fulfillmentType === "PICKUP" ? "Retiro en local" : "Envío"}</span>
@@ -737,7 +769,7 @@ function OrderSummary({
         <span className="text-sm text-stone-500">Total</span>
         <strong className="text-xl">
           {formatMoney(
-            Math.max(0, subtotalInCents - discountInCents + shippingInCents),
+            Math.max(0, subtotalInCents - discountInCents - paymentDiscountInCents + shippingInCents),
             currency,
           )}
         </strong>
@@ -755,8 +787,9 @@ function OrderConfirmation({
   store: PublicStore;
   customerLoggedIn: boolean;
 }) {
-  if (result.payment.method !== "BANK_TRANSFER") return null;
   const payment = result.payment;
+  if (payment.method === "MERCADO_PAGO") return null;
+  const isCash = payment.method === "CASH";
   const accentColor = store.settings?.primaryColor ?? "#6E3482";
   return (
     <main className="relative overflow-hidden px-5 py-10 sm:px-6 sm:py-16 lg:px-8">
@@ -781,8 +814,9 @@ function OrderConfirmation({
               Pedido #{result.order.number}
             </h1>
             <p className="mt-4 max-w-xl text-sm leading-7 text-stone-500 sm:text-base">
-              Tu compra ya está reservada. Completá la transferencia y enviá
-              el comprobante para que la tienda pueda confirmar el pago.
+              {isCash
+                ? "Tu compra ya está reservada. La tienda te avisará cuando esté lista para retirar y podrás pagar en el local."
+                : "Tu compra ya está reservada. Completá la transferencia y enviá el comprobante para que la tienda pueda confirmar el pago."}
             </p>
           </div>
           <div className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
@@ -799,11 +833,11 @@ function OrderConfirmation({
             <div className="flex items-center justify-between gap-5 border-b border-stone-100 px-6 py-5 sm:px-8">
               <div className="flex items-center gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-2xl bg-stone-100">
-                  <Landmark size={18} />
+                  {isCash ? <WalletCards size={18} /> : <Landmark size={18} />}
                 </span>
                 <div>
-                  <p className="font-semibold">Datos de transferencia</p>
-                  <p className="mt-0.5 text-xs text-stone-400">Copiá los datos sin errores</p>
+                  <p className="font-semibold">{isCash ? "Pago en el local" : "Datos de transferencia"}</p>
+                  <p className="mt-0.5 text-xs text-stone-400">{isCash ? "Aboná cuando retires tu compra" : "Copiá los datos sin errores"}</p>
                 </div>
               </div>
               <ShieldCheck className="text-emerald-600" size={21} />
@@ -814,18 +848,24 @@ function OrderConfirmation({
                 className="rounded-3xl px-5 py-5 text-white sm:px-6"
                 style={{ backgroundColor: accentColor }}
               >
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/60">Total exacto a transferir</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/60">{isCash ? "Total a pagar al retirar" : "Total exacto a transferir"}</p>
                 <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
                   {formatMoney(result.order.totalInCents, result.order.currency)}
                 </p>
               </div>
-              <dl className="mt-5 divide-y divide-stone-100">
-                {payment.bankName && <DataRow label="Banco" value={payment.bankName} />}
-                {payment.alias && <DataRow copyable label="Alias" value={payment.alias} />}
-                {payment.cvu && <DataRow copyable label="CVU" value={payment.cvu} />}
-                {payment.cuit && <DataRow copyable label="CUIT" value={payment.cuit} />}
-                {payment.holder && <DataRow label="Titular" value={payment.holder} />}
-              </dl>
+              {payment.method === "BANK_TRANSFER" ? (
+                <dl className="mt-5 divide-y divide-stone-100">
+                  {payment.bankName && <DataRow label="Banco" value={payment.bankName} />}
+                  {payment.alias && <DataRow copyable label="Alias" value={payment.alias} />}
+                  {payment.cvu && <DataRow copyable label="CVU" value={payment.cvu} />}
+                  {payment.cuit && <DataRow copyable label="CUIT" value={payment.cuit} />}
+                  {payment.holder && <DataRow label="Titular" value={payment.holder} />}
+                </dl>
+              ) : (
+                <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
+                  No necesitás pagar ahora. Esperá la confirmación de la tienda antes de acercarte al punto de retiro.
+                </p>
+              )}
             </div>
           </section>
 
@@ -833,17 +873,29 @@ function OrderConfirmation({
             <section className="rounded-[1.75rem] border border-black/[0.07] bg-[#f7f5f7] p-5 sm:p-6">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">Cómo continuar</p>
               <ol className="mt-5 space-y-4">
-                <ConfirmationStep number="1" text="Transferí el total exacto a la cuenta indicada." />
-                <ConfirmationStep number="2" text="Adjuntá una imagen o PDF del comprobante." />
-                <ConfirmationStep number="3" text="La tienda revisará el pago y actualizará tu pedido." />
+                {isCash ? (
+                  <>
+                    <ConfirmationStep number="1" text="La tienda preparará tu compra." />
+                    <ConfirmationStep number="2" text="Esperá el aviso de que está lista para retirar." />
+                    <ConfirmationStep number="3" text="Pagá el total en efectivo al retirarla." />
+                  </>
+                ) : (
+                  <>
+                    <ConfirmationStep number="1" text="Transferí el total exacto a la cuenta indicada." />
+                    <ConfirmationStep number="2" text="Adjuntá una imagen o PDF del comprobante." />
+                    <ConfirmationStep number="3" text="La tienda revisará el pago y actualizará tu pedido." />
+                  </>
+                )}
               </ol>
             </section>
-            <ReceiptUploader
-              accentColor={accentColor}
-              orderId={result.order.id}
-              orderToken={result.orderToken}
-              slug={store.slug}
-            />
+            {!isCash && (
+              <ReceiptUploader
+                accentColor={accentColor}
+                orderId={result.order.id}
+                orderToken={result.orderToken}
+                slug={store.slug}
+              />
+            )}
           </div>
         </div>
 

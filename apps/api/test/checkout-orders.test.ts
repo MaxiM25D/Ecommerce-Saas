@@ -296,6 +296,61 @@ test("el checkout aplica la zona postal más específica y usa la zona general c
   );
 });
 
+test("efectivo al retirar aplica el precio especial y no se ofrece para envío", async () => {
+  const tenant = await database.tenant.findUniqueOrThrow({ where: { slug } });
+  const category = await database.category.findFirstOrThrow({ where: { tenantId: tenant.id } });
+  const product = await database.product.create({
+    data: {
+      tenantId: tenant.id,
+      categoryId: category.id,
+      sku: "CASH-001",
+      slug: "producto-efectivo",
+      name: "Producto efectivo",
+      priceInCents: 100_000,
+      cashPriceInCents: 82_000,
+      stock: 2,
+      active: true,
+    },
+  });
+  const pickup = await database.pickupLocation.create({
+    data: { tenantId: tenant.id, name: "Local", address: "Calle 1", city: "La Rioja", province: "La Rioja", active: true },
+  });
+  await database.storeSettings.update({
+    where: { tenantId: tenant.id },
+    data: { cashOnPickupEnabled: true, cashDiscountPercentage: 5 },
+  });
+  const customer = {
+    email: "efectivo@checkout.test",
+    firstName: "Pago",
+    lastName: "Local",
+    phone: "3804000010",
+  };
+  const rejected = await request(app).post(`/api/storefront/${slug}/orders`).send({
+    customer: { ...customer, street: "Calle", streetNumber: "1", city: "La Rioja", province: "La Rioja", postalCode: "5300" },
+    items: [{ productId: product.id, quantity: 1 }],
+    paymentMethod: "CASH",
+    fulfillmentType: "DELIVERY",
+    shippingMethodId,
+  });
+  assert.equal(rejected.status, 409);
+
+  const checkout = await request(app).post(`/api/storefront/${slug}/orders`).send({
+    customer,
+    items: [{ productId: product.id, quantity: 1 }],
+    paymentMethod: "CASH",
+    fulfillmentType: "PICKUP",
+    pickupLocationId: pickup.id,
+  });
+  assert.equal(checkout.status, 201);
+  assert.equal(checkout.body.payment.method, "CASH");
+  assert.equal(checkout.body.order.totalInCents, 82_000);
+  const order = await database.order.findUniqueOrThrow({ where: { id: checkout.body.order.id }, include: { items: true } });
+  assert.equal(order.subtotalInCents, 100_000);
+  assert.equal(order.paymentDiscountInCents, 18_000);
+  assert.equal(order.items[0]?.listUnitPriceInCents, 100_000);
+  assert.equal(order.items[0]?.unitPriceInCents, 82_000);
+});
+
 test("el comprador puede retomar Mercado Pago o cancelar para elegir otro medio", async () => {
   const tenant = await database.tenant.findUniqueOrThrow({ where: { slug } });
   const category = await database.category.findFirstOrThrow({ where: { tenantId: tenant.id } });

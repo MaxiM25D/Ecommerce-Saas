@@ -5,6 +5,7 @@ import { database } from "../../database.js";
 import { HttpError } from "../../errors.js";
 import { getAuthContext, requireRoles, requireSession } from "../auth/session.js";
 import { requireWritableSubscription } from "../saas/limits.js";
+import { applyPaymentPricing } from "../../services/payment-pricing.js";
 
 const idSchema = z.string().trim().min(1).max(100);
 const saleSchema = z.object({
@@ -66,15 +67,19 @@ managementRouter.get("/catalog", async (request, response) => {
     orderBy: [{ name: "asc" }],
     take: 40,
     select: {
-      id: true, name: true, sku: true, priceInCents: true, stock: true, images: true,
+      id: true, name: true, sku: true, priceInCents: true, bankTransferPriceInCents: true, cashPriceInCents: true, stock: true, images: true,
       variants: {
         where: { active: true },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, sku: true, priceInCents: true, stock: true },
+        select: { id: true, name: true, sku: true, priceInCents: true, bankTransferPriceInCents: true, cashPriceInCents: true, stock: true },
       },
     },
   });
-  response.json({ products });
+  const pricing = await database.storeSettings.findUnique({
+    where: { tenantId: tenant.id },
+    select: { bankTransferDiscountPercentage: true, cashDiscountPercentage: true, paymentDiscountsCombinableWithCoupons: true },
+  });
+  response.json({ products, pricing: pricing ?? { bankTransferDiscountPercentage: 0, cashDiscountPercentage: 0, paymentDiscountsCombinableWithCoupons: true } });
 });
 
 managementRouter.get("/overview", async (request, response) => {
@@ -135,6 +140,21 @@ managementRouter.post("/sales", async (request, response) => {
       const existing = await transaction.order.findFirst({ where: { tenantId: auth.tenant.id, channel: "LOCAL", localSaleKey: input.operationId }, select: { id: true } });
       if (existing) return existing;
     }
+    const settings = await transaction.storeSettings.findUnique({
+      where: { tenantId: auth.tenant.id },
+      select: {
+        currency: true,
+        bankTransferDiscountPercentage: true,
+        cashDiscountPercentage: true,
+        paymentDiscountsCombinableWithCoupons: true,
+      },
+    });
+    const pricingSettings = settings ?? {
+      currency: "ARS",
+      bankTransferDiscountPercentage: 0,
+      cashDiscountPercentage: 0,
+      paymentDiscountsCombinableWithCoupons: true,
+    };
     const lines = [];
     for (const requested of merged.values()) {
       const product = await transaction.product.findFirst({
@@ -146,15 +166,29 @@ managementRouter.post("/sales", async (request, response) => {
       if (requested.variantId && !variant) throw new HttpError(404, `La variante de ${product.name} ya no está disponible`);
       const currentStock = variant?.stock ?? product.stock;
       if (currentStock < requested.quantity) throw new HttpError(409, `Stock insuficiente para ${product.name}${variant ? ` · ${variant.name}` : ""}. Disponible: ${currentStock}`);
-      lines.push({ product, variant, quantity: requested.quantity, unitPriceInCents: variant?.priceInCents ?? product.priceInCents });
+      lines.push({
+        product,
+        variant,
+        quantity: requested.quantity,
+        listUnitPriceInCents: variant?.priceInCents ?? product.priceInCents,
+        bankTransferPriceInCents: variant?.bankTransferPriceInCents ?? product.bankTransferPriceInCents,
+        cashPriceInCents: variant?.cashPriceInCents ?? product.cashPriceInCents,
+      });
     }
 
-    const subtotalInCents = lines.reduce((sum, line) => sum + line.quantity * line.unitPriceInCents, 0);
+    const pricedLines = applyPaymentPricing({
+      lines,
+      paymentMethod: input.paymentMethod,
+      settings: pricingSettings,
+      hasCoupon: false,
+    });
+    const subtotalInCents = pricedLines.reduce((sum, line) => sum + line.quantity * line.listUnitPriceInCents, 0);
+    const paymentDiscountInCents = pricedLines.reduce((sum, line) => sum + line.paymentDiscountInCents, 0);
+    const subtotalAfterPaymentPricing = subtotalInCents - paymentDiscountInCents;
     const discountInCents = input.discount.type === "PERCENTAGE"
-      ? Math.round(subtotalInCents * Math.min(input.discount.value, 100) / 100)
-      : input.discount.type === "FIXED" ? Math.min(input.discount.value, subtotalInCents) : 0;
+      ? Math.round(subtotalAfterPaymentPricing * Math.min(input.discount.value, 100) / 100)
+      : input.discount.type === "FIXED" ? Math.min(input.discount.value, subtotalAfterPaymentPricing) : 0;
     const last = await transaction.order.findFirst({ where: { tenantId: auth.tenant.id }, orderBy: { number: "desc" }, select: { number: true } });
-    const settings = await transaction.storeSettings.findUnique({ where: { tenantId: auth.tenant.id }, select: { currency: true } });
     const customerName = input.customer?.name || "Consumidor final";
     let customerId: string | null = null;
     if (input.customer?.email) {
@@ -172,13 +206,16 @@ managementRouter.post("/sales", async (request, response) => {
         tenantId: auth.tenant.id, customerId, number: (last?.number ?? 0) + 1, channel: "LOCAL", soldByUserId: auth.user.id, localSaleKey: input.operationId ?? null,
         status: "DELIVERED", paymentStatus: "APPROVED", paymentMethod: input.paymentMethod, stockStatus: "COMMITTED",
         customerName, customerEmail: input.customer?.email?.toLowerCase() ?? "", customerPhone: input.customer?.phone || null,
-        notes: input.notes || null, currency: settings?.currency ?? "ARS", subtotalInCents, discountInCents, totalInCents: subtotalInCents - discountInCents,
+        notes: input.notes || null, currency: pricingSettings.currency, subtotalInCents, discountInCents, paymentDiscountInCents,
+        paymentPricingSnapshot: { method: input.paymentMethod, lines: pricedLines.map((line) => ({ productId: line.product.id, variantId: line.variant?.id ?? null, source: line.pricingSource, listUnitPriceInCents: line.listUnitPriceInCents, unitPriceInCents: line.unitPriceInCents })) },
+        totalInCents: subtotalAfterPaymentPricing - discountInCents,
         fulfillmentType: "PICKUP",
       },
     });
-    await transaction.orderItem.createMany({ data: lines.map(({ product, variant, quantity, unitPriceInCents }) => ({
+    await transaction.orderItem.createMany({ data: pricedLines.map(({ product, variant, quantity, listUnitPriceInCents, unitPriceInCents, paymentDiscountInCents: linePaymentDiscount }) => ({
       tenantId: auth.tenant.id, orderId: created.id, productId: product.id, variantId: variant?.id ?? null, sku: variant?.sku ?? product.sku,
-      productName: product.name, variantName: variant?.name ?? null, quantity, unitPriceInCents, subtotalInCents: quantity * unitPriceInCents,
+      productName: product.name, variantName: variant?.name ?? null, quantity, listUnitPriceInCents, unitPriceInCents,
+      paymentDiscountInCents: linePaymentDiscount, subtotalInCents: quantity * unitPriceInCents,
     })) });
     await transaction.orderStatusHistory.create({ data: { tenantId: auth.tenant.id, orderId: created.id, status: "DELIVERED", changedByUserId: auth.user.id, note: "Venta registrada en el local" } });
 

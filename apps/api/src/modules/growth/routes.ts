@@ -60,6 +60,8 @@ const variantSchema = z
     name: z.string().trim().min(1).max(120),
     options: z.record(z.string(), z.string().trim().min(1).max(80)),
     priceInCents: z.number().int().min(0).max(2_000_000_000),
+    bankTransferPriceInCents: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+    cashPriceInCents: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
     stock: z.number().int().min(0).max(2_000_000_000),
     weightInGrams: z.number().int().positive().max(10_000_000).nullable().optional(),
     widthInMm: z.number().int().positive().max(1_000_000).nullable().optional(),
@@ -67,7 +69,9 @@ const variantSchema = z
     lengthInMm: z.number().int().positive().max(1_000_000).nullable().optional(),
     active: z.boolean().default(true),
   })
-  .strict();
+  .strict()
+  .refine(({ priceInCents, bankTransferPriceInCents }) => bankTransferPriceInCents === null || bankTransferPriceInCents === undefined || bankTransferPriceInCents <= priceInCents, { message: "El precio por transferencia no puede superar al precio de lista", path: ["bankTransferPriceInCents"] })
+  .refine(({ priceInCents, cashPriceInCents }) => cashPriceInCents === null || cashPriceInCents === undefined || cashPriceInCents <= priceInCents, { message: "El precio en efectivo no puede superar al precio de lista", path: ["cashPriceInCents"] });
 const shippingZoneSchema = z
   .object({
     name: z.string().trim().min(2).max(100),

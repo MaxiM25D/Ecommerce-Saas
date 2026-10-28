@@ -13,6 +13,8 @@ export type StorefrontProduct = {
   description: string | null;
   images: string[];
   priceInCents: number;
+  bankTransferPriceInCents: number | null;
+  cashPriceInCents: number | null;
   stock: number;
   brand: string | null;
   tags: string[];
@@ -23,6 +25,8 @@ export type StorefrontProduct = {
     name: string;
     options: Record<string, string>;
     priceInCents: number;
+    bankTransferPriceInCents: number | null;
+    cashPriceInCents: number | null;
     stock: number;
   }>;
   category: Pick<StorefrontCategory, "id" | "name" | "slug"> | null;
@@ -48,12 +52,17 @@ export type PublicStore = {
     xUrl: string | null;
     youtubeUrl: string | null;
     currency: string;
+    bankTransferDiscountPercentage: number;
+    cashOnPickupEnabled: boolean;
+    cashDiscountPercentage: number;
+    paymentDiscountsCombinableWithCoupons: boolean;
     shippingPolicy: string | null;
     returnPolicy: string | null;
   } | null;
   paymentMethods: {
     bankTransfer: boolean;
     mercadoPago: boolean;
+    cashOnPickup: boolean;
   };
   shippingZones: Array<{
     id: string;
@@ -117,5 +126,9 @@ export type CheckoutResult = {
         method: "MERCADO_PAGO";
         preferenceId: string;
         checkoutUrl: string;
+      }
+    | {
+        method: "CASH";
+        reservationHours: number;
       };
 };

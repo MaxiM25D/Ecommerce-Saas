@@ -15,6 +15,8 @@ export type Product = {
   name: string;
   description: string | null;
   priceInCents: number;
+  bankTransferPriceInCents: number | null;
+  cashPriceInCents: number | null;
   stock: number;
   images: string[];
   active: boolean;
@@ -57,6 +59,10 @@ export type Store = {
     bankCvu: string | null;
     bankCuit: string | null;
     bankTransferEnabled: boolean;
+    bankTransferDiscountPercentage: number;
+    cashOnPickupEnabled: boolean;
+    cashDiscountPercentage: number;
+    paymentDiscountsCombinableWithCoupons: boolean;
     bankReservationHours: number;
     emailFromName: string | null;
   } | null;
@@ -81,6 +87,9 @@ export type OrderSummary = {
 
 export type OrderDetail = OrderSummary & {
   customerPhone: string | null;
+  subtotalInCents: number;
+  discountInCents: number;
+  paymentDiscountInCents: number;
   shippingInCents: number;
   shippingAddress: string | null;
   shippingPostalCode: string | null;
@@ -135,7 +144,9 @@ export type OrderDetail = OrderSummary & {
     sku: string;
     productName: string;
     quantity: number;
+    listUnitPriceInCents: number;
     unitPriceInCents: number;
+    paymentDiscountInCents: number;
     subtotalInCents: number;
   }>;
 };

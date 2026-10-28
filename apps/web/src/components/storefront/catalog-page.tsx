@@ -14,6 +14,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { useCart } from "./cart-context";
 import { formatMoney, ProductImage, StorefrontShell } from "./storefront-shell";
 import type { PublicStore, StorefrontProduct } from "./types";
+import { specialUnitPrice } from "./payment-pricing";
 
 const emptyProducts: StorefrontProduct[] = [];
 
@@ -109,7 +110,7 @@ function Catalog({ store }: { store: PublicStore }) {
           </div>
           <div className="mt-7 grid grid-cols-2 gap-4 lg:grid-cols-4">
             {featuredProducts.map((product) => (
-              <ProductCard currency={store.settings?.currency ?? "ARS"} key={product.id} primaryColor={primaryColor} product={product} storeSlug={store.slug} />
+              <ProductCard currency={store.settings?.currency ?? "ARS"} key={product.id} primaryColor={primaryColor} product={product} settings={store.settings} storeSlug={store.slug} />
             ))}
           </div>
         </section>
@@ -165,6 +166,7 @@ function Catalog({ store }: { store: PublicStore }) {
                 key={product.id}
                 primaryColor={primaryColor}
                 product={product}
+                settings={store.settings}
                 storeSlug={store.slug}
               />
             ))}
@@ -180,14 +182,17 @@ export function ProductCard({
   currency,
   product,
   primaryColor,
+  settings,
   storeSlug,
 }: {
   currency: string;
   product: StorefrontProduct;
   primaryColor: string;
+  settings: PublicStore["settings"];
   storeSlug: string;
 }) {
   const { addItem } = useCart();
+  const transferPrice = specialUnitPrice(product, "BANK_TRANSFER", settings);
   return (
     <article className="group min-w-0 rounded-[var(--store-radius)] border border-stone-200/80 bg-white p-2.5 shadow-[0_10px_35px_rgba(28,20,28,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(28,20,28,0.10)] sm:p-3">
       <Link
@@ -217,6 +222,11 @@ export function ProductCard({
         <p className="mt-1 px-1 text-sm font-bold" style={{ color: primaryColor }}>
           {formatMoney(product.priceInCents, currency)}
         </p>
+        {transferPrice < product.priceInCents && (
+          <p className="mt-1 px-1 text-[11px] font-semibold text-emerald-700">
+            {formatMoney(transferPrice, currency)} por transferencia
+          </p>
+        )}
       </Link>
       {product.variants.length > 0 ? (
         <Link

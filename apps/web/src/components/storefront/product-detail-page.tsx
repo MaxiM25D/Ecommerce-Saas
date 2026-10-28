@@ -18,6 +18,7 @@ import { useCart } from "./cart-context";
 import { StorefrontError, StorefrontLoading } from "./catalog-page";
 import { formatMoney, ProductImage, StorefrontShell } from "./storefront-shell";
 import type { PublicStore, StorefrontProduct } from "./types";
+import { specialUnitPrice } from "./payment-pricing";
 
 export function ProductDetailPage({
   slug,
@@ -80,6 +81,15 @@ function ProductDetail({
   );
   const availableStock = selectedVariant?.stock ?? product.stock;
   const currentPrice = selectedVariant?.priceInCents ?? product.priceInCents;
+  const priceable = selectedVariant
+    ? {
+        ...selectedVariant,
+        bankTransferPriceInCents: selectedVariant.bankTransferPriceInCents ?? product.bankTransferPriceInCents,
+        cashPriceInCents: selectedVariant.cashPriceInCents ?? product.cashPriceInCents,
+      }
+    : product;
+  const transferPrice = specialUnitPrice(priceable, "BANK_TRANSFER", store.settings);
+  const cashPrice = specialUnitPrice(priceable, "CASH", store.settings);
   const primaryColor = store.settings?.primaryColor ?? "#9A6B43";
 
   function addToCart() {
@@ -142,6 +152,12 @@ function ProductDetail({
           <p className="mt-5 text-3xl font-bold tracking-[-0.03em]" style={{ color: primaryColor }}>
             {formatMoney(currentPrice, currency)}
           </p>
+          {(store.paymentMethods.bankTransfer && transferPrice < currentPrice) || (store.paymentMethods.cashOnPickup && cashPrice < currentPrice) ? (
+            <div className="mt-3 space-y-1 text-sm">
+              {store.paymentMethods.bankTransfer && transferPrice < currentPrice && <p className="font-semibold text-emerald-700">{formatMoney(transferPrice, currency)} con transferencia</p>}
+              {store.paymentMethods.cashOnPickup && cashPrice < currentPrice && <p className="font-semibold text-emerald-700">{formatMoney(cashPrice, currency)} en efectivo al retirar</p>}
+            </div>
+          ) : null}
           <div className="my-7 h-px bg-stone-200" />
           <p className="whitespace-pre-line text-base leading-7 text-stone-600">
             {product.description ||

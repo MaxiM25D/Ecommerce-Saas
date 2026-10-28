@@ -412,6 +412,8 @@ model Product {
   description    String?
   images         String[]         @default([])
   priceInCents   Int
+  bankTransferPriceInCents Int?
+  cashPriceInCents         Int?
   stock          Int              @default(0)
   active         Boolean          @default(true)
   brand          String?
@@ -446,6 +448,8 @@ model ProductVariant {
   name           String
   options        Json
   priceInCents   Int
+  bankTransferPriceInCents Int?
+  cashPriceInCents         Int?
   stock          Int             @default(0)
   active         Boolean         @default(true)
   weightInGrams  Int?
@@ -490,6 +494,10 @@ model StoreSettings {
   bankCvu              String?
   bankCuit             String?
   bankTransferEnabled  Boolean  @default(false)
+  bankTransferDiscountPercentage Int @default(0)
+  cashOnPickupEnabled             Boolean @default(false)
+  cashDiscountPercentage          Int @default(0)
+  paymentDiscountsCombinableWithCoupons Boolean @default(true)
   bankReservationHours Int      @default(24)
   emailFromName        String?
   shippingPolicy       String?
@@ -594,6 +602,8 @@ model Order {
   currency                      String               @default("ARS")
   subtotalInCents               Int
   discountInCents               Int                  @default(0)
+  paymentDiscountInCents        Int                  @default(0)
+  paymentPricingSnapshot        Json?
   couponCode                    String?
   shippingInCents               Int                  @default(0)
   shippingMethod                String?
@@ -790,7 +800,9 @@ model OrderItem {
   productName      String
   variantName      String?
   quantity         Int
+  listUnitPriceInCents Int
   unitPriceInCents Int
+  paymentDiscountInCents Int @default(0)
   subtotalInCents  Int
   order            Order           @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade)
   product          Product?        @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
