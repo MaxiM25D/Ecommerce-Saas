@@ -40,6 +40,14 @@ const dateRangeSchema = z.object({
   to: z.coerce.date(),
 });
 
+const catalogQuerySchema = z.object({
+  search: z.string().trim().max(80).catch(""),
+  categoryId: idSchema.optional(),
+  mode: z.enum(["SUGGESTED", "ALL"]).catch("SUGGESTED"),
+  page: z.coerce.number().int().min(1).catch(1),
+  pageSize: z.coerce.number().int().min(8).max(40).catch(10),
+});
+
 const canManageInventory = requireRoles("OWNER", "ADMIN");
 
 export const managementRouter = Router();
@@ -54,32 +62,104 @@ managementRouter.use((request, response, next) => {
 
 managementRouter.get("/catalog", async (request, response) => {
   const { tenant } = getAuthContext(request);
-  const search = z.string().trim().max(80).catch("").parse(request.query.search);
-  const products = await database.product.findMany({
-    where: {
-      tenantId: tenant.id,
-      active: true,
-      ...(search ? { OR: [
-        { name: { contains: search, mode: "insensitive" } },
-        { sku: { contains: search, mode: "insensitive" } },
-      ] } : {}),
+  const query = catalogQuerySchema.parse(request.query);
+  const where = {
+    tenantId: tenant.id,
+    active: true,
+    ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+    ...(query.search ? { OR: [
+      { name: { contains: query.search, mode: "insensitive" as const } },
+      { sku: { contains: query.search, mode: "insensitive" as const } },
+      { brand: { contains: query.search, mode: "insensitive" as const } },
+      { category: { name: { contains: query.search, mode: "insensitive" as const } } },
+    ] } : {}),
+  };
+  const productSelect = {
+    id: true, name: true, sku: true, priceInCents: true, bankTransferPriceInCents: true, cashPriceInCents: true, stock: true, images: true,
+    category: { select: { id: true, name: true } },
+    variants: {
+      where: { active: true },
+      orderBy: { name: "asc" as const },
+      select: { id: true, name: true, sku: true, priceInCents: true, bankTransferPriceInCents: true, cashPriceInCents: true, stock: true },
     },
-    orderBy: [{ name: "asc" }],
-    take: 40,
-    select: {
-      id: true, name: true, sku: true, priceInCents: true, bankTransferPriceInCents: true, cashPriceInCents: true, stock: true, images: true,
-      variants: {
-        where: { active: true },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true, sku: true, priceInCents: true, bankTransferPriceInCents: true, cashPriceInCents: true, stock: true },
-      },
+  };
+  const useSuggestions = query.mode === "SUGGESTED" && !query.search && !query.categoryId;
+  const [pricing, categories, total] = await Promise.all([
+    database.storeSettings.findUnique({
+      where: { tenantId: tenant.id },
+      select: { bankTransferDiscountPercentage: true, cashDiscountPercentage: true, paymentDiscountsCombinableWithCoupons: true },
+    }),
+    database.category.findMany({
+      where: { tenantId: tenant.id, products: { some: { active: true } } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    database.product.count({ where }),
+  ]);
+
+  let products;
+  if (useSuggestions) {
+    const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+    const [bestSelling, recentlySold] = await Promise.all([
+      database.orderItem.groupBy({
+        by: ["productId"],
+        where: { tenantId: tenant.id, productId: { not: null }, createdAt: { gte: since }, order: { paymentStatus: "APPROVED", status: { not: "CANCELLED" } } },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: "desc" } },
+        take: 12,
+      }),
+      database.orderItem.findMany({
+        where: { tenantId: tenant.id, productId: { not: null }, order: { paymentStatus: "APPROVED", status: { not: "CANCELLED" } } },
+        orderBy: { createdAt: "desc" },
+        distinct: ["productId"],
+        take: 12,
+        select: { productId: true },
+      }),
+    ]);
+    const rankedIds = [...new Set([
+      ...bestSelling.flatMap(({ productId }) => productId ? [productId] : []),
+      ...recentlySold.flatMap(({ productId }) => productId ? [productId] : []),
+    ])].slice(0, query.pageSize);
+    const rankedProducts = rankedIds.length
+      ? await database.product.findMany({ where: { ...where, id: { in: rankedIds } }, select: productSelect })
+      : [];
+    const byId = new Map(rankedProducts.map((product) => [product.id, product]));
+    products = rankedIds.flatMap((id) => {
+      const product = byId.get(id);
+      return product ? [product] : [];
+    });
+    if (products.length < query.pageSize) {
+      const fallback = await database.product.findMany({
+        where: { ...where, id: { notIn: products.map(({ id }) => id) } },
+        orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+        take: query.pageSize - products.length,
+        select: productSelect,
+      });
+      products.push(...fallback);
+    }
+  } else {
+    products = await database.product.findMany({
+      where,
+      orderBy: [{ name: "asc" }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+      select: productSelect,
+    });
+  }
+
+  response.json({
+    products,
+    categories,
+    pagination: {
+      page: useSuggestions ? 1 : query.page,
+      pageSize: query.pageSize,
+      total: useSuggestions ? products.length : total,
+      totalPages: useSuggestions ? 1 : Math.max(1, Math.ceil(total / query.pageSize)),
+      hasMore: !useSuggestions && query.page * query.pageSize < total,
     },
+    mode: useSuggestions ? "SUGGESTED" : "ALL",
+    pricing: pricing ?? { bankTransferDiscountPercentage: 0, cashDiscountPercentage: 0, paymentDiscountsCombinableWithCoupons: true },
   });
-  const pricing = await database.storeSettings.findUnique({
-    where: { tenantId: tenant.id },
-    select: { bankTransferDiscountPercentage: true, cashDiscountPercentage: true, paymentDiscountsCombinableWithCoupons: true },
-  });
-  response.json({ products, pricing: pricing ?? { bankTransferDiscountPercentage: 0, cashDiscountPercentage: 0, paymentDiscountsCombinableWithCoupons: true } });
 });
 
 managementRouter.get("/overview", async (request, response) => {

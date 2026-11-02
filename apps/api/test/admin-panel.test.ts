@@ -259,9 +259,10 @@ test("STAFF puede consultar pero no modificar el catálogo", async () => {
 
 test("gestión registra una venta local, descuenta stock y lo repone al anular", async () => {
   const tenant = await database.tenant.findUniqueOrThrow({ where: { slug: ownerSlug } });
+  const managementCategory = await database.category.create({ data: { tenantId: tenant.id, name: "Gestión local", slug: "gestion-local" } });
   const product = await database.product.create({ data: {
-    tenantId: tenant.id, sku: "LOCAL-001", slug: "producto-local", name: "Producto del local",
-    priceInCents: 100_000, cashPriceInCents: 90_000, stock: 8, active: true,
+    tenantId: tenant.id, categoryId: managementCategory.id, sku: "LOCAL-001", slug: "producto-local", name: "Producto del local",
+    images: ["https://cdn.example.com/producto-local.jpg"], priceInCents: 100_000, cashPriceInCents: 90_000, stock: 8, active: true,
   } });
 
   const created = await staffAgent.post("/api/admin/management/sales").send({
@@ -281,6 +282,18 @@ test("gestión registra una venta local, descuenta stock y lo repone al anular",
   assert.equal(created.body.sale.items[0].unitPriceInCents, 90_000);
   assert.equal((await database.product.findUniqueOrThrow({ where: { id: product.id } })).stock, 6);
   assert.equal(await database.stockMovement.count({ where: { orderId: created.body.sale.id, type: "LOCAL_SALE" } }), 1);
+
+  const suggested = await staffAgent.get("/api/admin/management/catalog?mode=SUGGESTED&pageSize=8");
+  assert.equal(suggested.status, 200);
+  assert.equal(suggested.body.mode, "SUGGESTED");
+  assert.equal(suggested.body.products[0].id, product.id);
+  assert.equal(suggested.body.products[0].images[0], "https://cdn.example.com/producto-local.jpg");
+  assert.ok(suggested.body.categories.some((category: { id: string }) => category.id === managementCategory.id));
+
+  const categoryCatalog = await staffAgent.get(`/api/admin/management/catalog?mode=ALL&categoryId=${managementCategory.id}&pageSize=8`);
+  assert.equal(categoryCatalog.status, 200);
+  assert.ok(categoryCatalog.body.products.length > 0);
+  assert.ok(categoryCatalog.body.products.every((item: { category: { id: string } | null }) => item.category?.id === managementCategory.id));
 
   const retried = await staffAgent.post("/api/admin/management/sales").send({
     operationId: "9df5926f-8793-42e3-869c-1c369c42c1ed",
