@@ -212,11 +212,11 @@ function ProductDetail({
           </div>
 
           {availableStock > 0 && (
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <div className="flex h-13 items-center justify-between rounded-full border border-stone-300 bg-white px-2 sm:w-36">
+            <div className="mt-6 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+              <div className="flex min-h-12 items-center justify-between rounded-full border border-stone-300 bg-white px-1 sm:px-2">
                 <button
                   aria-label="Reducir cantidad"
-                  className="grid h-10 w-10 place-items-center"
+                  className="grid h-11 w-10 place-items-center rounded-full transition hover:bg-stone-100 disabled:text-stone-300"
                   disabled={quantity <= 1}
                   onClick={() => setQuantity((value) => Math.max(1, value - 1))}
                   type="button"
@@ -226,7 +226,7 @@ function ProductDetail({
                 <span className="text-sm font-bold">{quantity}</span>
                 <button
                   aria-label="Aumentar cantidad"
-                  className="grid h-10 w-10 place-items-center disabled:text-stone-300"
+                  className="grid h-11 w-10 place-items-center rounded-full transition hover:bg-stone-100 disabled:text-stone-300"
                   disabled={quantity >= availableStock}
                   onClick={() =>
                     setQuantity((value) => Math.min(availableStock, value + 1))
@@ -237,7 +237,7 @@ function ProductDetail({
                 </button>
               </div>
               <button
-                className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full px-7 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:brightness-110"
+                className="flex min-h-12 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:brightness-110 sm:gap-2 sm:px-6 sm:text-sm"
                 onClick={addToCart}
                 style={{ backgroundColor: primaryColor }}
                 type="button"
